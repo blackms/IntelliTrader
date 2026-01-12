@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IntelliTrader.Core\IntelliTrader.Core.csproj" />
+    <ProjectReference Include="..\IntelliTrader.Exchange.Base\IntelliTrader.Exchange.Base.csproj" />
+  </ItemGroup>
+
+</Project>

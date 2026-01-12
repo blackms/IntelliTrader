@@ -1,0 +1,31 @@
+# Build outputs
+bin/
+obj/
+out/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+
+# Secrets/keys
+*.bin
+keys.bin
+
+# NuGet
+packages/
+*.nupkg
+
+# Logs
+logs/
+*.log

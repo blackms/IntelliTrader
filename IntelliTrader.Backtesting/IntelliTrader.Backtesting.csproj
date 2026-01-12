@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MessagePack" Version="2.5.187" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IntelliTrader.Core\IntelliTrader.Core.csproj" />
+    <ProjectReference Include="..\IntelliTrader.Exchange.Base\IntelliTrader.Exchange.Base.csproj" />
+    <ProjectReference Include="..\IntelliTrader.Signals.Base\IntelliTrader.Signals.Base.csproj" />
+  </ItemGroup>
+
+</Project>

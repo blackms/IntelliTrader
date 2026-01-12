@@ -1,0 +1,15 @@
+﻿{
+  "Paths": {
+    "Core": "core.json",
+    "Caching":  "caching.json",
+    "Logging": "logging.json",
+    "Trading": "trading.json",
+    "Exchange": "exchange.json",
+    "Integration": "integration.json",
+    "Signals": "signals.json",
+    "Rules": "rules.json",
+    "Notification": "notification.json",
+    "Web": "web.json",
+    "Backtesting": "backtesting.json"
+  }
+}

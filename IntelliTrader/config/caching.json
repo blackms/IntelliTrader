@@ -1,0 +1,13 @@
+{
+  "Caching": {
+    "Enabled": false,
+    "Shared": true,
+    "SharedCachePath": "absolute_path_to_cache_dir",
+    "SharedCacheCleanupInterval": 300,
+    "MaxAge": [
+      {
+        "SomeCacheName": 3
+      }
+    ]
+  }
+}

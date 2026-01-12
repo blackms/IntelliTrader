@@ -1,0 +1,13 @@
+{
+  "apps": [
+    {
+      "name": "IntelliTrader",
+      "cwd": "..",
+      "script": "bin/Debug/netcoreapp2.1/IntelliTrader.dll",
+      "exec_interpreter": "dotnet",
+      "exec_mode": "fork",
+      "autorestart": true,
+      "log_date_format": "YYYY-MM-DD HH:mm Z"
+    }
+  ]
+}

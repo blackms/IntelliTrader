@@ -43,8 +43,8 @@ public class AdapterIntegrationTests : IDisposable
         var expectedPrice = 50000m;
 
         _exchangeServiceMock
-            .Setup(x => x.GetCurrentPrice(pair.Symbol))
-            .Returns(expectedPrice);
+            .Setup(x => x.GetLastPrice(pair.Symbol))
+            .ReturnsAsync(expectedPrice);
 
         var signalMock = CreateMockSignal("RSI", pair.Symbol, 0.6);
         _signalsServiceMock
@@ -78,8 +78,8 @@ public class AdapterIntegrationTests : IDisposable
         foreach (var pair in pairs)
         {
             _exchangeServiceMock
-                .Setup(x => x.GetCurrentPrice(pair.Symbol))
-                .Returns(100m);
+                .Setup(x => x.GetLastPrice(pair.Symbol))
+                .ReturnsAsync(100m);
         }
 
         var allSignals = pairs.Select(p => CreateMockSignal("RSI", p.Symbol, 0.5)).ToArray();
@@ -271,8 +271,8 @@ public class AdapterIntegrationTests : IDisposable
         var pair = TradingPair.Create("BTCUSDT", "USDT");
 
         _exchangeServiceMock
-            .Setup(x => x.GetCurrentPrice(pair.Symbol))
-            .Throws(new Exception("Exchange service unavailable"));
+            .Setup(x => x.GetLastPrice(pair.Symbol))
+            .ThrowsAsync(new Exception("Exchange service unavailable"));
 
         // Act
         var result = await _exchangeAdapter.GetCurrentPriceAsync(pair);
@@ -307,8 +307,8 @@ public class AdapterIntegrationTests : IDisposable
         var pair = TradingPair.Create("BTCUSDT", "USDT");
 
         _exchangeServiceMock
-            .Setup(x => x.GetCurrentPrice(pair.Symbol))
-            .Throws(new Exception("Exchange error"));
+            .Setup(x => x.GetLastPrice(pair.Symbol))
+            .ThrowsAsync(new Exception("Exchange error"));
 
         _signalsServiceMock
             .Setup(x => x.GetSignalsByPair(pair.Symbol))
@@ -333,9 +333,10 @@ public class AdapterIntegrationTests : IDisposable
     public async Task ExchangeAdapter_TestConnectivity_ReturnsSuccess()
     {
         // Arrange
+        var tickerMock = new Mock<ITicker>();
         _exchangeServiceMock
-            .Setup(x => x.GetCurrentPrice("BTCUSDT"))
-            .Returns(50000m);
+            .Setup(x => x.GetTickers("USDT"))
+            .ReturnsAsync(new[] { tickerMock.Object });
 
         // Act
         var result = await _exchangeAdapter.TestConnectivityAsync();
@@ -365,9 +366,10 @@ public class AdapterIntegrationTests : IDisposable
     public async Task BothAdapters_ConnectivityCheckInParallel_BothSucceed()
     {
         // Arrange
+        var tickerMock = new Mock<ITicker>();
         _exchangeServiceMock
-            .Setup(x => x.GetCurrentPrice("BTCUSDT"))
-            .Returns(50000m);
+            .Setup(x => x.GetTickers("USDT"))
+            .ReturnsAsync(new[] { tickerMock.Object });
 
         _signalsServiceMock
             .Setup(x => x.GetSignalNames())

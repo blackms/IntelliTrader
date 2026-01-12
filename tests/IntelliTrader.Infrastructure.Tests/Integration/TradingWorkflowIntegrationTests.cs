@@ -181,7 +181,7 @@ public class TradingWorkflowIntegrationTests : IClassFixture<InfrastructureTestF
         savedPosition!.TotalQuantity.Value.Should().Be(4m);
         savedPosition.TotalCost.Amount.Should().Be(175000m); // 50000 + 45000 + 80000
         savedPosition.AveragePrice.Value.Should().Be(43750m); // 175000 / 4
-        savedPosition.DCALevel.Should().Be(3);
+        savedPosition.DCALevel.Should().Be(2); // DCALevel = entries - 1 (initial buy doesn't count as DCA)
     }
 
     #endregion

@@ -381,31 +381,22 @@ public class OrderExecutionService : TimedBackgroundService
         else
         {
             // Real sell order
-            var orderRequest = new PlaceOrderRequest
-            {
-                Pair = position.Pair,
-                Side = OrderSide.Sell,
-                Type = OrderType.Market,
-                Quantity = position.TotalQuantity
-            };
-
             var result = await _exchangePort.PlaceMarketSellAsync(
                 position.Pair, position.TotalQuantity, cancellationToken);
 
             if (result.IsSuccess)
             {
                 var order = result.Value;
-                var sellFees = Money.Create(order.Fees, _options.QuoteCurrency);
-                position.Close(order.OrderId, Price.Create(order.AveragePrice), sellFees);
+                position.Close(OrderId.From(order.OrderId), order.AveragePrice, order.Fees);
                 await _positionRepository.SaveAsync(position, cancellationToken);
 
                 var eventArgs = new OrderExecutedEventArgs
                 {
                     Pair = position.Pair,
                     Side = OrderSide.Sell,
-                    Price = order.AveragePrice,
-                    Quantity = order.FilledQuantity,
-                    Cost = order.AveragePrice * order.FilledQuantity,
+                    Price = order.AveragePrice.Value,
+                    Quantity = order.FilledQuantity.Value,
+                    Cost = order.AveragePrice.Value * order.FilledQuantity.Value,
                     IsVirtual = false,
                     Timestamp = DateTimeOffset.UtcNow
                 };
@@ -414,7 +405,7 @@ public class OrderExecutionService : TimedBackgroundService
                 {
                     _logger.LogInformation(
                         "Sell order executed for {Pair}. Price: {Price:F8}, Amount: {Amount:F8}",
-                        position.Pair.Symbol, order.AveragePrice, order.FilledQuantity);
+                        position.Pair.Symbol, order.AveragePrice.Value, order.FilledQuantity.Value);
                 }
 
                 OrderExecuted?.Invoke(this, eventArgs);
@@ -499,32 +490,32 @@ public class OrderExecutionService : TimedBackgroundService
         }
         else
         {
-            // Real buy order
-            var result = await _exchangePort.PlaceMarketBuyAsync(pair, quantity, cancellationToken);
+            // Real buy order - use Money for cost
+            var cost = Money.Create(maxCost, _options.QuoteCurrency);
+            var result = await _exchangePort.PlaceMarketBuyAsync(pair, cost, cancellationToken);
 
             if (result.IsSuccess)
             {
                 var order = result.Value;
-                var buyFees = Money.Create(order.Fees, _options.QuoteCurrency);
 
                 var existingPosition = await _positionRepository.GetByPairAsync(pair, cancellationToken);
                 if (existingPosition != null)
                 {
                     existingPosition.AddDCAEntry(
-                        order.OrderId,
-                        Price.Create(order.AveragePrice),
-                        Quantity.Create(order.FilledQuantity),
-                        buyFees);
+                        OrderId.From(order.OrderId),
+                        order.AveragePrice,
+                        order.FilledQuantity,
+                        order.Fees);
                     await _positionRepository.SaveAsync(existingPosition, cancellationToken);
                 }
                 else
                 {
                     var newPosition = Position.Open(
                         pair,
-                        order.OrderId,
-                        Price.Create(order.AveragePrice),
-                        Quantity.Create(order.FilledQuantity),
-                        buyFees);
+                        OrderId.From(order.OrderId),
+                        order.AveragePrice,
+                        order.FilledQuantity,
+                        order.Fees);
                     await _positionRepository.SaveAsync(newPosition, cancellationToken);
                 }
 
@@ -532,9 +523,9 @@ public class OrderExecutionService : TimedBackgroundService
                 {
                     Pair = pair,
                     Side = OrderSide.Buy,
-                    Price = order.AveragePrice,
-                    Quantity = order.FilledQuantity,
-                    Cost = order.AveragePrice * order.FilledQuantity,
+                    Price = order.AveragePrice.Value,
+                    Quantity = order.FilledQuantity.Value,
+                    Cost = order.AveragePrice.Value * order.FilledQuantity.Value,
                     IsVirtual = false,
                     Timestamp = DateTimeOffset.UtcNow
                 };
@@ -543,7 +534,7 @@ public class OrderExecutionService : TimedBackgroundService
                 {
                     _logger.LogInformation(
                         "Buy order executed for {Pair}. Price: {Price:F8}, Amount: {Amount:F8}",
-                        pair.Symbol, order.AveragePrice, order.FilledQuantity);
+                        pair.Symbol, order.AveragePrice.Value, order.FilledQuantity.Value);
                 }
 
                 OrderExecuted?.Invoke(this, eventArgs);

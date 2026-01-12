@@ -7,11 +7,11 @@ namespace IntelliTrader.Infrastructure.Tests.BackgroundServices;
 
 public class TimedBackgroundServiceTests
 {
-    private readonly Mock<ILogger<TestTimedBackgroundService>> _loggerMock;
+    private readonly Mock<ILogger> _loggerMock;
 
     public TimedBackgroundServiceTests()
     {
-        _loggerMock = new Mock<ILogger<TestTimedBackgroundService>>();
+        _loggerMock = new Mock<ILogger>();
     }
 
     [Fact]
@@ -36,8 +36,8 @@ public class TimedBackgroundServiceTests
         await service.StopAsync(CancellationToken.None);
 
         // Assert
-        executionCount.Should().BeGreaterOrEqualTo(2);
-        service.ExecutionCount.Should().BeGreaterOrEqualTo(2);
+        executionCount.Should().BeGreaterThanOrEqualTo(2);
+        service.ExecutionCount.Should().BeGreaterThanOrEqualTo(2);
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public class TimedBackgroundServiceTests
         await service.StopAsync(CancellationToken.None);
 
         // Assert - should continue after exception
-        executionCount.Should().BeGreaterOrEqualTo(2);
+        executionCount.Should().BeGreaterThanOrEqualTo(2);
     }
 
     [Fact]

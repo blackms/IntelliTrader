@@ -74,7 +74,8 @@ public class BackgroundServicesIntegrationTests : IClassFixture<InfrastructureTe
         var loggerMock = new Mock<ILogger<TradingRuleProcessorService>>();
         var options = new TradingRuleProcessorOptions
         {
-            Interval = TimeSpan.FromMilliseconds(100)
+            Interval = TimeSpan.FromMilliseconds(100),
+            StartDelay = TimeSpan.Zero
         };
 
         var service = new TradingRuleProcessorService(
@@ -148,7 +149,8 @@ public class BackgroundServicesIntegrationTests : IClassFixture<InfrastructureTe
         var loggerMock = new Mock<ILogger<TradingRuleProcessorService>>();
         var options = new TradingRuleProcessorOptions
         {
-            Interval = TimeSpan.FromMilliseconds(100)
+            Interval = TimeSpan.FromMilliseconds(100),
+            StartDelay = TimeSpan.Zero
         };
 
         var service = new TradingRuleProcessorService(
@@ -398,7 +400,7 @@ public class BackgroundServicesIntegrationTests : IClassFixture<InfrastructureTe
 
         // Note: The actual sell trigger depends on rule processor configuration
         // This test verifies the service runs without errors
-        service.ExecutionCount.Should().BeGreaterOrEqualTo(1);
+        service.ExecutionCount.Should().BeGreaterThanOrEqualTo(1);
     }
 
     [Fact]
@@ -470,7 +472,7 @@ public class BackgroundServicesIntegrationTests : IClassFixture<InfrastructureTe
         await service.StopAsync(CancellationToken.None);
 
         // Assert - trailing should have triggered or continued
-        service.ExecutionCount.Should().BeGreaterOrEqualTo(1);
+        service.ExecutionCount.Should().BeGreaterThanOrEqualTo(1);
     }
 
     #endregion
@@ -540,7 +542,7 @@ public class BackgroundServicesIntegrationTests : IClassFixture<InfrastructureTe
             _signalProviderMock.Object,
             _exchangePortMock.Object,
             _repository,
-            new TradingRuleProcessorOptions { Interval = TimeSpan.FromMilliseconds(50) });
+            new TradingRuleProcessorOptions { Interval = TimeSpan.FromMilliseconds(50), StartDelay = TimeSpan.Zero });
 
         using var ruleCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
         await ruleProcessor.StartAsync(ruleCts.Token);

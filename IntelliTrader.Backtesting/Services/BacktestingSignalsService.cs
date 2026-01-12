@@ -1,6 +1,7 @@
 ﻿using IntelliTrader.Core;
 using IntelliTrader.Signals.Base;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -22,7 +23,8 @@ namespace IntelliTrader.Backtesting
         private readonly IBacktestingService backtestingService;
         private readonly ICoreService coreService;
 
-        private SignalRulesTimedTask signalRulesTimedTask;
+        // Note: Old SignalRulesTimedTask has been replaced by SignalRuleProcessorService in IntelliTrader.Infrastructure
+        private readonly ConcurrentDictionary<string, bool> trailingSignals = new ConcurrentDictionary<string, bool>();
         private IEnumerable<string> signalNames;
 
         public BacktestingSignalsService(
@@ -48,10 +50,8 @@ namespace IntelliTrader.Backtesting
             OnSignalRulesChanged();
             rulesService.RegisterRulesChangeCallback(OnSignalRulesChanged);
 
-            signalRulesTimedTask = new SignalRulesTimedTask(loggingService, healthCheckService, tradingService, rulesService, this);
-            signalRulesTimedTask.RunInterval = (float)(RulesConfig.CheckInterval * 1000 / Application.Speed);
-            signalRulesTimedTask.LoggingEnabled = false;
-            coreService.AddTask(nameof(SignalRulesTimedTask), signalRulesTimedTask);
+            // Note: Signal rule processing is now handled by SignalRuleProcessorService
+            // registered in the Infrastructure layer as a BackgroundService
 
             loggingService.Info("Backtesting Signals service started");
         }
@@ -60,8 +60,7 @@ namespace IntelliTrader.Backtesting
         {
             loggingService.Info("Stop Backtesting Signals service...");
 
-            coreService.StopTask(nameof(SignalRulesTimedTask));
-            coreService.RemoveTask(nameof(SignalRulesTimedTask));
+            // Note: BackgroundServices are stopped by the host when the application shuts down
 
             rulesService.UnregisterRulesChangeCallback(OnSignalRulesChanged);
 
@@ -72,17 +71,19 @@ namespace IntelliTrader.Backtesting
 
         public void ClearTrailing()
         {
-            signalRulesTimedTask.ClearTrailing();
+            trailingSignals.Clear();
         }
 
         public List<string> GetTrailingSignals()
         {
-            return signalRulesTimedTask.GetTrailingSignals();
+            return trailingSignals.Keys.ToList();
         }
 
         public IEnumerable<ISignalTrailingInfo> GetTrailingInfo(string pair)
         {
-            return signalRulesTimedTask.GetTrailingInfo(pair);
+            // Signal trailing info is now managed by TrailingManager in Application layer
+            // Return empty list for backwards compatibility
+            return Enumerable.Empty<ISignalTrailingInfo>();
         }
 
         public IEnumerable<string> GetSignalNames()

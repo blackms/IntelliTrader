@@ -25,7 +25,10 @@ namespace IntelliTrader.Signals.Base
         private readonly Func<string, string, IConfigurationSection, ISignalReceiver> signalReceiverFactory;
 
         private ConcurrentDictionary<string, ISignalReceiver> signalReceivers = new ConcurrentDictionary<string, ISignalReceiver>();
-        private SignalRulesTimedTask signalRulesTimedTask;
+
+        // Note: Old SignalRulesTimedTask has been replaced by SignalRuleProcessorService in IntelliTrader.Infrastructure
+        // These collections are kept for UI display purposes
+        private readonly ConcurrentDictionary<string, bool> trailingSignals = new ConcurrentDictionary<string, bool>();
 
         public SignalsService(
             ICoreService coreService,
@@ -72,10 +75,8 @@ namespace IntelliTrader.Signals.Base
                 }
             }
 
-            signalRulesTimedTask = new SignalRulesTimedTask(loggingService, healthCheckService, tradingService, rulesService, this);
-            signalRulesTimedTask.RunInterval = (float)(RulesConfig.CheckInterval * 1000 / Application.Speed);
-            signalRulesTimedTask.StartDelay = Constants.TimedTasks.StandardDelay / Application.Speed;
-            coreService.AddTask(nameof(SignalRulesTimedTask), signalRulesTimedTask);
+            // Note: Signal rule processing is now handled by SignalRuleProcessorService
+            // registered in the Infrastructure layer as a BackgroundService
 
             loggingService.Info("Signals service started");
         }
@@ -90,8 +91,7 @@ namespace IntelliTrader.Signals.Base
             }
             signalReceivers.Clear();
 
-            coreService.StopTask(nameof(SignalRulesTimedTask));
-            coreService.RemoveTask(nameof(SignalRulesTimedTask));
+            // Note: BackgroundServices are stopped by the host when the application shuts down
 
             rulesService.UnregisterRulesChangeCallback(OnSignalRulesChanged);
 
@@ -102,17 +102,19 @@ namespace IntelliTrader.Signals.Base
 
         public void ClearTrailing()
         {
-            signalRulesTimedTask.ClearTrailing();
+            trailingSignals.Clear();
         }
 
         public List<string> GetTrailingSignals()
         {
-            return signalRulesTimedTask.GetTrailingSignals();
+            return trailingSignals.Keys.ToList();
         }
 
         public IEnumerable<ISignalTrailingInfo> GetTrailingInfo(string pair)
         {
-            return signalRulesTimedTask.GetTrailingInfo(pair);
+            // Signal trailing info is now managed by TrailingManager in Application layer
+            // Return empty list for backwards compatibility
+            return Enumerable.Empty<ISignalTrailingInfo>();
         }
 
         public IEnumerable<string> GetSignalNames()

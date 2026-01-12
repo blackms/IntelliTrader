@@ -33,12 +33,22 @@ namespace IntelliTrader.Trading
         private readonly IExchangeService exchangeService;
         private readonly ISignalsService signalsService;
 
-        private TradingTimedTask tradingTimedTask;
-        private TradingRulesTimedTask tradingRulesTimedTask;
-        private AccountTimedTask accountTimedTask;
+        // Note: Old TimedTasks (TradingTimedTask, TradingRulesTimedTask, AccountTimedTask) have been
+        // replaced by BackgroundServices in IntelliTrader.Infrastructure:
+        // - TradingRuleProcessorService
+        // - OrderExecutionService
+        // - SignalRuleProcessorService
 
         private bool isReplayingSnapshots;
         private bool tradingForcefullySuspended;
+
+        // Trailing buy/sell tracking (used for UI display)
+        // Actual trailing logic is handled by TrailingManager in Application layer
+        private readonly ConcurrentDictionary<string, bool> trailingBuys = new ConcurrentDictionary<string, bool>();
+        private readonly ConcurrentDictionary<string, bool> trailingSells = new ConcurrentDictionary<string, bool>();
+
+        // Pair config cache
+        private readonly ConcurrentDictionary<string, PairConfig> pairConfigs = new ConcurrentDictionary<string, PairConfig>();
 
         public TradingService(
             ICoreService coreService,
@@ -95,25 +105,16 @@ namespace IntelliTrader.Trading
                 Account = new VirtualAccount(loggingService, notificationService, healthCheckService, signalsService, this);
             }
 
-            accountTimedTask = new AccountTimedTask(loggingService, healthCheckService, this);
-            accountTimedTask.RunInterval = (float)(Config.AccountRefreshInterval * 1000 / Application.Speed);
-            accountTimedTask.Run();
-            coreService.AddTask(nameof(AccountTimedTask), accountTimedTask);
+            // Initial account refresh
+            Account.Refresh();
 
             if (signalsService.Config.Enabled)
             {
                 signalsService.Start();
             }
 
-            tradingTimedTask = new TradingTimedTask(loggingService, notificationService, healthCheckService, signalsService, this);
-            tradingTimedTask.RunInterval = (float)(Config.TradingCheckInterval * 1000 / Application.Speed);
-            tradingTimedTask.StartDelay = Constants.TimedTasks.StandardDelay / Application.Speed;
-            tradingTimedTask.LoggingEnabled = !isReplayingSnapshots;
-            coreService.AddTask(nameof(TradingTimedTask), tradingTimedTask);
-
-            tradingRulesTimedTask = new TradingRulesTimedTask(loggingService, notificationService, healthCheckService, rulesService, signalsService, this);
-            tradingRulesTimedTask.RunInterval = (float)(RulesConfig.CheckInterval * 1000 / Application.Speed);
-            coreService.AddTask(nameof(TradingRulesTimedTask), tradingRulesTimedTask);
+            // Note: Trading rules and order execution are now handled by BackgroundServices
+            // registered in the Infrastructure layer (TradingRuleProcessorService, OrderExecutionService)
 
             IsTradingSuspended = false;
 
@@ -131,14 +132,7 @@ namespace IntelliTrader.Trading
                 signalsService.Stop();
             }
 
-            coreService.StopTask(nameof(TradingTimedTask));
-            coreService.RemoveTask(nameof(TradingTimedTask));
-
-            coreService.StopTask(nameof(TradingRulesTimedTask));
-            coreService.RemoveTask(nameof(TradingRulesTimedTask));
-
-            coreService.StopTask(nameof(AccountTimedTask));
-            coreService.RemoveTask(nameof(AccountTimedTask));
+            // Note: BackgroundServices are stopped by the host when the application shuts down
 
             Account.Dispose();
 
@@ -156,10 +150,7 @@ namespace IntelliTrader.Trading
             {
                 loggingService.Info("Trading started");
                 IsTradingSuspended = false;
-
-                coreService.StartTask(nameof(TradingTimedTask));
-                coreService.StartTask(nameof(TradingRulesTimedTask));
-                tradingRulesTimedTask.Run();
+                // BackgroundServices will automatically pick up trading when IsTradingSuspended is false
             }
         }
 
@@ -171,20 +162,88 @@ namespace IntelliTrader.Trading
                 IsTradingSuspended = true;
                 tradingForcefullySuspended = forced;
 
-                coreService.StopTask(nameof(TradingTimedTask));
-                coreService.StopTask(nameof(TradingRulesTimedTask));
-                tradingTimedTask.ClearTrailing();
+                // Note: BackgroundServices check IsTradingSuspended flag and pause automatically
+                // Trailing is now managed by TrailingManager in the Application layer
+                trailingBuys.Clear();
+                trailingSells.Clear();
             }
         }
 
         public IPairConfig GetPairConfig(string pair)
         {
-            return tradingRulesTimedTask.GetPairConfig(pair);
+            // Get or create pair config from rules
+            return pairConfigs.GetOrAdd(pair, p => CreateDefaultPairConfig(p));
         }
 
         public void ReapplyTradingRules()
         {
-            tradingRulesTimedTask.Run();
+            // Clear pair config cache to force recomputation
+            pairConfigs.Clear();
+            // Note: TradingRuleProcessorService in Infrastructure layer handles continuous rule processing
+        }
+
+        private PairConfig CreateDefaultPairConfig(string pair)
+        {
+            // Create default pair config from trading rules config
+            var tradingPair = Account?.GetTradingPair(pair);
+            int dcaLevel = tradingPair?.DCALevel ?? 0;
+
+            return new PairConfig
+            {
+                Rules = new List<string>(),
+                BuyEnabled = RulesConfig?.BuyEnabled ?? true,
+                BuyType = Config.BuyType,
+                BuyMaxCost = Config.BuyMaxCost,
+                BuyMultiplier = GetDCAMultiplier(dcaLevel),
+                BuyMinBalance = RulesConfig?.BuyMinBalance ?? 0,
+                BuySamePairTimeout = RulesConfig?.BuySamePairTimeout ?? 0,
+                BuyTrailing = RulesConfig?.BuyTrailing ?? 0,
+                BuyTrailingStopMargin = RulesConfig?.BuyTrailingStopMargin ?? 0,
+                BuyTrailingStopAction = RulesConfig?.BuyTrailingStopAction ?? BuyTrailingStopAction.Cancel,
+                SellEnabled = RulesConfig?.SellEnabled ?? true,
+                SellType = Config.SellType,
+                SellMargin = RulesConfig?.SellMargin ?? 1,
+                SellTrailing = RulesConfig?.SellTrailing ?? 0,
+                SellTrailingStopMargin = RulesConfig?.SellTrailingStopMargin ?? 0,
+                SellTrailingStopAction = RulesConfig?.SellTrailingStopAction ?? SellTrailingStopAction.Cancel,
+                SellStopLossEnabled = RulesConfig?.SellStopLossEnabled ?? false,
+                SellStopLossAfterDCA = RulesConfig?.SellStopLossAfterDCA ?? false,
+                SellStopLossMinAge = RulesConfig?.SellStopLossMinAge ?? 0,
+                SellStopLossMargin = RulesConfig?.SellStopLossMargin ?? -10,
+                SwapEnabled = RulesConfig?.SwapEnabled ?? false,
+                SwapSignalRules = RulesConfig?.SwapSignalRules,
+                SwapTimeout = RulesConfig?.SwapTimeout ?? 0,
+                CurrentDCAMargin = GetCurrentDCAMargin(dcaLevel),
+                NextDCAMargin = GetNextDCAMargin(dcaLevel)
+            };
+        }
+
+        private decimal GetDCAMultiplier(int dcaLevel)
+        {
+            if (Config.DCALevels != null && dcaLevel < Config.DCALevels.Count)
+            {
+                return Config.DCALevels[dcaLevel].Multiplier;
+            }
+            return 1;
+        }
+
+        private decimal? GetCurrentDCAMargin(int dcaLevel)
+        {
+            if (dcaLevel == 0) return null;
+            if (Config.DCALevels != null && dcaLevel - 1 < Config.DCALevels.Count)
+            {
+                return Config.DCALevels[dcaLevel - 1].Margin;
+            }
+            return null;
+        }
+
+        private decimal? GetNextDCAMargin(int dcaLevel)
+        {
+            if (Config.DCALevels != null && dcaLevel < Config.DCALevels.Count)
+            {
+                return Config.DCALevels[dcaLevel].Margin;
+            }
+            return null;
         }
 
         public void Buy(BuyOptions options)
@@ -208,7 +267,7 @@ namespace IntelliTrader.Trading
                 {
                     if (CanBuy(options, out string message))
                     {
-                        tradingTimedTask.InitiateBuy(options);
+                        InitiateBuy(options);
                     }
                     else
                     {
@@ -218,18 +277,58 @@ namespace IntelliTrader.Trading
             }
         }
 
+        private void InitiateBuy(BuyOptions options)
+        {
+            IPairConfig pairConfig = GetPairConfig(options.Pair);
+
+            if (!options.ManualOrder && !options.Swap && pairConfig.BuyTrailing != 0)
+            {
+                // Initiate trailing buy
+                if (!trailingBuys.ContainsKey(options.Pair))
+                {
+                    trailingSells.TryRemove(options.Pair, out _);
+                    trailingBuys.TryAdd(options.Pair, true);
+                    loggingService.Info($"Trailing buy initiated for {options.Pair}");
+                }
+            }
+            else
+            {
+                PlaceBuyOrder(options);
+            }
+        }
+
         public void Sell(SellOptions options)
         {
             lock (SyncRoot)
             {
                 if (CanSell(options, out string message))
                 {
-                    tradingTimedTask.InitiateSell(options);
+                    InitiateSell(options);
                 }
                 else
                 {
                     loggingService.Debug(message);
                 }
+            }
+        }
+
+        private void InitiateSell(SellOptions options)
+        {
+            IPairConfig pairConfig = GetPairConfig(options.Pair);
+
+            if (!options.ManualOrder && !options.Swap && pairConfig.SellTrailing != 0)
+            {
+                // Initiate trailing sell
+                if (!trailingSells.ContainsKey(options.Pair))
+                {
+                    trailingBuys.TryRemove(options.Pair, out _);
+                    trailingSells.TryAdd(options.Pair, true);
+                    loggingService.Info($"Trailing sell initiated for {options.Pair}");
+                }
+            }
+            else
+            {
+                PlaceSellOrder(options);
             }
         }
 
@@ -254,7 +353,7 @@ namespace IntelliTrader.Trading
                         decimal additionalCosts = oldTradingPair.AverageCostPaid - oldTradingPair.CurrentCost + (oldTradingPair.Metadata.AdditionalCosts ?? 0);
                         int additionalDCALevels = oldTradingPair.DCALevel;
 
-                        IOrderDetails sellOrderDetails = tradingTimedTask.PlaceSellOrder(sellOptions);
+                        IOrderDetails sellOrderDetails = PlaceSellOrder(sellOptions);
                         if (!Account.HasTradingPair(options.OldPair))
                         {
                             var buyOptions = new BuyOptions(options.NewPair)
@@ -268,7 +367,7 @@ namespace IntelliTrader.Trading
                             buyOptions.Metadata.SwapPair = options.OldPair;
                             buyOptions.Metadata.AdditionalDCALevels = additionalDCALevels;
                             buyOptions.Metadata.AdditionalCosts = additionalCosts;
-                            IOrderDetails buyOrderDetails = tradingTimedTask.PlaceBuyOrder(buyOptions);
+                            IOrderDetails buyOrderDetails = PlaceBuyOrder(buyOptions);
 
                             var newTradingPair = Account.GetTradingPair(options.NewPair) as TradingPair;
                             if (newTradingPair != null)
@@ -440,14 +539,102 @@ namespace IntelliTrader.Trading
             OrderHistory.Push(order);
         }
 
+        private IOrderDetails PlaceBuyOrder(BuyOptions options)
+        {
+            IOrderDetails orderDetails = null;
+            trailingBuys.TryRemove(options.Pair, out _);
+            trailingSells.TryRemove(options.Pair, out _);
+
+            if (CanBuy(options, out string message))
+            {
+                IPairConfig pairConfig = GetPairConfig(options.Pair);
+                ITradingPair tradingPair = Account.GetTradingPair(options.Pair);
+                decimal currentPrice = GetCurrentPrice(options.Pair);
+                decimal amount = options.Amount ?? Math.Round(options.MaxCost.Value / currentPrice, 4);
+
+                var orderRequest = new Order
+                {
+                    Type = pairConfig.BuyType,
+                    Side = OrderSide.Buy,
+                    Pair = options.Pair,
+                    Amount = amount,
+                    Price = currentPrice
+                };
+
+                orderDetails = Account.PlaceOrder(orderRequest, options.Metadata);
+
+                if (orderDetails != null && orderDetails.Result == OrderResult.Filled)
+                {
+                    string newPairName = tradingPair != null ? tradingPair.FormattedName : options.Pair;
+                    loggingService.Info($"Buy order filled for {newPairName}. Price: {orderDetails.AveragePrice:0.00000000}, Amount: {orderDetails.AmountFilled:0.00000000}, Cost: {orderDetails.AverageCost:0.00}");
+                    notificationService.Notify($"Buy order filled for {newPairName}. Price: {orderDetails.AveragePrice:0.00000000}, Cost: {orderDetails.AverageCost:0.00}");
+                    LogOrder(orderDetails);
+                }
+                else
+                {
+                    loggingService.Info($"Unable to place buy order for {options.Pair}. Order result: {orderDetails?.Result}");
+                }
+
+                ReapplyTradingRules();
+            }
+            else
+            {
+                loggingService.Info(message);
+            }
+            return orderDetails;
+        }
+
+        private IOrderDetails PlaceSellOrder(SellOptions options)
+        {
+            IOrderDetails orderDetails = null;
+            trailingSells.TryRemove(options.Pair, out _);
+            trailingBuys.TryRemove(options.Pair, out _);
+
+            if (CanSell(options, out string message))
+            {
+                IPairConfig pairConfig = GetPairConfig(options.Pair);
+                ITradingPair tradingPair = Account.GetTradingPair(options.Pair);
+                tradingPair.SetCurrentPrice(GetCurrentPrice(options.Pair));
+
+                var orderRequest = new Order
+                {
+                    Type = pairConfig.SellType,
+                    Side = OrderSide.Sell,
+                    Pair = options.Pair,
+                    Amount = tradingPair.TotalAmount,
+                    Price = tradingPair.CurrentPrice
+                };
+
+                orderDetails = Account.PlaceOrder(orderRequest, null);
+
+                if (orderDetails != null && orderDetails.Result == OrderResult.Filled)
+                {
+                    loggingService.Info($"Sell order filled for {tradingPair.FormattedName}. Price: {orderDetails.AveragePrice:0.00000000}, Margin: {tradingPair.CurrentMargin:0.00}%");
+                    notificationService.Notify($"Sell order filled for {tradingPair.FormattedName}. Price: {orderDetails.AveragePrice:0.00000000}, Margin: {tradingPair.CurrentMargin:0.00}%");
+                    LogOrder(orderDetails);
+                }
+                else
+                {
+                    loggingService.Info($"Unable to place sell order for {options.Pair}. Order result: {orderDetails?.Result}");
+                }
+
+                ReapplyTradingRules();
+            }
+            else
+            {
+                loggingService.Info(message);
+            }
+            return orderDetails;
+        }
+
         public List<string> GetTrailingBuys()
         {
-            return tradingTimedTask.GetTrailingBuys();
+            return trailingBuys.Keys.ToList();
         }
 
         public List<string> GetTrailingSells()
         {
-            return tradingTimedTask.GetTrailingSells();
+            return trailingSells.Keys.ToList();
         }
 
         public IEnumerable<ITicker> GetTickers()

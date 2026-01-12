@@ -79,9 +79,11 @@ namespace IntelliTrader.Core
                 webService.Start();
             }
 
-            ThreadPool.QueueUserWorkItem((state) =>
+            // Use Task.Run with Task.Delay instead of ThreadPool with Thread.Sleep
+            // to avoid blocking a thread pool thread during the delay
+            _ = Task.Run(async () =>
             {
-                Thread.Sleep(3000);
+                await Task.Delay(3000);
                 StartAllTasks();
             });
 

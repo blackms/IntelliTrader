@@ -69,7 +69,7 @@ namespace IntelliTrader.Web.Controllers
         {
             if (ModelState.IsValid)
             {
-                var isValid = !_coreService.Config.PasswordProtected || ComputeMD5Hash(model.Password).Equals(_coreService.Config.Password, StringComparison.InvariantCultureIgnoreCase);
+                var isValid = !_coreService.Config.PasswordProtected || VerifyPassword(model.Password, _coreService.Config.Password);
                 if (!isValid)
                 {
                     ModelState.AddModelError("Password", "Invalid Password");
@@ -112,7 +112,48 @@ namespace IntelliTrader.Web.Controllers
             }
         }
 
-        private string ComputeMD5Hash(string input)
+        /// <summary>
+        /// Verifies a password against a stored hash.
+        /// Supports both legacy MD5 hashes (32 hex chars) and BCrypt hashes ($2a$/$2b$ prefix).
+        /// </summary>
+        private bool VerifyPassword(string password, string storedHash)
+        {
+            if (string.IsNullOrEmpty(password) || string.IsNullOrEmpty(storedHash))
+            {
+                return false;
+            }
+
+            // Check if it's a BCrypt hash (starts with $2a$ or $2b$)
+            if (storedHash.StartsWith("$2a$") || storedHash.StartsWith("$2b$"))
+            {
+                return BCrypt.Net.BCrypt.Verify(password, storedHash);
+            }
+
+            // Legacy: MD5 hash (32 hex characters)
+            if (storedHash.Length == 32 && storedHash.All(c => char.IsLetterOrDigit(c)))
+            {
+                var md5Hash = ComputeMD5Hash(password);
+                return md5Hash.Equals(storedHash, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Creates a secure BCrypt hash for a password.
+        /// Use this for new password storage.
+        /// </summary>
+        private static string HashPassword(string password)
+        {
+            return BCrypt.Net.BCrypt.HashPassword(password, workFactor: 12);
+        }
+
+        /// <summary>
+        /// Legacy MD5 hash for backward compatibility with existing stored passwords.
+        /// DO NOT use for new passwords - use HashPassword() instead.
+        /// </summary>
+        [Obsolete("Use HashPassword() for new passwords. This is only for verifying legacy MD5 hashes.")]
+        private static string ComputeMD5Hash(string input)
         {
             if (string.IsNullOrEmpty(input))
             {
@@ -358,6 +399,7 @@ namespace IntelliTrader.Web.Controllers
         }
 
         [HttpPost]
+        [ValidateAntiForgeryToken]
         public IActionResult Settings(SettingsViewModel model)
         {
             _coreService.Config.HealthCheckEnabled = model.HealthCheckEnabled;
@@ -377,102 +419,95 @@ namespace IntelliTrader.Web.Controllers
         }
 
         [HttpPost]
-        public IActionResult SaveConfig()
+        [ValidateAntiForgeryToken]
+        public IActionResult SaveConfig([FromForm] ConfigUpdateModel model)
         {
-            string configName = Request.Form["name"].ToString();
-            string configDefinition = Request.Form["definition"].ToString();
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
-            if (!String.IsNullOrWhiteSpace(configName) && !String.IsNullOrWhiteSpace(configDefinition))
+            // Validate JSON structure before saving
+            if (!model.IsValidJson())
             {
-                Application.ConfigProvider.SetSectionJson(configName, configDefinition);
-                return new OkResult();
+                return BadRequest("Invalid JSON format in configuration definition");
             }
-            else
-            {
-                return new BadRequestResult();
-            }
+
+            Application.ConfigProvider.SetSectionJson(model.Name, model.Definition);
+            return Ok();
         }
 
         [HttpPost]
-        public IActionResult Sell()
+        [ValidateAntiForgeryToken]
+        public IActionResult Sell([FromForm] SellInputModel model)
         {
-            string pair = Request.Form["pair"].ToString();
-            if (pair != null && decimal.TryParse(Request.Form["amount"], out decimal amount) && amount > 0)
+            if (!ModelState.IsValid)
             {
-                _tradingService.Sell(new SellOptions(pair)
-                {
-                    Amount = amount,
-                    ManualOrder = true
-                });
-                return new OkResult();
+                return BadRequest(ModelState);
             }
-            else
+
+            _tradingService.Sell(new SellOptions(model.Pair)
             {
-                return new BadRequestResult();
-            }
+                Amount = model.Amount,
+                ManualOrder = true
+            });
+            return Ok();
         }
 
         [HttpPost]
-        public IActionResult Buy()
+        [ValidateAntiForgeryToken]
+        public IActionResult Buy([FromForm] BuyInputModel model)
         {
-            string pair = Request.Form["pair"].ToString();
-            if (pair != null && decimal.TryParse(Request.Form["amount"], out decimal amount) && amount > 0)
+            if (!ModelState.IsValid)
             {
-                _tradingService.Buy(new BuyOptions(pair)
-                {
-                    Amount = amount,
-                    IgnoreExisting = true,
-                    ManualOrder = true
-                });
-                return new OkResult();
+                return BadRequest(ModelState);
             }
-            else
+
+            _tradingService.Buy(new BuyOptions(model.Pair)
             {
-                return new BadRequestResult();
-            }
+                Amount = model.Amount,
+                IgnoreExisting = true,
+                ManualOrder = true
+            });
+            return Ok();
         }
 
         [HttpPost]
-        public IActionResult BuyDefault()
+        [ValidateAntiForgeryToken]
+        public IActionResult BuyDefault([FromForm] BuyDefaultInputModel model)
         {
-            string pair = Request.Form["pair"].ToString();
-            if (pair != null)
+            if (!ModelState.IsValid)
             {
-                _tradingService.Buy(new BuyOptions(pair)
+                return BadRequest(ModelState);
+            }
+
+            _tradingService.Buy(new BuyOptions(model.Pair)
+            {
+                MaxCost = _tradingService.GetPairConfig(model.Pair).BuyMaxCost,
+                IgnoreExisting = true,
+                ManualOrder = true,
+                Metadata = new OrderMetadata
                 {
-                    MaxCost = _tradingService.GetPairConfig(pair).BuyMaxCost,
-                    IgnoreExisting = true,
-                    ManualOrder = true,
-                    Metadata = new OrderMetadata
-                    {
-                        BoughtGlobalRating = _signalsService.GetGlobalRating()
-                    }
-                });
-                return new OkResult();
-            }
-            else
-            {
-                return new BadRequestResult();
-            }
+                    BoughtGlobalRating = _signalsService.GetGlobalRating()
+                }
+            });
+            return Ok();
         }
 
         [HttpPost]
-        public IActionResult Swap()
+        [ValidateAntiForgeryToken]
+        public IActionResult Swap([FromForm] SwapInputModel model)
         {
-            string pair = Request.Form["pair"].ToString();
-            string swap = Request.Form["swap"].ToString();
-            if (pair != null && swap != null)
+            if (!ModelState.IsValid)
             {
-                _tradingService.Swap(new SwapOptions(pair, swap, new OrderMetadata())
-                {
-                    ManualOrder = true
-                });
-                return new OkResult();
+                return BadRequest(ModelState);
             }
-            else
+
+            _tradingService.Swap(new SwapOptions(model.Pair, model.Swap, new OrderMetadata())
             {
-                return new BadRequestResult();
-            }
+                ManualOrder = true
+            });
+            return Ok();
         }
 
         public IActionResult RefreshAccount()

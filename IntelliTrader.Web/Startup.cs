@@ -8,6 +8,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Newtonsoft.Json.Serialization;
 using System;
+using System.Collections.Generic;
 using System.IO;
 
 namespace IntelliTrader.Web
@@ -23,6 +24,15 @@ namespace IntelliTrader.Web
 
         public void ConfigureServices(IServiceCollection services)
         {
+            // Register services from Autofac container into ASP.NET Core DI
+            // This bridges the legacy service locator to proper constructor injection
+            services.AddSingleton(_ => Application.Resolve<ICoreService>());
+            services.AddSingleton(_ => Application.Resolve<ITradingService>());
+            services.AddSingleton(_ => Application.Resolve<ISignalsService>());
+            services.AddSingleton(_ => Application.Resolve<ILoggingService>());
+            services.AddSingleton(_ => Application.Resolve<IHealthCheckService>());
+            services.AddSingleton(_ => Application.Resolve<IEnumerable<IConfigurableService>>());
+
             var coreService = Application.Resolve<ICoreService>();
 
             services.AddAuthentication(options =>

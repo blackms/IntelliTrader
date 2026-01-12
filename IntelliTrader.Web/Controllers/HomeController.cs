@@ -21,13 +21,35 @@ namespace IntelliTrader.Web.Controllers
     [Authorize]
     public class HomeController : Controller
     {
+        private readonly ICoreService _coreService;
+        private readonly ITradingService _tradingService;
+        private readonly ISignalsService _signalsService;
+        private readonly ILoggingService _loggingService;
+        private readonly IHealthCheckService _healthCheckService;
+        private readonly IEnumerable<IConfigurableService> _configurableServices;
+
+        public HomeController(
+            ICoreService coreService,
+            ITradingService tradingService,
+            ISignalsService signalsService,
+            ILoggingService loggingService,
+            IHealthCheckService healthCheckService,
+            IEnumerable<IConfigurableService> configurableServices)
+        {
+            _coreService = coreService ?? throw new ArgumentNullException(nameof(coreService));
+            _tradingService = tradingService ?? throw new ArgumentNullException(nameof(tradingService));
+            _signalsService = signalsService ?? throw new ArgumentNullException(nameof(signalsService));
+            _loggingService = loggingService ?? throw new ArgumentNullException(nameof(loggingService));
+            _healthCheckService = healthCheckService ?? throw new ArgumentNullException(nameof(healthCheckService));
+            _configurableServices = configurableServices ?? throw new ArgumentNullException(nameof(configurableServices));
+        }
+
         #region Authentication
 
         [AllowAnonymous]
         public async Task<IActionResult> Login()
         {
-            var coreService = Application.Resolve<ICoreService>();
-            if (coreService.Config.PasswordProtected)
+            if (_coreService.Config.PasswordProtected)
             {
                 var model = new LoginViewModel
                 {
@@ -47,8 +69,7 @@ namespace IntelliTrader.Web.Controllers
         {
             if (ModelState.IsValid)
             {
-                var coreService = Application.Resolve<ICoreService>();
-                var isValid = !coreService.Config.PasswordProtected || ComputeMD5Hash(model.Password).Equals(coreService.Config.Password, StringComparison.InvariantCultureIgnoreCase);
+                var isValid = !_coreService.Config.PasswordProtected || ComputeMD5Hash(model.Password).Equals(_coreService.Config.Password, StringComparison.InvariantCultureIgnoreCase);
                 if (!isValid)
                 {
                     ModelState.AddModelError("Password", "Invalid Password");
@@ -121,47 +142,43 @@ namespace IntelliTrader.Web.Controllers
 
         public IActionResult Dashboard()
         {
-            var coreService = Application.Resolve<ICoreService>();
             var model = new DashboardViewModel
             {
-                InstanceName = coreService.Config.InstanceName,
-                Version = coreService.Version
+                InstanceName = _coreService.Config.InstanceName,
+                Version = _coreService.Version
             };
             return View(nameof(Dashboard), model);
         }
 
         public IActionResult Market()
         {
-            var coreService = Application.Resolve<ICoreService>();
             var model = new MarketViewModel
             {
-                InstanceName = coreService.Config.InstanceName,
-                Version = coreService.Version
+                InstanceName = _coreService.Config.InstanceName,
+                Version = _coreService.Version
             };
             return View(model);
         }
 
         public IActionResult Stats()
         {
-            var coreService = Application.Resolve<ICoreService>();
-            var tradingService = Application.Resolve<ITradingService>();
-            var accountInitialBalance = tradingService.Config.VirtualTrading ? tradingService.Config.VirtualAccountInitialBalance : tradingService.Config.AccountInitialBalance;
-            var accountInitialBalanceDate = tradingService.Config.VirtualTrading ? DateTimeOffset.Now.AddDays(-30) : tradingService.Config.AccountInitialBalanceDate;
+            var accountInitialBalance = _tradingService.Config.VirtualTrading ? _tradingService.Config.VirtualAccountInitialBalance : _tradingService.Config.AccountInitialBalance;
+            var accountInitialBalanceDate = _tradingService.Config.VirtualTrading ? DateTimeOffset.Now.AddDays(-30) : _tradingService.Config.AccountInitialBalanceDate;
 
-            decimal accountBalance = tradingService.Account.GetBalance();
-            foreach (var tradingPair in tradingService.Account.GetTradingPairs())
+            decimal accountBalance = _tradingService.Account.GetBalance();
+            foreach (var tradingPair in _tradingService.Account.GetTradingPairs())
             {
-                accountBalance += tradingService.GetCurrentPrice(tradingPair.Pair) * tradingPair.TotalAmount;
+                accountBalance += _tradingService.GetCurrentPrice(tradingPair.Pair) * tradingPair.TotalAmount;
             }
 
             var model = new StatsViewModel
             {
-                InstanceName = coreService.Config.InstanceName,
-                Version = coreService.Version,
-                TimezoneOffset = coreService.Config.TimezoneOffset,
+                InstanceName = _coreService.Config.InstanceName,
+                Version = _coreService.Version,
+                TimezoneOffset = _coreService.Config.TimezoneOffset,
                 AccountInitialBalance = accountInitialBalance,
                 AccountBalance = accountBalance,
-                Market = tradingService.Config.Market,
+                Market = _tradingService.Config.Market,
                 Balances = new Dictionary<DateTimeOffset, decimal>(),
                 Trades = GetTrades()
             };
@@ -191,13 +208,11 @@ namespace IntelliTrader.Web.Controllers
 
         public IActionResult Trades(DateTimeOffset id)
         {
-            var coreService = Application.Resolve<ICoreService>();
-
             var model = new TradesViewModel()
             {
-                InstanceName = coreService.Config.InstanceName,
-                Version = coreService.Version,
-                TimezoneOffset = coreService.Config.TimezoneOffset,
+                InstanceName = _coreService.Config.InstanceName,
+                Version = _coreService.Version,
+                TimezoneOffset = _coreService.Config.TimezoneOffset,
                 Date = id,
                 Trades = GetTrades(id).Values.FirstOrDefault() ?? new List<TradeResult>()
             };
@@ -207,20 +222,16 @@ namespace IntelliTrader.Web.Controllers
 
         public IActionResult Settings()
         {
-            var coreService = Application.Resolve<ICoreService>();
-            var tradingService = Application.Resolve<ITradingService>();
-            var allConfigurableServices = Application.Resolve<IEnumerable<IConfigurableService>>();
-
             var model = new SettingsViewModel()
             {
-                InstanceName = coreService.Config.InstanceName,
-                Version = coreService.Version,
-                BuyEnabled = tradingService.Config.BuyEnabled,
-                BuyDCAEnabled = tradingService.Config.BuyDCAEnabled,
-                SellEnabled = tradingService.Config.SellEnabled,
-                TradingSuspended = tradingService.IsTradingSuspended,
-                HealthCheckEnabled = coreService.Config.HealthCheckEnabled,
-                Configs = allConfigurableServices.Where(s => !s.GetType().Name.Contains(Constants.ServiceNames.BacktestingService)).OrderBy(s => s.ServiceName).ToDictionary(s => s.ServiceName, s => Application.ConfigProvider.GetSectionJson(s.ServiceName))
+                InstanceName = _coreService.Config.InstanceName,
+                Version = _coreService.Version,
+                BuyEnabled = _tradingService.Config.BuyEnabled,
+                BuyDCAEnabled = _tradingService.Config.BuyDCAEnabled,
+                SellEnabled = _tradingService.Config.SellEnabled,
+                TradingSuspended = _tradingService.IsTradingSuspended,
+                HealthCheckEnabled = _coreService.Config.HealthCheckEnabled,
+                Configs = _configurableServices.Where(s => !s.GetType().Name.Contains(Constants.ServiceNames.BacktestingService)).OrderBy(s => s.ServiceName).ToDictionary(s => s.ServiceName, s => Application.ConfigProvider.GetSectionJson(s.ServiceName))
             };
 
             return View(model);
@@ -228,14 +239,11 @@ namespace IntelliTrader.Web.Controllers
 
         public IActionResult Log()
         {
-            var coreService = Application.Resolve<ICoreService>();
-            var loggingService = Application.Resolve<ILoggingService>();
-
             var model = new LogViewModel()
             {
-                InstanceName = coreService.Config.InstanceName,
-                Version = coreService.Version,
-                LogEntries = loggingService.GetLogEntries().Reverse().Take(500)
+                InstanceName = _coreService.Config.InstanceName,
+                Version = _coreService.Version,
+                LogEntries = _loggingService.GetLogEntries().Reverse().Take(500)
             };
 
             return View(model);
@@ -243,12 +251,10 @@ namespace IntelliTrader.Web.Controllers
 
         public IActionResult Help()
         {
-            var coreService = Application.Resolve<ICoreService>();
-
             var model = new HelpViewModel()
             {
-                InstanceName = coreService.Config.InstanceName,
-                Version = coreService.Version
+                InstanceName = _coreService.Config.InstanceName,
+                Version = _coreService.Version
             };
 
             return View(model);
@@ -258,44 +264,35 @@ namespace IntelliTrader.Web.Controllers
 
         public IActionResult Status()
         {
-            var loggingService = Application.Resolve<ILoggingService>();
-            var tradingService = Application.Resolve<ITradingService>();
-            var signalsService = Application.Resolve<ISignalsService>();
-            var healthCheckService = Application.Resolve<IHealthCheckService>();
-
             var status = new
             {
-                Balance = tradingService.Account.GetBalance(),
-                GlobalRating = signalsService.GetGlobalRating()?.ToString("0.000") ?? "N/A",
-                TrailingBuys = tradingService.GetTrailingBuys(),
-                TrailingSells = tradingService.GetTrailingSells(),
-                TrailingSignals = signalsService.GetTrailingSignals(),
-                TradingSuspended = tradingService.IsTradingSuspended,
-                HealthChecks = healthCheckService.GetHealthChecks().OrderBy(c => c.Name),
-                LogEntries = loggingService.GetLogEntries().Reverse().Take(5)
+                Balance = _tradingService.Account.GetBalance(),
+                GlobalRating = _signalsService.GetGlobalRating()?.ToString("0.000") ?? "N/A",
+                TrailingBuys = _tradingService.GetTrailingBuys(),
+                TrailingSells = _tradingService.GetTrailingSells(),
+                TrailingSignals = _signalsService.GetTrailingSignals(),
+                TradingSuspended = _tradingService.IsTradingSuspended,
+                HealthChecks = _healthCheckService.GetHealthChecks().OrderBy(c => c.Name),
+                LogEntries = _loggingService.GetLogEntries().Reverse().Take(5)
             };
             return Json(status);
         }
 
         public IActionResult SignalNames()
         {
-            var signalsService = Application.Resolve<ISignalsService>();
-            return Json(signalsService.GetSignalNames());
+            return Json(_signalsService.GetSignalNames());
         }
 
         [HttpPost]
         public IActionResult TradingPairs()
         {
-            var coreService = Application.Resolve<ICoreService>();
-            var tradingService = Application.Resolve<ITradingService>();
-
-            var tradingPairs = from tradingPair in tradingService.Account.GetTradingPairs()
-                               let pairConfig = tradingService.GetPairConfig(tradingPair.Pair)
+            var tradingPairs = from tradingPair in _tradingService.Account.GetTradingPairs()
+                               let pairConfig = _tradingService.GetPairConfig(tradingPair.Pair)
                                select new
                                {
                                    Name = tradingPair.Pair,
                                    DCA = tradingPair.DCALevel,
-                                   TradingViewName = $"{tradingService.Config.Exchange.ToUpperInvariant()}:{tradingPair.Pair}",
+                                   TradingViewName = $"{_tradingService.Config.Exchange.ToUpperInvariant()}:{tradingPair.Pair}",
                                    Margin = tradingPair.CurrentMargin.ToString("0.00"),
                                    Target = pairConfig.SellMargin.ToString("0.00"),
                                    CurrentPrice = tradingPair.CurrentPrice.ToString("0.00000000"),
@@ -303,7 +300,7 @@ namespace IntelliTrader.Web.Controllers
                                    Cost = tradingPair.AverageCostPaid.ToString("0.00000000"),
                                    CurrentCost = tradingPair.CurrentCost.ToString("0.00000000"),
                                    Amount = tradingPair.TotalAmount.ToString("0.########"),
-                                   OrderDates = tradingPair.OrderDates.Select(d => d.ToOffset(TimeSpan.FromHours(coreService.Config.TimezoneOffset)).ToString("yyyy-MM-dd HH:mm:ss")),
+                                   OrderDates = tradingPair.OrderDates.Select(d => d.ToOffset(TimeSpan.FromHours(_coreService.Config.TimezoneOffset)).ToString("yyyy-MM-dd HH:mm:ss")),
                                    OrderIds = tradingPair.OrderIds,
                                    Age = tradingPair.CurrentAge.ToString("0.00"),
                                    CurrentRating = tradingPair.Metadata.CurrentRating?.ToString("0.000") ?? "N/A",
@@ -311,8 +308,8 @@ namespace IntelliTrader.Web.Controllers
                                    SignalRule = tradingPair.Metadata.SignalRule ?? "N/A",
                                    SwapPair = tradingPair.Metadata.SwapPair,
                                    TradingRules = pairConfig.Rules,
-                                   IsTrailingSell = tradingService.GetTrailingSells().Contains(tradingPair.Pair),
-                                   IsTrailingBuy = tradingService.GetTrailingBuys().Contains(tradingPair.Pair),
+                                   IsTrailingSell = _tradingService.GetTrailingSells().Contains(tradingPair.Pair),
+                                   IsTrailingBuy = _tradingService.GetTrailingBuys().Contains(tradingPair.Pair),
                                    LastBuyMargin = tradingPair.Metadata.LastBuyMargin?.ToString("0.00") ?? "N/A",
                                    Config = pairConfig
                                };
@@ -323,11 +320,7 @@ namespace IntelliTrader.Web.Controllers
         [HttpPost]
         public IActionResult MarketPairs(List<string> signalsFilter)
         {
-            var coreService = Application.Resolve<ICoreService>();
-            var tradingService = Application.Resolve<ITradingService>();
-            var signalsService = Application.Resolve<ISignalsService>();
-
-            var allSignals = signalsService.GetAllSignals();
+            var allSignals = _signalsService.GetAllSignals();
             if (allSignals != null)
             {
                 if (signalsFilter.Count > 0)
@@ -339,11 +332,11 @@ namespace IntelliTrader.Web.Controllers
 
                 var marketPairs = from signalGroup in groupedSignals
                                   let pair = signalGroup.Key
-                                  let pairConfig = tradingService.GetPairConfig(pair)
+                                  let pairConfig = _tradingService.GetPairConfig(pair)
                                   select new
                                   {
                                       Name = pair,
-                                      TradingViewName = $"{tradingService.Config.Exchange.ToUpperInvariant()}:{pair}",
+                                      TradingViewName = $"{_tradingService.Config.Exchange.ToUpperInvariant()}:{pair}",
                                       VolumeList = signalGroup.Value.Select(s => new { s.Name, s.Volume }),
                                       VolumeChangeList = signalGroup.Value.Select(s => new { s.Name, s.VolumeChange }),
                                       PriceList = signalGroup.Value.Select(s => new { s.Name, s.Price }),
@@ -351,8 +344,8 @@ namespace IntelliTrader.Web.Controllers
                                       RatingList = signalGroup.Value.Select(s => new { s.Name, s.Rating }),
                                       RatingChangeList = signalGroup.Value.Select(s => new { s.Name, s.RatingChange }),
                                       VolatilityList = signalGroup.Value.Select(s => new { s.Name, s.Volatility }),
-                                      SignalRules = signalsService.GetTrailingInfo(pair)?.Select(ti => ti.Rule.Name) ?? new string[0],
-                                      HasTradingPair = tradingService.Account.HasTradingPair(pair),
+                                      SignalRules = _signalsService.GetTrailingInfo(pair)?.Select(ti => ti.Rule.Name) ?? new string[0],
+                                      HasTradingPair = _tradingService.Account.HasTradingPair(pair),
                                       Config = pairConfig
                                   };
 
@@ -367,21 +360,18 @@ namespace IntelliTrader.Web.Controllers
         [HttpPost]
         public IActionResult Settings(SettingsViewModel model)
         {
-            var coreService = Application.Resolve<ICoreService>();
-            var tradingService = Application.Resolve<ITradingService>();
-
-            coreService.Config.HealthCheckEnabled = model.HealthCheckEnabled;
-            tradingService.Config.BuyEnabled = model.BuyEnabled;
-            tradingService.Config.BuyDCAEnabled = model.BuyDCAEnabled;
-            tradingService.Config.SellEnabled = model.SellEnabled;
+            _coreService.Config.HealthCheckEnabled = model.HealthCheckEnabled;
+            _tradingService.Config.BuyEnabled = model.BuyEnabled;
+            _tradingService.Config.BuyDCAEnabled = model.BuyDCAEnabled;
+            _tradingService.Config.SellEnabled = model.SellEnabled;
 
             if (model.TradingSuspended)
             {
-                tradingService.SuspendTrading();
+                _tradingService.SuspendTrading();
             }
             else
             {
-                tradingService.ResumeTrading();
+                _tradingService.ResumeTrading();
             }
             return Settings();
         }
@@ -409,8 +399,7 @@ namespace IntelliTrader.Web.Controllers
             string pair = Request.Form["pair"].ToString();
             if (pair != null && decimal.TryParse(Request.Form["amount"], out decimal amount) && amount > 0)
             {
-                var tradingService = Application.Resolve<ITradingService>();
-                tradingService.Sell(new SellOptions(pair)
+                _tradingService.Sell(new SellOptions(pair)
                 {
                     Amount = amount,
                     ManualOrder = true
@@ -429,8 +418,7 @@ namespace IntelliTrader.Web.Controllers
             string pair = Request.Form["pair"].ToString();
             if (pair != null && decimal.TryParse(Request.Form["amount"], out decimal amount) && amount > 0)
             {
-                var tradingService = Application.Resolve<ITradingService>();
-                tradingService.Buy(new BuyOptions(pair)
+                _tradingService.Buy(new BuyOptions(pair)
                 {
                     Amount = amount,
                     IgnoreExisting = true,
@@ -450,16 +438,14 @@ namespace IntelliTrader.Web.Controllers
             string pair = Request.Form["pair"].ToString();
             if (pair != null)
             {
-                var signalsService = Application.Resolve<ISignalsService>();
-                var tradingService = Application.Resolve<ITradingService>();
-                tradingService.Buy(new BuyOptions(pair)
+                _tradingService.Buy(new BuyOptions(pair)
                 {
-                    MaxCost = tradingService.GetPairConfig(pair).BuyMaxCost,
+                    MaxCost = _tradingService.GetPairConfig(pair).BuyMaxCost,
                     IgnoreExisting = true,
                     ManualOrder = true,
                     Metadata = new OrderMetadata
                     {
-                        BoughtGlobalRating = signalsService.GetGlobalRating()
+                        BoughtGlobalRating = _signalsService.GetGlobalRating()
                     }
                 });
                 return new OkResult();
@@ -477,8 +463,7 @@ namespace IntelliTrader.Web.Controllers
             string swap = Request.Form["swap"].ToString();
             if (pair != null && swap != null)
             {
-                var tradingService = Application.Resolve<ITradingService>();
-                tradingService.Swap(new SwapOptions(pair, swap, new OrderMetadata())
+                _tradingService.Swap(new SwapOptions(pair, swap, new OrderMetadata())
                 {
                     ManualOrder = true
                 });
@@ -492,21 +477,18 @@ namespace IntelliTrader.Web.Controllers
 
         public IActionResult RefreshAccount()
         {
-            var tradingService = Application.Resolve<ITradingService>();
-            tradingService.Account.Refresh();
+            _tradingService.Account.Refresh();
             return new OkResult();
         }
 
         public IActionResult RestartServices()
         {
-            var coreService = Application.Resolve<ICoreService>();
-            coreService.Restart();
+            _coreService.Restart();
             return new OkResult();
         }
 
         private Dictionary<DateTimeOffset, List<TradeResult>> GetTrades(DateTimeOffset? date = null)
         {
-            var coreService = Application.Resolve<ICoreService>();
             var logsPath = Path.Combine(Directory.GetCurrentDirectory(), "log");
             var tradeResultPattern = new Regex($"{nameof(TradeResult)} (?<data>\\{{.*\\}})", RegexOptions.Compiled);
             var trades = new Dictionary<DateTimeOffset, List<TradeResult>>();
@@ -526,7 +508,7 @@ namespace IntelliTrader.Web.Controllers
                             TradeResult tradeResult = JsonConvert.DeserializeObject<TradeResult>(json);
                             if (tradeResult.IsSuccessful)
                             {
-                                DateTimeOffset tradeDate = tradeResult.SellDate.ToOffset(TimeSpan.FromHours(coreService.Config.TimezoneOffset)).Date;
+                                DateTimeOffset tradeDate = tradeResult.SellDate.ToOffset(TimeSpan.FromHours(_coreService.Config.TimezoneOffset)).Date;
                                 if (date == null || date == tradeDate)
                                 {
                                     if (!trades.ContainsKey(tradeDate))

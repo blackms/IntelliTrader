@@ -10,7 +10,18 @@ namespace IntelliTrader.Trading
     {
         protected override void Load(ContainerBuilder builder)
         {
-            builder.RegisterType<TradingService>().As<ITradingService>().As<IConfigurableService>().Named<IConfigurableService>(Constants.ServiceNames.TradingService).SingleInstance();
+            // Register exchange service factory that resolves named exchange services
+            builder.Register<Func<string, IExchangeService>>(ctx =>
+            {
+                var context = ctx.Resolve<IComponentContext>();
+                return name => context.ResolveOptionalNamed<IExchangeService>(name);
+            });
+
+            builder.RegisterType<TradingService>()
+                .As<ITradingService>()
+                .As<IConfigurableService>()
+                .Named<IConfigurableService>(Constants.ServiceNames.TradingService)
+                .SingleInstance();
         }
     }
 }

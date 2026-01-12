@@ -21,8 +21,8 @@ namespace IntelliTrader.Exchange.Binance
         private DateTimeOffset lastTickersUpdate;
         private bool tickersChecked;
 
-        public BinanceExchangeService(ILoggingService loggingService, IHealthCheckService healthCheckService) :
-            base(loggingService, healthCheckService)
+        public BinanceExchangeService(ILoggingService loggingService, IHealthCheckService healthCheckService, ICoreService coreService) :
+            base(loggingService, healthCheckService, coreService)
         {
 
         }
@@ -85,7 +85,7 @@ namespace IntelliTrader.Exchange.Binance
 
                 tickersMonitorTimedTask = new BinanceTickersMonitorTimedTask(loggingService, this);
                 tickersMonitorTimedTask.RunInterval = MAX_TICKERS_AGE_TO_RECONNECT_SECONDS / 2;
-                Application.Resolve<ICoreService>().AddTask(nameof(BinanceTickersMonitorTimedTask), tickersMonitorTimedTask);
+                coreService.AddTask(nameof(BinanceTickersMonitorTimedTask), tickersMonitorTimedTask);
             }
             catch (Exception ex)
             {
@@ -97,8 +97,8 @@ namespace IntelliTrader.Exchange.Binance
         {
             try
             {
-                Application.Resolve<ICoreService>().StopTask(nameof(BinanceTickersMonitorTimedTask));
-                Application.Resolve<ICoreService>().RemoveTask(nameof(BinanceTickersMonitorTimedTask));
+                coreService.StopTask(nameof(BinanceTickersMonitorTimedTask));
+                coreService.RemoveTask(nameof(BinanceTickersMonitorTimedTask));
 
                 loggingService.Info("Disconnect from Binance Exchange tickers...");
                 // Give Dispose 10 seconds to complete and then time out if not

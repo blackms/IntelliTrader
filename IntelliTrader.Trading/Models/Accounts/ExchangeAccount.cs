@@ -182,7 +182,6 @@ namespace IntelliTrader.Trading
             {
                 try
                 {
-                    var tradingService = Application.Resolve<ITradingService>();
                     string accountFilePath = Path.Combine(Directory.GetCurrentDirectory(), tradingService.Config.AccountFilePath);
 
                     var data = new TradingAccountData
@@ -209,7 +208,6 @@ namespace IntelliTrader.Trading
             {
                 try
                 {
-                    var tradingService = Application.Resolve<ITradingService>();
                     string accountFilePath = Path.Combine(Directory.GetCurrentDirectory(), tradingService.Config.AccountFilePath);
 
                     if (File.Exists(accountFilePath))

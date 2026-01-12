@@ -14,14 +14,16 @@ namespace IntelliTrader.Core
         INotificationConfig INotificationService.Config => Config;
 
         private readonly ILoggingService loggingService;
+        private readonly ICoreService coreService;
 
         // Telegram
         private TelegramBotClient telegramBotClient;
         private ChatId telegramChatId;
 
-        public NotificationService(ILoggingService loggingService)
+        public NotificationService(ILoggingService loggingService, ICoreService coreService)
         {
-            this.loggingService = loggingService;
+            this.loggingService = loggingService ?? throw new ArgumentNullException(nameof(loggingService));
+            this.coreService = coreService ?? throw new ArgumentNullException(nameof(coreService));
         }
 
         public void Start()
@@ -62,7 +64,7 @@ namespace IntelliTrader.Core
                 {
                     try
                     {
-                        var instanceName = Application.Resolve<ICoreService>().Config.InstanceName;
+                        var instanceName = coreService.Config.InstanceName;
                         telegramBotClient.SendTextMessageAsync(
                             chatId: telegramChatId,
                             text: $"({instanceName}) {message}",

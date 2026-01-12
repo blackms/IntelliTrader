@@ -8,24 +8,32 @@ namespace IntelliTrader.Core
     {
         private readonly ILoggingService loggingService;
         private readonly INotificationService notificationService;
+        private readonly ICoreService coreService;
+        private readonly ITradingService tradingService;
 
         private readonly ConcurrentDictionary<string, HealthCheck> healthChecks = new ConcurrentDictionary<string, HealthCheck>();
         private HealthCheckTimedTask healthCheckTimedTask;
 
-        public HealthCheckService(ILoggingService loggingService, INotificationService notificationService)
+        public HealthCheckService(
+            ILoggingService loggingService,
+            INotificationService notificationService,
+            ICoreService coreService,
+            ITradingService tradingService)
         {
-            this.loggingService = loggingService;
-            this.notificationService = notificationService;
+            this.loggingService = loggingService ?? throw new ArgumentNullException(nameof(loggingService));
+            this.notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
+            this.coreService = coreService ?? throw new ArgumentNullException(nameof(coreService));
+            this.tradingService = tradingService ?? throw new ArgumentNullException(nameof(tradingService));
         }
 
         public void Start()
         {
             loggingService.Info($"Start Health Check service...");
 
-            healthCheckTimedTask = new HealthCheckTimedTask(loggingService, notificationService, this, Application.Resolve<ICoreService>(), Application.Resolve<ITradingService>());
-            healthCheckTimedTask.RunInterval = (float)(Application.Resolve<ICoreService>().Config.HealthCheckInterval * 1000 / Application.Speed);
+            healthCheckTimedTask = new HealthCheckTimedTask(loggingService, notificationService, this, coreService, tradingService);
+            healthCheckTimedTask.RunInterval = (float)(coreService.Config.HealthCheckInterval * 1000 / Application.Speed);
             healthCheckTimedTask.StartDelay = Constants.TimedTasks.StandardDelay / Application.Speed;
-            Application.Resolve<ICoreService>().AddTask(nameof(HealthCheckTimedTask), healthCheckTimedTask);
+            coreService.AddTask(nameof(HealthCheckTimedTask), healthCheckTimedTask);
 
             loggingService.Info("Health Check service started");
         }
@@ -34,8 +42,8 @@ namespace IntelliTrader.Core
         {
             loggingService.Info($"Stop Health Check service...");
 
-            Application.Resolve<ICoreService>().StopTask(nameof(HealthCheckTimedTask));
-            Application.Resolve<ICoreService>().RemoveTask(nameof(HealthCheckTimedTask));
+            coreService.StopTask(nameof(HealthCheckTimedTask));
+            coreService.RemoveTask(nameof(HealthCheckTimedTask));
 
             loggingService.Info("Health Check service stopped");
         }

@@ -1,5 +1,4 @@
-﻿using Autofac;
-using IntelliTrader.Core;
+﻿using IntelliTrader.Core;
 using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Concurrent;
@@ -18,20 +17,30 @@ namespace IntelliTrader.Signals.Base
         public IModuleRules Rules { get; private set; }
         public ISignalRulesConfig RulesConfig { get; private set; }
 
+        private readonly ICoreService coreService;
         private readonly ILoggingService loggingService;
         private readonly IHealthCheckService healthCheckService;
         private readonly ITradingService tradingService;
         private readonly IRulesService rulesService;
+        private readonly Func<string, string, IConfigurationSection, ISignalReceiver> signalReceiverFactory;
 
         private ConcurrentDictionary<string, ISignalReceiver> signalReceivers = new ConcurrentDictionary<string, ISignalReceiver>();
         private SignalRulesTimedTask signalRulesTimedTask;
 
-        public SignalsService(ILoggingService loggingService, IHealthCheckService healthCheckService, ITradingService tradingService, IRulesService rulesService)
+        public SignalsService(
+            ICoreService coreService,
+            ILoggingService loggingService,
+            IHealthCheckService healthCheckService,
+            ITradingService tradingService,
+            IRulesService rulesService,
+            Func<string, string, IConfigurationSection, ISignalReceiver> signalReceiverFactory)
         {
-            this.loggingService = loggingService;
-            this.healthCheckService = healthCheckService;
-            this.tradingService = tradingService;
-            this.rulesService = rulesService;
+            this.coreService = coreService ?? throw new ArgumentNullException(nameof(coreService));
+            this.loggingService = loggingService ?? throw new ArgumentNullException(nameof(loggingService));
+            this.healthCheckService = healthCheckService ?? throw new ArgumentNullException(nameof(healthCheckService));
+            this.tradingService = tradingService ?? throw new ArgumentNullException(nameof(tradingService));
+            this.rulesService = rulesService ?? throw new ArgumentNullException(nameof(rulesService));
+            this.signalReceiverFactory = signalReceiverFactory ?? throw new ArgumentNullException(nameof(signalReceiverFactory));
         }
 
         public void Start()
@@ -44,9 +53,7 @@ namespace IntelliTrader.Signals.Base
             signalReceivers.Clear();
             foreach (var definition in Config.Definitions)
             {
-                var receiver = Application.ResolveOptionalNamed<ISignalReceiver>(definition.Receiver,
-                    new TypedParameter(typeof(string), definition.Name),
-                    new TypedParameter(typeof(IConfigurationSection), definition.Configuration));
+                var receiver = signalReceiverFactory(definition.Receiver, definition.Name, definition.Configuration);
 
                 if (receiver != null)
                 {
@@ -68,7 +75,7 @@ namespace IntelliTrader.Signals.Base
             signalRulesTimedTask = new SignalRulesTimedTask(loggingService, healthCheckService, tradingService, rulesService, this);
             signalRulesTimedTask.RunInterval = (float)(RulesConfig.CheckInterval * 1000 / Application.Speed);
             signalRulesTimedTask.StartDelay = Constants.TimedTasks.StandardDelay / Application.Speed;
-            Application.Resolve<ICoreService>().AddTask(nameof(SignalRulesTimedTask), signalRulesTimedTask);
+            coreService.AddTask(nameof(SignalRulesTimedTask), signalRulesTimedTask);
 
             loggingService.Info("Signals service started");
         }
@@ -83,8 +90,8 @@ namespace IntelliTrader.Signals.Base
             }
             signalReceivers.Clear();
 
-            Application.Resolve<ICoreService>().StopTask(nameof(SignalRulesTimedTask));
-            Application.Resolve<ICoreService>().RemoveTask(nameof(SignalRulesTimedTask));
+            coreService.StopTask(nameof(SignalRulesTimedTask));
+            coreService.RemoveTask(nameof(SignalRulesTimedTask));
 
             rulesService.UnregisterRulesChangeCallback(OnSignalRulesChanged);
 

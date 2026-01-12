@@ -24,12 +24,14 @@ namespace IntelliTrader.Trading
         public ConcurrentStack<IOrderDetails> OrderHistory { get; private set; } = new ConcurrentStack<IOrderDetails>();
         public bool IsTradingSuspended { get; private set; }
 
+        private readonly ICoreService coreService;
         private readonly ILoggingService loggingService;
         private readonly INotificationService notificationService;
         private readonly IHealthCheckService healthCheckService;
         private readonly IRulesService rulesService;
+        private readonly IBacktestingService backtestingService;
         private readonly IExchangeService exchangeService;
-        private ISignalsService signalsService;
+        private readonly ISignalsService signalsService;
 
         private TradingTimedTask tradingTimedTask;
         private TradingRulesTimedTask tradingRulesTimedTask;
@@ -38,21 +40,33 @@ namespace IntelliTrader.Trading
         private bool isReplayingSnapshots;
         private bool tradingForcefullySuspended;
 
-        public TradingService(ILoggingService loggingService, INotificationService notificationService, IHealthCheckService healthCheckService, IRulesService rulesService)
+        public TradingService(
+            ICoreService coreService,
+            ILoggingService loggingService,
+            INotificationService notificationService,
+            IHealthCheckService healthCheckService,
+            IRulesService rulesService,
+            IBacktestingService backtestingService,
+            ISignalsService signalsService,
+            Func<string, IExchangeService> exchangeServiceFactory)
         {
-            this.loggingService = loggingService;
-            this.notificationService = notificationService;
-            this.healthCheckService = healthCheckService;
-            this.rulesService = rulesService;
-            this.isReplayingSnapshots = Application.Resolve<IBacktestingService>().Config.Enabled && Application.Resolve<IBacktestingService>().Config.Replay;
+            this.coreService = coreService ?? throw new ArgumentNullException(nameof(coreService));
+            this.loggingService = loggingService ?? throw new ArgumentNullException(nameof(loggingService));
+            this.notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
+            this.healthCheckService = healthCheckService ?? throw new ArgumentNullException(nameof(healthCheckService));
+            this.rulesService = rulesService ?? throw new ArgumentNullException(nameof(rulesService));
+            this.backtestingService = backtestingService ?? throw new ArgumentNullException(nameof(backtestingService));
+            this.signalsService = signalsService ?? throw new ArgumentNullException(nameof(signalsService));
+
+            this.isReplayingSnapshots = backtestingService.Config.Enabled && backtestingService.Config.Replay;
 
             if (isReplayingSnapshots)
             {
-                this.exchangeService = Application.ResolveOptionalNamed<IExchangeService>(Constants.ServiceNames.BacktestingExchangeService);
+                this.exchangeService = exchangeServiceFactory(Constants.ServiceNames.BacktestingExchangeService);
             }
             else
             {
-                this.exchangeService = Application.ResolveOptionalNamed<IExchangeService>(Config.Exchange);
+                this.exchangeService = exchangeServiceFactory(Config.Exchange);
             }
 
             if (this.exchangeService == null)
@@ -72,8 +86,6 @@ namespace IntelliTrader.Trading
 
             exchangeService.Start(Config.VirtualTrading);
 
-            signalsService = Application.Resolve<ISignalsService>();
-
             if (!Config.VirtualTrading)
             {
                 Account = new ExchangeAccount(loggingService, notificationService, healthCheckService, signalsService, this);
@@ -86,7 +98,7 @@ namespace IntelliTrader.Trading
             accountTimedTask = new AccountTimedTask(loggingService, healthCheckService, this);
             accountTimedTask.RunInterval = (float)(Config.AccountRefreshInterval * 1000 / Application.Speed);
             accountTimedTask.Run();
-            Application.Resolve<ICoreService>().AddTask(nameof(AccountTimedTask), accountTimedTask);
+            coreService.AddTask(nameof(AccountTimedTask), accountTimedTask);
 
             if (signalsService.Config.Enabled)
             {
@@ -97,11 +109,11 @@ namespace IntelliTrader.Trading
             tradingTimedTask.RunInterval = (float)(Config.TradingCheckInterval * 1000 / Application.Speed);
             tradingTimedTask.StartDelay = Constants.TimedTasks.StandardDelay / Application.Speed;
             tradingTimedTask.LoggingEnabled = !isReplayingSnapshots;
-            Application.Resolve<ICoreService>().AddTask(nameof(TradingTimedTask), tradingTimedTask);
+            coreService.AddTask(nameof(TradingTimedTask), tradingTimedTask);
 
             tradingRulesTimedTask = new TradingRulesTimedTask(loggingService, notificationService, healthCheckService, rulesService, signalsService, this);
             tradingRulesTimedTask.RunInterval = (float)(RulesConfig.CheckInterval * 1000 / Application.Speed);
-            Application.Resolve<ICoreService>().AddTask(nameof(TradingRulesTimedTask), tradingRulesTimedTask);
+            coreService.AddTask(nameof(TradingRulesTimedTask), tradingRulesTimedTask);
 
             IsTradingSuspended = false;
 
@@ -119,14 +131,14 @@ namespace IntelliTrader.Trading
                 signalsService.Stop();
             }
 
-            Application.Resolve<ICoreService>().StopTask(nameof(TradingTimedTask));
-            Application.Resolve<ICoreService>().RemoveTask(nameof(TradingTimedTask));
+            coreService.StopTask(nameof(TradingTimedTask));
+            coreService.RemoveTask(nameof(TradingTimedTask));
 
-            Application.Resolve<ICoreService>().StopTask(nameof(TradingRulesTimedTask));
-            Application.Resolve<ICoreService>().RemoveTask(nameof(TradingRulesTimedTask));
+            coreService.StopTask(nameof(TradingRulesTimedTask));
+            coreService.RemoveTask(nameof(TradingRulesTimedTask));
 
-            Application.Resolve<ICoreService>().StopTask(nameof(AccountTimedTask));
-            Application.Resolve<ICoreService>().RemoveTask(nameof(AccountTimedTask));
+            coreService.StopTask(nameof(AccountTimedTask));
+            coreService.RemoveTask(nameof(AccountTimedTask));
 
             Account.Dispose();
 
@@ -145,8 +157,8 @@ namespace IntelliTrader.Trading
                 loggingService.Info("Trading started");
                 IsTradingSuspended = false;
 
-                Application.Resolve<ICoreService>().StartTask(nameof(TradingTimedTask));
-                Application.Resolve<ICoreService>().StartTask(nameof(TradingRulesTimedTask));
+                coreService.StartTask(nameof(TradingTimedTask));
+                coreService.StartTask(nameof(TradingRulesTimedTask));
                 tradingRulesTimedTask.Run();
             }
         }
@@ -159,8 +171,8 @@ namespace IntelliTrader.Trading
                 IsTradingSuspended = true;
                 tradingForcefullySuspended = forced;
 
-                Application.Resolve<ICoreService>().StopTask(nameof(TradingTimedTask));
-                Application.Resolve<ICoreService>().StopTask(nameof(TradingRulesTimedTask));
+                coreService.StopTask(nameof(TradingTimedTask));
+                coreService.StopTask(nameof(TradingRulesTimedTask));
                 tradingTimedTask.ClearTrailing();
             }
         }

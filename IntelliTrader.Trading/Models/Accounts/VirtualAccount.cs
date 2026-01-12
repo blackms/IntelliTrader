@@ -35,7 +35,6 @@ namespace IntelliTrader.Trading
         {
             lock (SyncRoot)
             {
-                var tradingService = Application.Resolve<ITradingService>();
                 string virtualAccountFilePath = Path.Combine(Directory.GetCurrentDirectory(), tradingService.Config.VirtualAccountFilePath);
 
                 var data = new TradingAccountData
@@ -55,7 +54,6 @@ namespace IntelliTrader.Trading
         {
             lock (SyncRoot)
             {
-                var tradingService = Application.Resolve<ITradingService>();
                 var virtualAccountFilePath = Path.Combine(Directory.GetCurrentDirectory(), tradingService.Config.VirtualAccountFilePath);
 
                 if (File.Exists(virtualAccountFilePath))

@@ -20,17 +20,25 @@ namespace IntelliTrader.Backtesting
         private readonly ITradingService tradingService;
         private readonly IRulesService rulesService;
         private readonly IBacktestingService backtestingService;
+        private readonly ICoreService coreService;
 
         private SignalRulesTimedTask signalRulesTimedTask;
         private IEnumerable<string> signalNames;
 
-        public BacktestingSignalsService(ILoggingService loggingService, IHealthCheckService healthCheckService, ITradingService tradingService, IRulesService rulesService, IBacktestingService backtestingService)
+        public BacktestingSignalsService(
+            ILoggingService loggingService,
+            IHealthCheckService healthCheckService,
+            ITradingService tradingService,
+            IRulesService rulesService,
+            IBacktestingService backtestingService,
+            ICoreService coreService)
         {
-            this.loggingService = loggingService;
-            this.healthCheckService = healthCheckService;
-            this.tradingService = tradingService;
-            this.rulesService = rulesService;
-            this.backtestingService = backtestingService;
+            this.loggingService = loggingService ?? throw new ArgumentNullException(nameof(loggingService));
+            this.healthCheckService = healthCheckService ?? throw new ArgumentNullException(nameof(healthCheckService));
+            this.tradingService = tradingService ?? throw new ArgumentNullException(nameof(tradingService));
+            this.rulesService = rulesService ?? throw new ArgumentNullException(nameof(rulesService));
+            this.backtestingService = backtestingService ?? throw new ArgumentNullException(nameof(backtestingService));
+            this.coreService = coreService ?? throw new ArgumentNullException(nameof(coreService));
         }
 
         public void Start()
@@ -43,7 +51,7 @@ namespace IntelliTrader.Backtesting
             signalRulesTimedTask = new SignalRulesTimedTask(loggingService, healthCheckService, tradingService, rulesService, this);
             signalRulesTimedTask.RunInterval = (float)(RulesConfig.CheckInterval * 1000 / Application.Speed);
             signalRulesTimedTask.LoggingEnabled = false;
-            Application.Resolve<ICoreService>().AddTask(nameof(SignalRulesTimedTask), signalRulesTimedTask);
+            coreService.AddTask(nameof(SignalRulesTimedTask), signalRulesTimedTask);
 
             loggingService.Info("Backtesting Signals service started");
         }
@@ -52,8 +60,8 @@ namespace IntelliTrader.Backtesting
         {
             loggingService.Info("Stop Backtesting Signals service...");
 
-            Application.Resolve<ICoreService>().StopTask(nameof(SignalRulesTimedTask));
-            Application.Resolve<ICoreService>().RemoveTask(nameof(SignalRulesTimedTask));
+            coreService.StopTask(nameof(SignalRulesTimedTask));
+            coreService.RemoveTask(nameof(SignalRulesTimedTask));
 
             rulesService.UnregisterRulesChangeCallback(OnSignalRulesChanged);
 

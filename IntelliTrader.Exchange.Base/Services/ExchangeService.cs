@@ -13,11 +13,13 @@ namespace IntelliTrader.Exchange.Base
 
         protected readonly ILoggingService loggingService;
         protected readonly IHealthCheckService healthCheckService;
+        protected readonly ICoreService coreService;
 
-        public ExchangeService(ILoggingService loggingService, IHealthCheckService healthCheckService)
+        public ExchangeService(ILoggingService loggingService, IHealthCheckService healthCheckService, ICoreService coreService)
         {
-            this.loggingService = loggingService;
-            this.healthCheckService = healthCheckService;
+            this.loggingService = loggingService ?? throw new ArgumentNullException(nameof(loggingService));
+            this.healthCheckService = healthCheckService ?? throw new ArgumentNullException(nameof(healthCheckService));
+            this.coreService = coreService ?? throw new ArgumentNullException(nameof(coreService));
         }
 
         public abstract void Start(bool virtualTrading);

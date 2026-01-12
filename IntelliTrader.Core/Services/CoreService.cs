@@ -72,7 +72,8 @@ namespace IntelliTrader.Core
             }
             if (notificationService.Config.Enabled)
             {
-                notificationService.Start();
+                // Fire-and-forget async start - notification service startup shouldn't block core service
+                _ = notificationService.StartAsync();
             }
             if (webService.Config.Enabled)
             {
@@ -88,12 +89,12 @@ namespace IntelliTrader.Core
             });
 
             loggingService.Info("Core service started");
-            notificationService.Notify($"IntelliTrader started");
+            _ = notificationService.NotifyAsync("IntelliTrader started");
         }
 
         public void Stop()
         {
-            notificationService.Notify("IntelliTrader stopped");
+            _ = notificationService.NotifyAsync("IntelliTrader stopped");
             loggingService.Info("Stop Core service...");
             if (tradingService.Config.Enabled)
             {
@@ -123,7 +124,7 @@ namespace IntelliTrader.Core
 
         public void Restart()
         {
-            notificationService.Notify("IntelliTrader restarting...");
+            _ = notificationService.NotifyAsync("IntelliTrader restarting...");
             loggingService.Info("Restart Core service...");
             Task.Run(() => Stop()).Wait(TimeSpan.FromSeconds(20));
             Start();
@@ -205,7 +206,7 @@ namespace IntelliTrader.Core
             try
             {
                 loggingService.Error(message);
-                notificationService.Notify(message);
+                _ = notificationService.NotifyAsync(message);
             } catch { }
         }
     }

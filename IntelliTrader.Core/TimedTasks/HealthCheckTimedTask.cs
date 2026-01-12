@@ -69,7 +69,7 @@ namespace IntelliTrader.Core
                     if (healthCheckFailed && !tradingService.IsTradingSuspended)
                     {
                         loggingService.Info($"Health check failed ({healthCheckFailures})");
-                        notificationService.Notify($"Health check failed ({healthCheckFailures})");
+                        _ = notificationService.NotifyAsync($"Health check failed ({healthCheckFailures})");
                         healthCheckService.RemoveHealthCheck(Constants.HealthChecks.TradingPairsProcessed);
                         healthCheckService.RemoveHealthCheck(Constants.HealthChecks.TradingRulesProcessed);
                         healthCheckService.RemoveHealthCheck(Constants.HealthChecks.SignalRulesProcessed);
@@ -78,7 +78,7 @@ namespace IntelliTrader.Core
                     else if (!healthCheckFailed && tradingService.IsTradingSuspended)
                     {
                         loggingService.Info("Health check passed");
-                        notificationService.Notify("Health check passed");
+                        _ = notificationService.NotifyAsync("Health check passed");
                         tradingService.ResumeTrading();
                     }
                 }

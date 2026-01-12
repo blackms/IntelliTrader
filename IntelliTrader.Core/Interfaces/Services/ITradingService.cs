@@ -28,11 +28,21 @@ namespace IntelliTrader.Core
         void LogOrder(IOrderDetails order);
         List<string> GetTrailingBuys();
         List<string> GetTrailingSells();
+
+        // Synchronous methods (for backward compatibility and use in locked sections)
         IEnumerable<ITicker> GetTickers();
         IEnumerable<string> GetMarketPairs();
         Dictionary<string, decimal> GetAvailableAmounts();
         IEnumerable<IOrderDetails> GetMyTrades(string pair);
         IOrderDetails PlaceOrder(IOrder order);
         decimal GetCurrentPrice(string pair);
+
+        // Async methods (preferred for new code)
+        Task<IEnumerable<ITicker>> GetTickersAsync();
+        Task<IEnumerable<string>> GetMarketPairsAsync();
+        Task<Dictionary<string, decimal>> GetAvailableAmountsAsync();
+        Task<IEnumerable<IOrderDetails>> GetMyTradesAsync(string pair);
+        Task<IOrderDetails> PlaceOrderAsync(IOrder order);
+        Task<decimal> GetCurrentPriceAsync(string pair);
     }
 }

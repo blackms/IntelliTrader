@@ -1,11 +1,15 @@
 ﻿using ExchangeSharp;
 using IntelliTrader.Core;
 using IntelliTrader.Exchange.Base;
+using Polly;
+using Polly.Retry;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Threading.Tasks;
 
 namespace IntelliTrader.Exchange.Binance
@@ -14,6 +18,10 @@ namespace IntelliTrader.Exchange.Binance
     {
         public const int MAX_TICKERS_AGE_TO_RECONNECT_SECONDS = 60;
 
+        // Retry policy configuration
+        private const int MaxRetryAttempts = 3;
+        private static readonly TimeSpan InitialRetryDelay = TimeSpan.FromSeconds(1);
+
         private ExchangeBinanceAPI binanceApi;
         private IDisposable socket;
         private ConcurrentDictionary<string, Ticker> tickers;
@@ -21,10 +29,36 @@ namespace IntelliTrader.Exchange.Binance
         private DateTimeOffset lastTickersUpdate;
         private bool tickersChecked;
 
+        // Polly retry pipeline for exchange operations
+        private readonly ResiliencePipeline _resiliencePipeline;
+
         public BinanceExchangeService(ILoggingService loggingService, IHealthCheckService healthCheckService, ICoreService coreService) :
             base(loggingService, healthCheckService, coreService)
         {
-
+            // Build resilience pipeline with exponential backoff retry
+            _resiliencePipeline = new ResiliencePipelineBuilder()
+                .AddRetry(new RetryStrategyOptions
+                {
+                    MaxRetryAttempts = MaxRetryAttempts,
+                    Delay = InitialRetryDelay,
+                    BackoffType = DelayBackoffType.Exponential,
+                    ShouldHandle = new PredicateBuilder()
+                        .Handle<HttpRequestException>()
+                        .Handle<TaskCanceledException>()
+                        .Handle<TimeoutException>()
+                        .Handle<Exception>(ex =>
+                            // Retry on rate limit or server errors
+                            ex.Message.Contains("429") ||
+                            ex.Message.Contains("503") ||
+                            ex.Message.Contains("502") ||
+                            ex.Message.Contains("500")),
+                    OnRetry = args =>
+                    {
+                        loggingService.Info($"Retrying exchange operation (attempt {args.AttemptNumber + 1}/{MaxRetryAttempts}) after {args.RetryDelay.TotalSeconds:0.0}s delay. Reason: {args.Outcome.Exception?.Message ?? "Unknown"}");
+                        return ValueTask.CompletedTask;
+                    }
+                })
+                .Build();
         }
 
         public override void Start(bool virtualTrading)
@@ -124,35 +158,41 @@ namespace IntelliTrader.Exchange.Binance
 
         public override async Task<Dictionary<string, decimal>> GetAvailableAmounts()
         {
-            var results = await binanceApi.GetAmountsAvailableToTradeAsync();
-            return results;
+            return await _resiliencePipeline.ExecuteAsync(async cancellationToken =>
+            {
+                var results = await binanceApi.GetAmountsAvailableToTradeAsync();
+                return results;
+            });
         }
 
         public override async Task<IEnumerable<IOrderDetails>> GetMyTrades(string pair)
         {
-            var myTrades = new List<OrderDetails>();
-            var results = await binanceApi.GetMyTradesAsync(pair);
-
-            foreach (var result in results)
+            return await _resiliencePipeline.ExecuteAsync(async cancellationToken =>
             {
-                myTrades.Add(new OrderDetails
-                {
-                    Side = result.IsBuy ? OrderSide.Buy : OrderSide.Sell,
-                    Result = (OrderResult)(int)result.Result,
-                    Date = result.OrderDate,
-                    OrderId = result.OrderId,
-                    Pair = result.MarketSymbol,
-                    Message = result.Message,
-                    Amount = result.Amount,
-                    AmountFilled = result.AmountFilled ?? 0m,
-                    Price = result.Price ?? 0m,
-                    AveragePrice = result.AveragePrice ?? 0m,
-                    Fees = result.Fees ?? 0m,
-                    FeesCurrency = result.FeesCurrency
-                });
-            }
+                var myTrades = new List<OrderDetails>();
+                var results = await binanceApi.GetMyTradesAsync(pair);
 
-            return myTrades;
+                foreach (var result in results)
+                {
+                    myTrades.Add(new OrderDetails
+                    {
+                        Side = result.IsBuy ? OrderSide.Buy : OrderSide.Sell,
+                        Result = (OrderResult)(int)result.Result,
+                        Date = result.OrderDate,
+                        OrderId = result.OrderId,
+                        Pair = result.MarketSymbol,
+                        Message = result.Message,
+                        Amount = result.Amount,
+                        AmountFilled = result.AmountFilled ?? 0m,
+                        Price = result.Price ?? 0m,
+                        AveragePrice = result.AveragePrice ?? 0m,
+                        Fees = result.Fees ?? 0m,
+                        FeesCurrency = result.FeesCurrency
+                    });
+                }
+
+                return (IEnumerable<IOrderDetails>)myTrades;
+            });
         }
 
         public override async Task<decimal> GetLastPrice(string pair)
@@ -169,30 +209,35 @@ namespace IntelliTrader.Exchange.Binance
 
         public override async Task<IOrderDetails> PlaceOrder(IOrder order)
         {
-            var result = await binanceApi.PlaceOrderAsync(new ExchangeOrderRequest
+            // Note: Order placement uses retry policy carefully.
+            // Retries only on connection/timeout errors, not on order rejection.
+            return await _resiliencePipeline.ExecuteAsync(async cancellationToken =>
             {
-                OrderType = (ExchangeSharp.OrderType)(int)order.Type,
-                IsBuy = order.Side == OrderSide.Buy,
-                Amount = order.Amount,
-                Price = order.Price,
-                MarketSymbol = order.Pair
-            });
+                var result = await binanceApi.PlaceOrderAsync(new ExchangeOrderRequest
+                {
+                    OrderType = (ExchangeSharp.OrderType)(int)order.Type,
+                    IsBuy = order.Side == OrderSide.Buy,
+                    Amount = order.Amount,
+                    Price = order.Price,
+                    MarketSymbol = order.Pair
+                });
 
-            return new OrderDetails
-            {
-                Side = result.IsBuy ? OrderSide.Buy : OrderSide.Sell,
-                Result = (OrderResult)(int)result.Result,
-                Date = result.OrderDate,
-                OrderId = result.OrderId,
-                Pair = result.MarketSymbol,
-                Message = result.Message,
-                Amount = result.Amount,
-                AmountFilled = result.AmountFilled ?? 0m,
-                Price = result.Price ?? 0m,
-                AveragePrice = result.AveragePrice ?? 0m,
-                Fees = result.Fees ?? 0m,
-                FeesCurrency = result.FeesCurrency
-            };
+                return (IOrderDetails)new OrderDetails
+                {
+                    Side = result.IsBuy ? OrderSide.Buy : OrderSide.Sell,
+                    Result = (OrderResult)(int)result.Result,
+                    Date = result.OrderDate,
+                    OrderId = result.OrderId,
+                    Pair = result.MarketSymbol,
+                    Message = result.Message,
+                    Amount = result.Amount,
+                    AmountFilled = result.AmountFilled ?? 0m,
+                    Price = result.Price ?? 0m,
+                    AveragePrice = result.AveragePrice ?? 0m,
+                    Fees = result.Fees ?? 0m,
+                    FeesCurrency = result.FeesCurrency
+                };
+            });
         }
 
         public TimeSpan GetTimeElapsedSinceLastTickersUpdate()

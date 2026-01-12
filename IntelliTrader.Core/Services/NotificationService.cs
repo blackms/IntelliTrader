@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading.Tasks;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -26,7 +27,7 @@ namespace IntelliTrader.Core
             this.coreService = coreService ?? throw new ArgumentNullException(nameof(coreService));
         }
 
-        public void Start()
+        public async Task StartAsync()
         {
             try
             {
@@ -34,7 +35,8 @@ namespace IntelliTrader.Core
                 if (Config.TelegramEnabled)
                 {
                     telegramBotClient = new TelegramBotClient(Config.TelegramBotToken);
-                    var me = telegramBotClient.GetMeAsync().Result;
+                    // Validate bot token by calling GetMe
+                    await telegramBotClient.GetMeAsync().ConfigureAwait(false);
                     telegramChatId = new ChatId(Config.TelegramChatId);
                 }
                 loggingService.Info("Notification service started");
@@ -56,7 +58,7 @@ namespace IntelliTrader.Core
             loggingService.Info("Notification service stopped");
         }
 
-        public void Notify(string message)
+        public async Task NotifyAsync(string message)
         {
             if (Config.Enabled)
             {
@@ -65,10 +67,10 @@ namespace IntelliTrader.Core
                     try
                     {
                         var instanceName = coreService.Config.InstanceName;
-                        telegramBotClient.SendTextMessageAsync(
+                        await telegramBotClient.SendTextMessageAsync(
                             chatId: telegramChatId,
                             text: $"({instanceName}) {message}",
-                            disableNotification: !Config.TelegramAlertsEnabled);
+                            disableNotification: !Config.TelegramAlertsEnabled).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
@@ -81,7 +83,8 @@ namespace IntelliTrader.Core
         protected override void OnConfigReloaded()
         {
             Stop();
-            Start();
+            // Fire-and-forget for config reload since we're in a sync context
+            _ = StartAsync();
         }
     }
 }

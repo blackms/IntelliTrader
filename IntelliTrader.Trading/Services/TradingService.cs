@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace IntelliTrader.Trading
 {
@@ -389,7 +390,7 @@ namespace IntelliTrader.Trading
                             else
                             {
                                 loggingService.Info($"Unable to swap {options.OldPair} for {options.NewPair}. Reason: failed to buy {options.NewPair}");
-                                notificationService.Notify($"Unable to swap {options.OldPair} for {options.NewPair}: Failed to buy {options.NewPair}");
+                                _ = notificationService.NotifyAsync($"Unable to swap {options.OldPair} for {options.NewPair}: Failed to buy {options.NewPair}");
                             }
                         }
                         else
@@ -567,7 +568,7 @@ namespace IntelliTrader.Trading
                 {
                     string newPairName = tradingPair != null ? tradingPair.FormattedName : options.Pair;
                     loggingService.Info($"Buy order filled for {newPairName}. Price: {orderDetails.AveragePrice:0.00000000}, Amount: {orderDetails.AmountFilled:0.00000000}, Cost: {orderDetails.AverageCost:0.00}");
-                    notificationService.Notify($"Buy order filled for {newPairName}. Price: {orderDetails.AveragePrice:0.00000000}, Cost: {orderDetails.AverageCost:0.00}");
+                    _ = notificationService.NotifyAsync($"Buy order filled for {newPairName}. Price: {orderDetails.AveragePrice:0.00000000}, Cost: {orderDetails.AverageCost:0.00}");
                     LogOrder(orderDetails);
                 }
                 else
@@ -610,7 +611,7 @@ namespace IntelliTrader.Trading
                 if (orderDetails != null && orderDetails.Result == OrderResult.Filled)
                 {
                     loggingService.Info($"Sell order filled for {tradingPair.FormattedName}. Price: {orderDetails.AveragePrice:0.00000000}, Margin: {tradingPair.CurrentMargin:0.00}%");
-                    notificationService.Notify($"Sell order filled for {tradingPair.FormattedName}. Price: {orderDetails.AveragePrice:0.00000000}, Margin: {tradingPair.CurrentMargin:0.00}%");
+                    _ = notificationService.NotifyAsync($"Sell order filled for {tradingPair.FormattedName}. Price: {orderDetails.AveragePrice:0.00000000}, Margin: {tradingPair.CurrentMargin:0.00}%");
                     LogOrder(orderDetails);
                 }
                 else
@@ -665,6 +666,37 @@ namespace IntelliTrader.Trading
         public decimal GetCurrentPrice(string pair)
         {
             return exchangeService.GetLastPrice(pair).Result;
+        }
+
+        // Async implementations - preferred for new code
+        public async Task<IEnumerable<ITicker>> GetTickersAsync()
+        {
+            return await exchangeService.GetTickers(Config.Market).ConfigureAwait(false);
+        }
+
+        public async Task<IEnumerable<string>> GetMarketPairsAsync()
+        {
+            return await exchangeService.GetMarketPairs(Config.Market).ConfigureAwait(false);
+        }
+
+        public async Task<Dictionary<string, decimal>> GetAvailableAmountsAsync()
+        {
+            return await exchangeService.GetAvailableAmounts().ConfigureAwait(false);
+        }
+
+        public async Task<IEnumerable<IOrderDetails>> GetMyTradesAsync(string pair)
+        {
+            return await exchangeService.GetMyTrades(pair).ConfigureAwait(false);
+        }
+
+        public async Task<IOrderDetails> PlaceOrderAsync(IOrder order)
+        {
+            return await exchangeService.PlaceOrder(order).ConfigureAwait(false);
+        }
+
+        public async Task<decimal> GetCurrentPriceAsync(string pair)
+        {
+            return await exchangeService.GetLastPrice(pair).ConfigureAwait(false);
         }
 
         private void OnTradingRulesChanged()

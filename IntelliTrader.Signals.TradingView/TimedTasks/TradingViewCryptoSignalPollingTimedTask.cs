@@ -9,6 +9,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace IntelliTrader.Signals.TradingView
 {
@@ -47,6 +48,13 @@ namespace IntelliTrader.Signals.TradingView
 
         public override void Run()
         {
+            // Run async implementation synchronously since base class requires sync Run()
+            // Using GetAwaiter().GetResult() instead of .Result to preserve exception stack traces
+            RunAsync().GetAwaiter().GetResult();
+        }
+
+        private async Task RunAsync()
+        {
             var requestData = signalReceiver.Config.RequestData
                 .Replace("%EXCHANGE%", tradingService.Config.Exchange.ToUpper())
                 .Replace("%MARKET%", tradingService.Config.Market)
@@ -56,9 +64,9 @@ namespace IntelliTrader.Signals.TradingView
             var requestContent = new StringContent(requestData, Encoding.UTF8, "application/json");
             try
             {
-                using (var response = httpClient.PostAsync(signalReceiver.Config.RequestUrl, requestContent).Result)
+                using (var response = await httpClient.PostAsync(signalReceiver.Config.RequestUrl, requestContent).ConfigureAwait(false))
                 {
-                    var responseContent = response.Content.ReadAsStringAsync().Result;
+                    var responseContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                     var jtokens = JObject.Parse(responseContent).SelectTokens("data[*].d");
                     lock (syncRoot)
                     {

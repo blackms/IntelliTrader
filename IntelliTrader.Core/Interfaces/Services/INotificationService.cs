@@ -1,14 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace IntelliTrader.Core
 {
     public interface INotificationService
     {
         INotificationConfig Config { get; }
-        void Start();
+        Task StartAsync();
         void Stop();
-        void Notify(string message);
+        Task NotifyAsync(string message);
     }
 }

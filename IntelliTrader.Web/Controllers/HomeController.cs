@@ -201,15 +201,25 @@ namespace IntelliTrader.Web.Controllers
             return View(model);
         }
 
-        public IActionResult Stats()
+        public async Task<IActionResult> Stats()
         {
             var accountInitialBalance = _tradingService.Config.VirtualTrading ? _tradingService.Config.VirtualAccountInitialBalance : _tradingService.Config.AccountInitialBalance;
             var accountInitialBalanceDate = _tradingService.Config.VirtualTrading ? DateTimeOffset.Now.AddDays(-30) : _tradingService.Config.AccountInitialBalanceDate;
 
             decimal accountBalance = _tradingService.Account.GetBalance();
-            foreach (var tradingPair in _tradingService.Account.GetTradingPairs())
+            var tradingPairs = _tradingService.Account.GetTradingPairs().ToList();
+
+            // Fetch all prices in parallel for better performance
+            var priceTasks = tradingPairs.Select(async tp => new
             {
-                accountBalance += _tradingService.GetCurrentPrice(tradingPair.Pair) * tradingPair.TotalAmount;
+                Price = await _tradingService.GetCurrentPriceAsync(tp.Pair),
+                Amount = tp.TotalAmount
+            });
+            var priceResults = await Task.WhenAll(priceTasks);
+
+            foreach (var result in priceResults)
+            {
+                accountBalance += result.Price * result.Amount;
             }
 
             var model = new StatsViewModel

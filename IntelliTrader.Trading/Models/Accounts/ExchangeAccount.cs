@@ -63,7 +63,7 @@ namespace IntelliTrader.Trading
             {
                 healthCheckService.UpdateHealthCheck(Constants.HealthChecks.AccountRefreshed, ex.Message, true);
                 loggingService.Error("Unable to load account data", ex);
-                notificationService.Notify("Unable to load account data");
+                _ = notificationService.NotifyAsync("Unable to load account data");
                 return;
             }
 
@@ -172,7 +172,7 @@ namespace IntelliTrader.Trading
                 tradingService.SuspendTrading();
                 healthCheckService.UpdateHealthCheck(Constants.HealthChecks.AccountRefreshed, ex.Message, true);
                 loggingService.Error("Unable to refresh account", ex);
-                notificationService.Notify("Unable to refresh account");
+                _ = notificationService.NotifyAsync("Unable to refresh account");
             }
         }
 

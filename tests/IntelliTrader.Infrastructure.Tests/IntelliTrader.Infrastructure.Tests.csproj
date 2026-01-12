@@ -10,6 +10,8 @@
 
   <ItemGroup>
     <PackageReference Include="FluentAssertions" Version="8.2.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
     <PackageReference Include="System.Reactive" Version="6.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="Moq" Version="4.20.70" />
@@ -25,6 +27,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\IntelliTrader.Application\IntelliTrader.Application.csproj" />
     <ProjectReference Include="..\..\IntelliTrader.Domain\IntelliTrader.Domain.csproj" />
     <ProjectReference Include="..\..\IntelliTrader.Infrastructure\IntelliTrader.Infrastructure.csproj" />
   </ItemGroup>

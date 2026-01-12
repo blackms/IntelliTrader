@@ -72,4 +72,7 @@ internal sealed class PositionEntryDto
 
     [JsonPropertyName("timestamp")]
     public DateTimeOffset Timestamp { get; set; }
+
+    [JsonPropertyName("isMigrated")]
+    public bool IsMigrated { get; set; }
 }

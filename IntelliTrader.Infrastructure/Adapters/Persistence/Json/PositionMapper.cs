@@ -106,7 +106,8 @@ internal static class PositionMapper
             Quantity = entry.Quantity.Value,
             FeesAmount = entry.Fees.Amount,
             FeesCurrency = entry.Fees.Currency,
-            Timestamp = entry.Timestamp
+            Timestamp = entry.Timestamp,
+            IsMigrated = entry.IsMigrated
         };
     }
 
@@ -117,7 +118,8 @@ internal static class PositionMapper
             Price.Create(dto.Price),
             Quantity.Create(dto.Quantity),
             Money.Create(dto.FeesAmount, dto.FeesCurrency),
-            dto.Timestamp);
+            dto.Timestamp,
+            dto.IsMigrated);
     }
 
     private static void SetPrivateProperty(object obj, string propertyName, object? value)

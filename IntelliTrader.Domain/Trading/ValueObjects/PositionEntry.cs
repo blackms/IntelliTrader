@@ -37,7 +37,13 @@ public sealed class PositionEntry : ValueObject
     /// </summary>
     public Money Cost { get; }
 
-    private PositionEntry(OrderId orderId, Price price, Quantity quantity, Money fees, DateTimeOffset timestamp)
+    /// <summary>
+    /// Indicates whether this entry was migrated from legacy data.
+    /// When true, the price may be an estimate (e.g., average price used for all entries).
+    /// </summary>
+    public bool IsMigrated { get; }
+
+    private PositionEntry(OrderId orderId, Price price, Quantity quantity, Money fees, DateTimeOffset timestamp, bool isMigrated)
     {
         OrderId = orderId;
         Price = price;
@@ -45,17 +51,25 @@ public sealed class PositionEntry : ValueObject
         Fees = fees;
         Timestamp = timestamp;
         Cost = Money.Create(price.Value * quantity.Value, fees.Currency);
+        IsMigrated = isMigrated;
     }
 
     /// <summary>
     /// Creates a new position entry.
     /// </summary>
+    /// <param name="orderId">The exchange order ID.</param>
+    /// <param name="price">The price at which the asset was bought.</param>
+    /// <param name="quantity">The quantity bought.</param>
+    /// <param name="fees">The fees paid.</param>
+    /// <param name="timestamp">The timestamp of the entry. Defaults to current UTC time.</param>
+    /// <param name="isMigrated">Whether this entry was migrated from legacy data.</param>
     public static PositionEntry Create(
         OrderId orderId,
         Price price,
         Quantity quantity,
         Money fees,
-        DateTimeOffset? timestamp = null)
+        DateTimeOffset? timestamp = null,
+        bool isMigrated = false)
     {
         ArgumentNullException.ThrowIfNull(orderId);
         ArgumentNullException.ThrowIfNull(price);
@@ -68,7 +82,7 @@ public sealed class PositionEntry : ValueObject
         if (quantity.IsZero)
             throw new ArgumentException("Quantity cannot be zero", nameof(quantity));
 
-        return new PositionEntry(orderId, price, quantity, fees, timestamp ?? DateTimeOffset.UtcNow);
+        return new PositionEntry(orderId, price, quantity, fees, timestamp ?? DateTimeOffset.UtcNow, isMigrated);
     }
 
     /// <summary>
@@ -100,5 +114,6 @@ public sealed class PositionEntry : ValueObject
         yield return Quantity;
         yield return Fees;
         yield return Timestamp;
+        yield return IsMigrated;
     }
 }

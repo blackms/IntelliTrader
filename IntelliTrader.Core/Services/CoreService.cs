@@ -165,7 +165,9 @@ namespace IntelliTrader.Core
 
         public void StartAllTasks()
         {
-            foreach (var taskName in timedTasks.Keys)
+            // Create snapshot of keys to avoid issues if tasks are added during iteration
+            var taskNames = timedTasks.Keys.ToList();
+            foreach (var taskName in taskNames)
             {
                 StartTask(taskName);
             }
@@ -173,7 +175,9 @@ namespace IntelliTrader.Core
 
         public void StopAllTasks()
         {
-            foreach (var taskName in timedTasks.Keys)
+            // Create snapshot of keys to avoid issues if tasks are removed during iteration
+            var taskNames = timedTasks.Keys.ToList();
+            foreach (var taskName in taskNames)
             {
                 StopTask(taskName);
             }

@@ -85,7 +85,9 @@ namespace IntelliTrader.Signals.Base
         {
             loggingService.Info("Stop Signals service...");
 
-            foreach (var receiver in signalReceivers.Values)
+            // Create snapshot of values to avoid issues during iteration
+            var receivers = signalReceivers.Values.ToList();
+            foreach (var receiver in receivers)
             {
                 receiver.Stop();
             }

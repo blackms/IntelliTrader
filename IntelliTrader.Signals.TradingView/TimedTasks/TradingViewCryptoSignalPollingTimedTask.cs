@@ -156,7 +156,9 @@ namespace IntelliTrader.Signals.TradingView
         {
             lock (syncRoot)
             {
-                foreach (var date in signalsHistory.Keys)
+                // Create snapshot of keys to avoid modifying collection while iterating
+                var keysSnapshot = signalsHistory.Keys.ToList();
+                foreach (var date in keysSnapshot)
                 {
                     if ((DateTimeOffset.Now - date).TotalMinutes > signalReceiver.Config.SignalPeriod + HISTORICAL_SIGNALS_ADDITIONAL_SAVE_MINUTES)
                     {

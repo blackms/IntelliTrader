@@ -220,7 +220,8 @@ namespace IntelliTrader.Trading
         {
             lock (SyncRoot)
             {
-                return tradingPairs.Values;
+                // Return a snapshot to allow safe iteration outside the lock
+                return tradingPairs.Values.ToList<ITradingPair>();
             }
         }
 

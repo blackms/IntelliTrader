@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Serilog;
+using Serilog.Context;
 using Serilog.Core;
 using Serilog.Events;
 using System;
@@ -201,6 +202,31 @@ namespace IntelliTrader.Core
             }
         }
 
+        public IDisposable BeginScope(IDictionary<string, object> properties)
+        {
+            if (properties == null || properties.Count == 0)
+            {
+                return new NoOpDisposable();
+            }
+
+            var disposables = new List<IDisposable>();
+            foreach (var kvp in properties)
+            {
+                disposables.Add(LogContext.PushProperty(kvp.Key, kvp.Value));
+            }
+            return new CompositeDisposable(disposables);
+        }
+
+        public IDisposable BeginScope(string propertyName, object value)
+        {
+            if (string.IsNullOrWhiteSpace(propertyName))
+            {
+                return new NoOpDisposable();
+            }
+
+            return LogContext.PushProperty(propertyName, value);
+        }
+
         protected override void OnConfigReloaded()
         {
             lock (syncRoot)
@@ -223,6 +249,7 @@ namespace IntelliTrader.Core
 
                 return new LoggerConfiguration()
                     .ReadFrom.ConfigurationSection(RawConfig)
+                    .Enrich.FromLogContext()
                     .WriteTo.Logger(config => config.WriteTo.Memory(writer, LogEventLevel.Information, outputTemplate).Filter.ByIncludingOnly(filterExpression))
                     .CreateLogger();
             }
@@ -257,6 +284,46 @@ namespace IntelliTrader.Core
                 }
             }
             return null;
+        }
+    }
+
+    /// <summary>
+    /// A disposable that does nothing when disposed.
+    /// Used when no scope properties are provided.
+    /// </summary>
+    internal sealed class NoOpDisposable : IDisposable
+    {
+        public void Dispose() { }
+    }
+
+    /// <summary>
+    /// A disposable that disposes multiple disposables when disposed.
+    /// Used to manage multiple LogContext.PushProperty scopes.
+    /// </summary>
+    internal sealed class CompositeDisposable : IDisposable
+    {
+        private readonly IReadOnlyList<IDisposable> _disposables;
+        private bool _disposed;
+
+        public CompositeDisposable(IReadOnlyList<IDisposable> disposables)
+        {
+            _disposables = disposables ?? throw new ArgumentNullException(nameof(disposables));
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+
+            // Dispose in reverse order to properly unwind the scope stack
+            for (int i = _disposables.Count - 1; i >= 0; i--)
+            {
+                _disposables[i]?.Dispose();
+            }
         }
     }
 }

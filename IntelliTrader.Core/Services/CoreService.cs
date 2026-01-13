@@ -84,7 +84,7 @@ namespace IntelliTrader.Core
             // to avoid blocking a thread pool thread during the delay
             _ = Task.Run(async () =>
             {
-                await Task.Delay(3000);
+                await Task.Delay(Constants.Timeouts.StartupDelayMs);
                 StartAllTasks();
             });
 
@@ -126,7 +126,7 @@ namespace IntelliTrader.Core
         {
             _ = notificationService.NotifyAsync("IntelliTrader restarting...");
             loggingService.Info("Restart Core service...");
-            Task.Run(() => Stop()).Wait(TimeSpan.FromSeconds(20));
+            Task.Run(() => Stop()).Wait(TimeSpan.FromSeconds(Constants.Timeouts.RestartTimeoutSeconds));
             Start();
         }
 

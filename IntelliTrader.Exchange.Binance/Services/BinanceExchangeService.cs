@@ -18,10 +18,6 @@ namespace IntelliTrader.Exchange.Binance
     {
         public const int MAX_TICKERS_AGE_TO_RECONNECT_SECONDS = 60;
 
-        // Retry policy configuration
-        private const int MaxRetryAttempts = 3;
-        private static readonly TimeSpan InitialRetryDelay = TimeSpan.FromSeconds(1);
-
         private ExchangeBinanceAPI binanceApi;
         private IDisposable socket;
         private ConcurrentDictionary<string, Ticker> tickers;
@@ -39,8 +35,8 @@ namespace IntelliTrader.Exchange.Binance
             _resiliencePipeline = new ResiliencePipelineBuilder()
                 .AddRetry(new RetryStrategyOptions
                 {
-                    MaxRetryAttempts = MaxRetryAttempts,
-                    Delay = InitialRetryDelay,
+                    MaxRetryAttempts = Constants.RetryPolicy.MaxRetryAttempts,
+                    Delay = TimeSpan.FromMilliseconds(Constants.RetryPolicy.InitialRetryDelayMs),
                     BackoffType = DelayBackoffType.Exponential,
                     ShouldHandle = new PredicateBuilder()
                         .Handle<HttpRequestException>()
@@ -54,7 +50,7 @@ namespace IntelliTrader.Exchange.Binance
                             ex.Message.Contains("500")),
                     OnRetry = args =>
                     {
-                        loggingService.Info($"Retrying exchange operation (attempt {args.AttemptNumber + 1}/{MaxRetryAttempts}) after {args.RetryDelay.TotalSeconds:0.0}s delay. Reason: {args.Outcome.Exception?.Message ?? "Unknown"}");
+                        loggingService.Info($"Retrying exchange operation (attempt {args.AttemptNumber + 1}/{Constants.RetryPolicy.MaxRetryAttempts}) after {args.RetryDelay.TotalSeconds:0.0}s delay. Reason: {args.Outcome.Exception?.Message ?? "Unknown"}");
                         return ValueTask.CompletedTask;
                     }
                 })
@@ -135,8 +131,8 @@ namespace IntelliTrader.Exchange.Binance
                 coreService.RemoveTask(nameof(BinanceTickersMonitorTimedTask));
 
                 loggingService.Info("Disconnect from Binance Exchange tickers...");
-                // Give Dispose 10 seconds to complete and then time out if not
-                Task.Run(() => socket.Dispose()).Wait(TimeSpan.FromSeconds(10));
+                // Give Dispose time to complete before timing out
+                Task.Run(() => socket.Dispose()).Wait(TimeSpan.FromSeconds(Constants.Timeouts.SocketDisconnectTimeoutSeconds));
                 socket = null;
                 loggingService.Info("Disconnected from Binance Exchange tickers");
             }

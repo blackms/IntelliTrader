@@ -20,5 +20,20 @@ namespace IntelliTrader.Core
         void Warning(string message, params object[] propertyValues);
         void DeleteAllLogs();
         string[] GetLogEntries();
+
+        /// <summary>
+        /// Creates a logging scope with contextual properties that are included in all log entries within the scope.
+        /// </summary>
+        /// <param name="properties">Dictionary of property names and values to include in log context</param>
+        /// <returns>A disposable scope that removes the context when disposed</returns>
+        IDisposable BeginScope(IDictionary<string, object> properties);
+
+        /// <summary>
+        /// Creates a logging scope with a single contextual property.
+        /// </summary>
+        /// <param name="propertyName">The property name</param>
+        /// <param name="value">The property value</param>
+        /// <returns>A disposable scope that removes the context when disposed</returns>
+        IDisposable BeginScope(string propertyName, object value);
     }
 }

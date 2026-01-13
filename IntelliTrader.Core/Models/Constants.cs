@@ -56,6 +56,31 @@ namespace IntelliTrader.Core
         public static class TimedTasks
         {
             public const int StandardDelay = 3000;
+            public const int DefaultIntervalMs = 1000;
+        }
+
+        public static class Timeouts
+        {
+            /// <summary>Startup delay before starting all timed tasks (ms)</summary>
+            public const int StartupDelayMs = 3000;
+
+            /// <summary>Socket disconnect timeout (seconds)</summary>
+            public const int SocketDisconnectTimeoutSeconds = 10;
+
+            /// <summary>Service restart timeout (seconds)</summary>
+            public const int RestartTimeoutSeconds = 20;
+
+            /// <summary>Default HTTP request timeout (seconds)</summary>
+            public const int HttpRequestTimeoutSeconds = 30;
+        }
+
+        public static class RetryPolicy
+        {
+            /// <summary>Maximum number of retry attempts for exchange operations</summary>
+            public const int MaxRetryAttempts = 3;
+
+            /// <summary>Initial delay before first retry (ms)</summary>
+            public const int InitialRetryDelayMs = 1000;
         }
     }
 }

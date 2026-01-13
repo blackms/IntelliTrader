@@ -337,76 +337,99 @@ namespace IntelliTrader.Trading
         {
             lock (SyncRoot)
             {
-                if (CanSwap(options, out string message))
-                {
-                    ITradingPair oldTradingPair = Account.GetTradingPair(options.OldPair);
-
-                    var sellOptions = new SellOptions(options.OldPair)
-                    {
-                        Swap = true,
-                        SwapPair = options.NewPair,
-                        ManualOrder = options.ManualOrder
-                    };
-
-                    if (CanSell(sellOptions, out message))
-                    {
-                        decimal currentMargin = oldTradingPair.CurrentMargin;
-                        decimal additionalCosts = oldTradingPair.AverageCostPaid - oldTradingPair.CurrentCost + (oldTradingPair.Metadata.AdditionalCosts ?? 0);
-                        int additionalDCALevels = oldTradingPair.DCALevel;
-
-                        IOrderDetails sellOrderDetails = PlaceSellOrder(sellOptions);
-                        if (!Account.HasTradingPair(options.OldPair))
-                        {
-                            var buyOptions = new BuyOptions(options.NewPair)
-                            {
-                                Swap = true,
-                                ManualOrder = options.ManualOrder,
-                                MaxCost = sellOrderDetails.AverageCost,
-                                Metadata = options.Metadata
-                            };
-                            buyOptions.Metadata.LastBuyMargin = currentMargin;
-                            buyOptions.Metadata.SwapPair = options.OldPair;
-                            buyOptions.Metadata.AdditionalDCALevels = additionalDCALevels;
-                            buyOptions.Metadata.AdditionalCosts = additionalCosts;
-                            IOrderDetails buyOrderDetails = PlaceBuyOrder(buyOptions);
-
-                            var newTradingPair = Account.GetTradingPair(options.NewPair) as TradingPair;
-                            if (newTradingPair != null)
-                            {
-                                if (sellOrderDetails.Fees != 0 && sellOrderDetails.FeesCurrency != null)
-                                {
-                                    if (sellOrderDetails.FeesCurrency == Config.Market)
-                                    {
-                                        newTradingPair.Metadata.AdditionalCosts += sellOrderDetails.Fees;
-                                    }
-                                    else
-                                    {
-                                        string feesPair = sellOrderDetails.FeesCurrency + Config.Market;
-                                        newTradingPair.Metadata.AdditionalCosts += GetCurrentPrice(feesPair) * sellOrderDetails.Fees;
-                                    }
-                                }
-                                loggingService.Info($"Swap {oldTradingPair.FormattedName} for {newTradingPair.FormattedName}. Old margin: {oldTradingPair.CurrentMargin:0.00}, new margin: {newTradingPair.CurrentMargin:0.00}");
-                            }
-                            else
-                            {
-                                loggingService.Info($"Unable to swap {options.OldPair} for {options.NewPair}. Reason: failed to buy {options.NewPair}");
-                                _ = notificationService.NotifyAsync($"Unable to swap {options.OldPair} for {options.NewPair}: Failed to buy {options.NewPair}");
-                            }
-                        }
-                        else
-                        {
-                            loggingService.Info($"Unable to swap {options.OldPair} for {options.NewPair}. Reason: failed to sell {options.OldPair}");
-                        }
-                    }
-                    else
-                    {
-                        loggingService.Info($"Unable to swap {options.OldPair} for {options.NewPair}: {message}");
-                    }
-                }
-                else
+                if (!CanSwap(options, out string message))
                 {
                     loggingService.Info(message);
+                    return;
                 }
+
+                ITradingPair oldTradingPair = Account.GetTradingPair(options.OldPair);
+                var sellOptions = CreateSwapSellOptions(options);
+
+                if (!CanSell(sellOptions, out message))
+                {
+                    loggingService.Info($"Unable to swap {options.OldPair} for {options.NewPair}: {message}");
+                    return;
+                }
+
+                // Capture old pair state before selling
+                decimal currentMargin = oldTradingPair.CurrentMargin;
+                decimal additionalCosts = CalculateAdditionalCosts(oldTradingPair);
+                int additionalDCALevels = oldTradingPair.DCALevel;
+
+                IOrderDetails sellOrderDetails = PlaceSellOrder(sellOptions);
+
+                // Verify sell was successful
+                if (Account.HasTradingPair(options.OldPair))
+                {
+                    loggingService.Info($"Unable to swap {options.OldPair} for {options.NewPair}. Reason: failed to sell {options.OldPair}");
+                    return;
+                }
+
+                // Execute buy for new pair
+                var buyOptions = CreateSwapBuyOptions(options, sellOrderDetails, currentMargin, additionalCosts, additionalDCALevels);
+                IOrderDetails buyOrderDetails = PlaceBuyOrder(buyOptions);
+
+                var newTradingPair = Account.GetTradingPair(options.NewPair) as TradingPair;
+                if (newTradingPair == null)
+                {
+                    loggingService.Info($"Unable to swap {options.OldPair} for {options.NewPair}. Reason: failed to buy {options.NewPair}");
+                    _ = notificationService.NotifyAsync($"Unable to swap {options.OldPair} for {options.NewPair}: Failed to buy {options.NewPair}");
+                    return;
+                }
+
+                // Add sell fees to new position's additional costs
+                AddSwapFeesToPosition(newTradingPair, sellOrderDetails);
+                loggingService.Info($"Swap {oldTradingPair.FormattedName} for {newTradingPair.FormattedName}. Old margin: {oldTradingPair.CurrentMargin:0.00}, new margin: {newTradingPair.CurrentMargin:0.00}");
+            }
+        }
+
+        private SellOptions CreateSwapSellOptions(SwapOptions options)
+        {
+            return new SellOptions(options.OldPair)
+            {
+                Swap = true,
+                SwapPair = options.NewPair,
+                ManualOrder = options.ManualOrder
+            };
+        }
+
+        private decimal CalculateAdditionalCosts(ITradingPair tradingPair)
+        {
+            return tradingPair.AverageCostPaid - tradingPair.CurrentCost + (tradingPair.Metadata.AdditionalCosts ?? 0);
+        }
+
+        private BuyOptions CreateSwapBuyOptions(SwapOptions options, IOrderDetails sellOrderDetails, decimal currentMargin, decimal additionalCosts, int additionalDCALevels)
+        {
+            var buyOptions = new BuyOptions(options.NewPair)
+            {
+                Swap = true,
+                ManualOrder = options.ManualOrder,
+                MaxCost = sellOrderDetails.AverageCost,
+                Metadata = options.Metadata
+            };
+            buyOptions.Metadata.LastBuyMargin = currentMargin;
+            buyOptions.Metadata.SwapPair = options.OldPair;
+            buyOptions.Metadata.AdditionalDCALevels = additionalDCALevels;
+            buyOptions.Metadata.AdditionalCosts = additionalCosts;
+            return buyOptions;
+        }
+
+        private void AddSwapFeesToPosition(TradingPair tradingPair, IOrderDetails sellOrderDetails)
+        {
+            if (sellOrderDetails.Fees == 0 || sellOrderDetails.FeesCurrency == null)
+            {
+                return;
+            }
+
+            if (sellOrderDetails.FeesCurrency == Config.Market)
+            {
+                tradingPair.Metadata.AdditionalCosts += sellOrderDetails.Fees;
+            }
+            else
+            {
+                string feesPair = sellOrderDetails.FeesCurrency + Config.Market;
+                tradingPair.Metadata.AdditionalCosts += GetCurrentPrice(feesPair) * sellOrderDetails.Fees;
             }
         }
 
@@ -457,6 +480,7 @@ namespace IntelliTrader.Trading
             else if (options.Amount == null && options.MaxCost == null || options.Amount != null && options.MaxCost != null)
             {
                 message = $"Cancel buy request for {options.Pair}. Reason: either max cost or amount needs to be specified (not both)";
+                return false;
             }
             else if (!options.ManualOrder && !options.Swap && pairConfig.BuySamePairTimeout > 0 && OrderHistory.Any(h => h.Side == OrderSide.Buy && h.Pair == options.Pair) &&
                 (DateTimeOffset.Now - OrderHistory.Where(h => h.Pair == options.Pair).Max(h => h.Date)).TotalSeconds < pairConfig.BuySamePairTimeout)

@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using IntelliTrader.Application.Ports.Driven;
 using IntelliTrader.Application.Trading.Trailing;
 using IntelliTrader.Domain.Trading.Aggregates;
 using IntelliTrader.Domain.Trading.ValueObjects;
+using IntelliTrader.Infrastructure.Telemetry;
 
 namespace IntelliTrader.Infrastructure.BackgroundServices;
 
@@ -99,6 +101,9 @@ public class OrderExecutionService : TimedBackgroundService
         {
             await ProcessTradingPairsAsync(stoppingToken);
             await ProcessTrailingBuysAsync(stoppingToken);
+
+            // Update telemetry gauges
+            UpdateTelemetryGauges();
         }
         catch (Exception ex)
         {
@@ -106,9 +111,19 @@ public class OrderExecutionService : TimedBackgroundService
         }
     }
 
+    private void UpdateTelemetryGauges()
+    {
+        // Update trailing counts
+        TradingTelemetry.SetActiveBuyTrailingsCount(_trailingManager.ActiveBuyTrailings.Count);
+        TradingTelemetry.SetActiveSellTrailingsCount(_trailingManager.ActiveSellTrailings.Count);
+    }
+
     private async Task ProcessTradingPairsAsync(CancellationToken cancellationToken)
     {
         var positions = await _positionRepository.GetAllActiveAsync(cancellationToken);
+
+        // Update open positions gauge
+        TradingTelemetry.SetOpenPositionsCount(positions.Count);
 
         foreach (var position in positions)
         {
@@ -128,6 +143,10 @@ public class OrderExecutionService : TimedBackgroundService
 
         var currentPrice = priceResult.Value;
         var currentMargin = position.CalculateMargin(currentPrice);
+
+        // Start position processing activity for tracing
+        using var activity = TradingTelemetry.StartPositionProcessingActivity(
+            position.Pair.Symbol, currentMargin.Percentage);
 
         // Get pair configuration
         var pairConfig = _ruleProcessor?.GetPairConfig(position.Pair);
@@ -154,6 +173,10 @@ public class OrderExecutionService : TimedBackgroundService
                         "Stop loss triggered for {Pair}. Margin: {Margin:F2}%",
                         position.Pair.Symbol, currentMargin.Percentage);
                 }
+
+                // Record stop loss trigger in telemetry
+                TradingTelemetry.RecordStopLossTriggered(position.Pair.Symbol, currentMargin.Percentage);
+
                 await PlaceSellOrderAsync(position, currentPrice, cancellationToken);
             }
             else if (pairConfig.DCAEnabled && pairConfig.NextDCAMargin.HasValue &&
@@ -178,7 +201,11 @@ public class OrderExecutionService : TimedBackgroundService
         decimal currentMargin,
         CancellationToken cancellationToken)
     {
+        using var activity = TradingTelemetry.StartTrailingProcessingActivity(position.Pair.Symbol, "sell");
+
         var result = _trailingManager.UpdateSellTrailing(position.Pair, currentPrice, currentMargin);
+
+        activity?.SetTag("trading.trailing_result", result.Result.ToString());
 
         switch (result.Result)
         {
@@ -198,6 +225,10 @@ public class OrderExecutionService : TimedBackgroundService
                         "Trailing sell triggered for {Pair}. Margin: {Margin:F2}%",
                         position.Pair.Symbol, currentMargin);
                 }
+
+                // Record trailing trigger telemetry
+                TradingTelemetry.RecordTrailingTriggered(position.Pair.Symbol, "sell");
+
                 await PlaceSellOrderAsync(position, currentPrice, cancellationToken);
                 break;
 
@@ -225,6 +256,8 @@ public class OrderExecutionService : TimedBackgroundService
     {
         foreach (var state in _trailingManager.ActiveBuyTrailings.ToList())
         {
+            using var activity = TradingTelemetry.StartTrailingProcessingActivity(state.Pair.Symbol, "buy");
+
             var priceResult = await _exchangePort.GetCurrentPriceAsync(state.Pair, cancellationToken);
             if (priceResult.IsFailure)
             {
@@ -233,6 +266,8 @@ public class OrderExecutionService : TimedBackgroundService
 
             var currentPrice = priceResult.Value;
             var result = _trailingManager.UpdateBuyTrailing(state.Pair, currentPrice);
+
+            activity?.SetTag("trading.trailing_result", result.Result.ToString());
 
             switch (result.Result)
             {
@@ -252,6 +287,10 @@ public class OrderExecutionService : TimedBackgroundService
                             "Trailing buy triggered for {Pair}. Margin: {Margin:F2}%",
                             state.Pair.Symbol, result.CurrentMargin);
                     }
+
+                    // Record trailing trigger telemetry
+                    TradingTelemetry.RecordTrailingTriggered(state.Pair.Symbol, "buy");
+
                     await PlaceBuyOrderAsync(state.Pair, currentPrice, state.Cost.Amount, cancellationToken);
                     break;
 
@@ -348,8 +387,18 @@ public class OrderExecutionService : TimedBackgroundService
         Price currentPrice,
         CancellationToken cancellationToken)
     {
+        var orderStart = Stopwatch.GetTimestamp();
+
         _trailingManager.CancelSellTrailing(position.Pair);
         _trailingManager.CancelBuyTrailing(position.Pair);
+
+        // Start sell order activity for tracing
+        using var activity = TradingTelemetry.StartSellOrderActivity(
+            position.Pair.Symbol, currentPrice.Value, position.TotalQuantity.Value);
+
+        // Calculate position duration and margin for telemetry
+        var positionDurationHours = position.Age.TotalHours;
+        var margin = position.CalculateMargin(currentPrice);
 
         if (_options.VirtualTrading)
         {
@@ -376,6 +425,20 @@ public class OrderExecutionService : TimedBackgroundService
                     position.Pair.Symbol, currentPrice.Value, position.TotalQuantity.Value);
             }
 
+            // Record telemetry for successful sell
+            var latencyMs = Stopwatch.GetElapsedTime(orderStart).TotalMilliseconds;
+            TradingTelemetry.RecordTradeExecuted(
+                pair: position.Pair.Symbol,
+                orderType: "sell",
+                isVirtual: true,
+                profitPercentage: margin.Percentage,
+                latencyMs: latencyMs,
+                cost: eventArgs.Cost,
+                durationHours: positionDurationHours);
+
+            activity?.SetTag("trading.result", "success");
+            activity?.SetTag("trading.profit_pct", margin.Percentage);
+
             OrderExecuted?.Invoke(this, eventArgs);
         }
         else
@@ -383,6 +446,8 @@ public class OrderExecutionService : TimedBackgroundService
             // Real sell order
             var result = await _exchangePort.PlaceMarketSellAsync(
                 position.Pair, position.TotalQuantity, cancellationToken);
+
+            var latencyMs = Stopwatch.GetElapsedTime(orderStart).TotalMilliseconds;
 
             if (result.IsSuccess)
             {
@@ -408,12 +473,36 @@ public class OrderExecutionService : TimedBackgroundService
                         position.Pair.Symbol, order.AveragePrice.Value, order.FilledQuantity.Value);
                 }
 
+                // Record telemetry for successful sell
+                TradingTelemetry.RecordTradeExecuted(
+                    pair: position.Pair.Symbol,
+                    orderType: "sell",
+                    isVirtual: false,
+                    profitPercentage: margin.Percentage,
+                    latencyMs: latencyMs,
+                    cost: eventArgs.Cost,
+                    durationHours: positionDurationHours);
+
+                activity?.SetTag("trading.result", "success");
+                activity?.SetTag("trading.profit_pct", margin.Percentage);
+                activity?.SetTag("trading.order_id", order.OrderId);
+
                 OrderExecuted?.Invoke(this, eventArgs);
             }
             else
             {
                 _logger.LogError("Failed to place sell order for {Pair}: {Error}",
                     position.Pair.Symbol, result.Error.Message);
+
+                // Record failed trade telemetry
+                TradingTelemetry.RecordTradeFailed(
+                    pair: position.Pair.Symbol,
+                    orderType: "sell",
+                    reason: result.Error.Message);
+
+                activity?.SetTag("trading.result", "failure");
+                activity?.SetTag("trading.error", result.Error.Message);
+                activity?.SetStatus(ActivityStatusCode.Error, result.Error.Message);
 
                 OrderExecuted?.Invoke(this, new OrderExecutedEventArgs
                 {
@@ -436,14 +525,29 @@ public class OrderExecutionService : TimedBackgroundService
         decimal maxCost,
         CancellationToken cancellationToken)
     {
+        var orderStart = Stopwatch.GetTimestamp();
+
         _trailingManager.CancelBuyTrailing(pair);
 
         var quantity = Quantity.Create(maxCost / currentPrice.Value);
 
+        // Start buy order activity for tracing
+        using var activity = TradingTelemetry.StartBuyOrderActivity(
+            pair.Symbol, currentPrice.Value, quantity.Value);
+
+        // Check if this is a DCA order
+        var existingPosition = await _positionRepository.GetByPairAsync(pair, cancellationToken);
+        var isDCA = existingPosition != null;
+
+        if (isDCA)
+        {
+            activity?.SetTag("trading.is_dca", true);
+            activity?.SetTag("trading.dca_level", existingPosition!.DCALevel + 1);
+        }
+
         if (_options.VirtualTrading)
         {
             // Virtual buy - check if this is a DCA or new position
-            var existingPosition = await _positionRepository.GetByPairAsync(pair, cancellationToken);
             var buyFees = Money.Create(quantity.Value * currentPrice.Value * 0.001m, _options.QuoteCurrency);
 
             if (existingPosition != null)
@@ -455,6 +559,9 @@ public class OrderExecutionService : TimedBackgroundService
                     quantity,
                     buyFees);
                 await _positionRepository.SaveAsync(existingPosition, cancellationToken);
+
+                // Record DCA telemetry
+                TradingTelemetry.RecordDCAOrder(pair.Symbol, existingPosition.DCALevel, isVirtual: true);
             }
             else
             {
@@ -486,6 +593,17 @@ public class OrderExecutionService : TimedBackgroundService
                     pair.Symbol, currentPrice.Value, quantity.Value, maxCost);
             }
 
+            // Record telemetry for successful buy
+            var latencyMs = Stopwatch.GetElapsedTime(orderStart).TotalMilliseconds;
+            TradingTelemetry.RecordTradeExecuted(
+                pair: pair.Symbol,
+                orderType: isDCA ? "dca" : "buy",
+                isVirtual: true,
+                latencyMs: latencyMs,
+                cost: eventArgs.Cost);
+
+            activity?.SetTag("trading.result", "success");
+
             OrderExecuted?.Invoke(this, eventArgs);
         }
         else
@@ -494,11 +612,12 @@ public class OrderExecutionService : TimedBackgroundService
             var cost = Money.Create(maxCost, _options.QuoteCurrency);
             var result = await _exchangePort.PlaceMarketBuyAsync(pair, cost, cancellationToken);
 
+            var latencyMs = Stopwatch.GetElapsedTime(orderStart).TotalMilliseconds;
+
             if (result.IsSuccess)
             {
                 var order = result.Value;
 
-                var existingPosition = await _positionRepository.GetByPairAsync(pair, cancellationToken);
                 if (existingPosition != null)
                 {
                     existingPosition.AddDCAEntry(
@@ -507,6 +626,9 @@ public class OrderExecutionService : TimedBackgroundService
                         order.FilledQuantity,
                         order.Fees);
                     await _positionRepository.SaveAsync(existingPosition, cancellationToken);
+
+                    // Record DCA telemetry
+                    TradingTelemetry.RecordDCAOrder(pair.Symbol, existingPosition.DCALevel, isVirtual: false);
                 }
                 else
                 {
@@ -537,12 +659,33 @@ public class OrderExecutionService : TimedBackgroundService
                         pair.Symbol, order.AveragePrice.Value, order.FilledQuantity.Value);
                 }
 
+                // Record telemetry for successful buy
+                TradingTelemetry.RecordTradeExecuted(
+                    pair: pair.Symbol,
+                    orderType: isDCA ? "dca" : "buy",
+                    isVirtual: false,
+                    latencyMs: latencyMs,
+                    cost: eventArgs.Cost);
+
+                activity?.SetTag("trading.result", "success");
+                activity?.SetTag("trading.order_id", order.OrderId);
+
                 OrderExecuted?.Invoke(this, eventArgs);
             }
             else
             {
                 _logger.LogError("Failed to place buy order for {Pair}: {Error}",
                     pair.Symbol, result.Error.Message);
+
+                // Record failed trade telemetry
+                TradingTelemetry.RecordTradeFailed(
+                    pair: pair.Symbol,
+                    orderType: isDCA ? "dca" : "buy",
+                    reason: result.Error.Message);
+
+                activity?.SetTag("trading.result", "failure");
+                activity?.SetTag("trading.error", result.Error.Message);
+                activity?.SetStatus(ActivityStatusCode.Error, result.Error.Message);
 
                 OrderExecuted?.Invoke(this, new OrderExecutedEventArgs
                 {

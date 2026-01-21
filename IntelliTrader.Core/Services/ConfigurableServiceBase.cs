@@ -25,7 +25,9 @@ namespace IntelliTrader.Core
         /// Gets the config provider. Derived classes should override this to provide
         /// the injected config provider. Returns the static fallback by default for backward compatibility.
         /// </summary>
+#pragma warning disable CS0618 // Suppress obsolete warning - this is intentional backward compatibility
         protected virtual IConfigProvider ConfigProvider => _configProvider ?? Application.ConfigProvider;
+#pragma warning restore CS0618
 
         /// <summary>
         /// Default constructor for backward compatibility.

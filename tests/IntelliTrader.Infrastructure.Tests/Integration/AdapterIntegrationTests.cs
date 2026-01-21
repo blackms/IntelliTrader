@@ -320,9 +320,11 @@ public class AdapterIntegrationTests : IDisposable
 
         await Task.WhenAll(priceTask, signalTask);
 
-        // Assert
-        priceTask.Result.IsFailure.Should().BeTrue();
-        signalTask.Result.IsSuccess.Should().BeTrue();
+        // Assert - use await instead of .Result for proper async patterns
+        var priceResult = await priceTask;
+        var signalResult = await signalTask;
+        priceResult.IsFailure.Should().BeTrue();
+        signalResult.IsSuccess.Should().BeTrue();
     }
 
     #endregion
@@ -381,12 +383,15 @@ public class AdapterIntegrationTests : IDisposable
 
         await Task.WhenAll(exchangeTask, signalTask);
 
-        // Assert
-        exchangeTask.Result.IsSuccess.Should().BeTrue();
-        exchangeTask.Result.Value.Should().BeTrue();
+        // Assert - use await instead of .Result for proper async patterns
+        var exchangeResult = await exchangeTask;
+        var signalResult = await signalTask;
 
-        signalTask.Result.IsSuccess.Should().BeTrue();
-        signalTask.Result.Value.Should().BeTrue();
+        exchangeResult.IsSuccess.Should().BeTrue();
+        exchangeResult.Value.Should().BeTrue();
+
+        signalResult.IsSuccess.Should().BeTrue();
+        signalResult.Value.Should().BeTrue();
     }
 
     #endregion

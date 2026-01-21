@@ -1,10 +1,10 @@
 ﻿using IntelliTrader.Core;
-using Newtonsoft.Json;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 
 namespace IntelliTrader.Trading
 {
@@ -190,9 +190,10 @@ namespace IntelliTrader.Trading
                         TradingPairs = tradingPairs,
                     };
 
-                    string accountJson = JsonConvert.SerializeObject(data, Formatting.Indented);
+                    var options = new JsonSerializerOptions { WriteIndented = true };
+                    string accountJson = JsonSerializer.Serialize(data, options);
                     var accountFile = new FileInfo(accountFilePath);
-                    accountFile.Directory.Create();
+                    accountFile.Directory?.Create();
                     File.WriteAllText(accountFile.FullName, accountJson);
                 }
                 catch (Exception ex)
@@ -213,7 +214,7 @@ namespace IntelliTrader.Trading
                     if (File.Exists(accountFilePath))
                     {
                         string accountJson = File.ReadAllText(accountFilePath);
-                        return JsonConvert.DeserializeObject<TradingAccountData>(accountJson);
+                        return JsonSerializer.Deserialize<TradingAccountData>(accountJson);
                     }
                     else
                     {

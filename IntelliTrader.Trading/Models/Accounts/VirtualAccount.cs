@@ -3,7 +3,7 @@ using System.Linq;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
-using Newtonsoft.Json;
+using System.Text.Json;
 using IntelliTrader.Core;
 
 namespace IntelliTrader.Trading
@@ -43,9 +43,10 @@ namespace IntelliTrader.Trading
                     TradingPairs = tradingPairs
                 };
 
-                string virtualAccountJson = JsonConvert.SerializeObject(data, Formatting.Indented);
+                var options = new JsonSerializerOptions { WriteIndented = true };
+                string virtualAccountJson = JsonSerializer.Serialize(data, options);
                 var virtualAccountFile = new FileInfo(virtualAccountFilePath);
-                virtualAccountFile.Directory.Create();
+                virtualAccountFile.Directory?.Create();
                 File.WriteAllText(virtualAccountFile.FullName, virtualAccountJson);
             }
         }
@@ -59,10 +60,13 @@ namespace IntelliTrader.Trading
                 if (File.Exists(virtualAccountFilePath))
                 {
                     string virtualAccountJson = File.ReadAllText(virtualAccountFilePath);
-                    var virtualAccountData = JsonConvert.DeserializeObject<TradingAccountData>(virtualAccountJson);
+                    var virtualAccountData = JsonSerializer.Deserialize<TradingAccountData>(virtualAccountJson);
 
-                    balance = virtualAccountData.Balance;
-                    tradingPairs = virtualAccountData.TradingPairs;
+                    if (virtualAccountData != null)
+                    {
+                        balance = virtualAccountData.Balance;
+                        tradingPairs = virtualAccountData.TradingPairs ?? new ConcurrentDictionary<string, TradingPair>();
+                    }
                 }
                 else
                 {

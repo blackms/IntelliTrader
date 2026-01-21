@@ -225,6 +225,26 @@ namespace IntelliTrader.Trading
             }
         }
 
+        public virtual IOrderDetails PlaceOrder(IOrder order, OrderMetadata metadata)
+        {
+            lock (SyncRoot)
+            {
+                var orderDetails = tradingService.PlaceOrder(order);
+                if (orderDetails != null && metadata != null)
+                {
+                    orderDetails.SetMetadata(metadata);
+                }
+
+                if (orderDetails != null && (orderDetails.Result == OrderResult.Filled || orderDetails.Result == OrderResult.FilledPartially))
+                {
+                    AddOrder(orderDetails);
+                    Save();
+                }
+
+                return orderDetails;
+            }
+        }
+
         public virtual void Dispose()
         {
             lock (SyncRoot)

@@ -4,13 +4,9 @@
 
 ### Algorithmic Crypto Trading That Never Sleeps
 
-[![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?style=for-the-badge&logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![Build](https://img.shields.io/badge/Build-Passing-00C853?style=for-the-badge&logo=github-actions&logoColor=white)](https://github.com/blackms/IntelliTrader/actions)
-[![Coverage](https://img.shields.io/badge/Coverage-85%25-00C853?style=for-the-badge&logo=codecov&logoColor=white)](https://codecov.io)
+[![.NET](https://img.shields.io/badge/.NET-9.0-512BD4?style=for-the-badge&logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License](https://img.shields.io/badge/License-CC--BY--NC--SA--4.0-FF6F00?style=for-the-badge&logo=creativecommons&logoColor=white)](LICENSE.txt)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](Dockerfile)
 [![Stars](https://img.shields.io/github/stars/blackms/intellitrader?style=for-the-badge&logo=github&color=FFD700)](https://github.com/blackms/IntelliTrader)
-[![CodeFactor](https://img.shields.io/badge/Code_Quality-A-00C853?style=for-the-badge&logo=codefactor&logoColor=white)](https://www.codefactor.io)
 
 <br />
 
@@ -34,25 +30,46 @@ IntelliTrader empowers traders with an autonomous, signal-driven trading engine 
 
 <br />
 
+## ✅ Current Status (January 21, 2026)
+
+This repository is actively evolving toward a DDD + ports-and-adapters architecture while keeping the legacy runtime operational.
+
+**Implemented (current codebase):**
+- **DDD foundations:** domain events, application commands/queries, in-memory dispatchers, and legacy adapters
+- **Trading engine upgrades:** async buy/sell/swap orchestration, portfolio risk management, position sizing, ATR-based stop-loss
+- **Exchange resiliency:** Binance WebSocket streaming with REST fallback; Polly-based resilience and rate limiting
+- **Web layer:** Minimal APIs under `/api`, SignalR real-time dashboard, legacy MVC endpoints marked deprecated
+- **Telemetry:** OpenTelemetry tracing/metrics hooks for trading workflows
+- **Security:** BCrypt password hashing with legacy MD5 compatibility and migration endpoints
+
+**Still legacy / in transition:**
+- Some services still use the static `Application` facade (kept for backward compatibility)
+- Dashboard and controller routes are partially migrated (legacy endpoints remain)
+- Persistence remains file-based (JSON) in current runtime
+
+If you’re planning new work, prefer the **Application + Domain + Infrastructure** layers and the async service APIs.
+
+<br />
+
 ## 🛠 Tech Stack
 
 <table>
 <tr>
 <td align="center" width="96">
 <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/dotnetcore/dotnetcore-original.svg" width="48" height="48" alt=".NET" />
-<br /><strong>.NET 8</strong>
+<br /><strong>.NET 9</strong>
 </td>
 <td align="center" width="96">
 <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/csharp/csharp-original.svg" width="48" height="48" alt="C#" />
-<br /><strong>C# 12</strong>
+<br /><strong>C#</strong>
 </td>
 <td align="center" width="96">
 <img src="https://raw.githubusercontent.com/devicons/devicon/master/icons/bootstrap/bootstrap-original.svg" width="48" height="48" alt="Bootstrap" />
 <br /><strong>Bootstrap</strong>
 </td>
 <td align="center" width="96">
-<img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/docker/docker-original.svg" width="48" height="48" alt="Docker" />
-<br /><strong>Docker</strong>
+<img src="https://raw.githubusercontent.com/devicons/devicon/master/icons/javascript/javascript-original.svg" width="48" height="48" alt="JavaScript" />
+<br /><strong>JS</strong>
 </td>
 <td align="center" width="96">
 <img src="https://www.vectorlogo.zone/logos/github/github-icon.svg" width="48" height="48" alt="Actions" />
@@ -69,9 +86,9 @@ IntelliTrader empowers traders with an autonomous, signal-driven trading engine 
 <br /><sub>IoC/DI</sub>
 </td>
 <td align="center" width="96">
-<strong>🔄</strong>
-<br /><strong>Polly</strong>
-<br /><sub>Resilience</sub>
+<strong>📡</strong>
+<br /><strong>SignalR</strong>
+<br /><sub>Realtime</sub>
 </td>
 <td align="center" width="96">
 <strong>📊</strong>
@@ -84,9 +101,9 @@ IntelliTrader empowers traders with an autonomous, signal-driven trading engine 
 <br /><sub>Exchange</sub>
 </td>
 <td align="center" width="96">
-<strong>📱</strong>
-<br /><strong>Telegram</strong>
-<br /><sub>Alerts</sub>
+<strong>🔄</strong>
+<br /><strong>Polly</strong>
+<br /><sub>Resilience</sub>
 </td>
 </tr>
 </table>
@@ -293,7 +310,7 @@ erDiagram
 ```mermaid
 graph TB
     subgraph LOCAL["🖥️ LOCAL DEPLOYMENT"]
-        subgraph RUNTIME[".NET 8 Runtime"]
+        subgraph RUNTIME[".NET 9 Runtime"]
             BOT["⚡ IntelliTrader<br/>Console App"]
             WEB["🌐 Dashboard<br/>:7000"]
         end
@@ -332,7 +349,7 @@ graph TB
 
 | Requirement | Version |
 |:------------|:--------|
-| .NET SDK | 8.0+ |
+| .NET SDK | 9.0+ (pinned via `global.json`) |
 | Binance Account | For live trading |
 | TradingView | Free tier works |
 
@@ -373,13 +390,15 @@ dotnet run --project IntelliTrader -- \
 
 ## 🔌 API Overview
 
-### Status
+### Minimal API (preferred)
 
 | Method | Endpoint | Description |
 |:------:|:---------|:------------|
-| `GET` | `/Status` | Bot status, balance, health |
-| `GET` | `/SignalNames` | Available signal sources |
-| `GET` | `/RefreshAccount` | Sync with exchange |
+| `GET` | `/api/status` | Bot status, balance, health |
+| `GET` | `/api/signal-names` | Available signal sources |
+| `POST` | `/api/trading-pairs` | Active positions |
+| `POST` | `/api/market-pairs` | Market data + signals |
+| `POST` | `/api/market-pairs/filtered` | Market data filtered by signals |
 
 ### Trading
 
@@ -388,8 +407,6 @@ dotnet run --project IntelliTrader -- \
 | `POST` | `/Buy` | Manual buy order |
 | `POST` | `/Sell` | Manual sell order |
 | `POST` | `/Swap` | Swap position |
-| `POST` | `/TradingPairs` | Active positions |
-| `POST` | `/MarketPairs` | Market data + signals |
 
 ### Configuration
 
@@ -398,21 +415,24 @@ dotnet run --project IntelliTrader -- \
 | `POST` | `/Settings` | Update runtime settings |
 | `POST` | `/SaveConfig` | Persist configuration |
 | `GET` | `/RestartServices` | Restart all services |
+| `POST` | `/GeneratePasswordHash` | Generate BCrypt hash (auth required) |
+| `GET` | `/PasswordStatus` | Current password hash status |
+
+> Legacy MVC JSON endpoints (`/Status`, `/SignalNames`, `/TradingPairs`, `/MarketPairs`) remain for backward compatibility but are deprecated.
 
 <br />
 
-## 📍 Roadmap
+## 📍 Roadmap (proposed)
 
 | Priority | Task | Status |
 |:--------:|:-----|:------:|
-| `P1` | Multi-exchange support (Kraken, Coinbase) | 🔲 Planned |
+| `P1` | Complete DDD migration + remove legacy facades | 🔄 In Progress |
 | `P1` | PostgreSQL persistence option | 🔲 Planned |
-| `P1` | Docker Compose deployment | 🔄 In Progress |
+| `P2` | Multi-exchange support (Kraken, Coinbase) | 🔲 Planned |
 | `P2` | GraphQL API layer | 🔲 Planned |
-| `P2` | ML-enhanced signal analysis | 🔬 Research |
-| `P2` | Mobile companion app | 🔲 Planned |
-| `P3` | Kubernetes Helm chart | 📋 Backlog |
-| `P3` | Social trading features | 📋 Backlog |
+| `P3` | Docker Compose deployment | 📋 Backlog |
+| `P3` | ML-enhanced signal analysis | 📋 Backlog |
+| `P3` | Mobile companion app | 📋 Backlog |
 | `P3` | Strategy marketplace | 📋 Backlog |
 
 <br />

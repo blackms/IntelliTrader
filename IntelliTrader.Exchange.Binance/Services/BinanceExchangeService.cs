@@ -1,4 +1,4 @@
-﻿using ExchangeSharp;
+using ExchangeSharp;
 using IntelliTrader.Core;
 using IntelliTrader.Exchange.Base;
 using Polly;
@@ -8,29 +8,56 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Net;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace IntelliTrader.Exchange.Binance
 {
+    /// <summary>
+    /// Binance exchange service with WebSocket streaming and REST fallback support.
+    /// </summary>
     internal class BinanceExchangeService : ExchangeService
     {
-        public const int MAX_TICKERS_AGE_TO_RECONNECT_SECONDS = 60;
+        /// <summary>
+        /// Maximum age of ticker data before forcing a reconnection (seconds).
+        /// </summary>
+        public const int MaxTickersAgeToReconnectSeconds = 60;
 
-        private ExchangeBinanceAPI binanceApi;
-        private IDisposable socket;
-        private ConcurrentDictionary<string, Ticker> tickers;
-        private BinanceTickersMonitorTimedTask tickersMonitorTimedTask;
-        private DateTimeOffset lastTickersUpdate;
-        private bool tickersChecked;
+        private readonly ILoggingService _loggingService;
+        private readonly IHealthCheckService _healthCheckService;
+        private readonly ICoreService _coreService;
+
+        private ExchangeBinanceAPI? _binanceApi;
+        private BinanceWebSocketService? _webSocketService;
+        private ConcurrentDictionary<string, Ticker> _tickers = new();
+        private BinanceTickersMonitorTimedTask? _tickersMonitorTimedTask;
+        private bool _tickersChecked;
+        private bool _started;
 
         // Polly retry pipeline for exchange operations
         private readonly ResiliencePipeline _resiliencePipeline;
 
-        public BinanceExchangeService(ILoggingService loggingService, IHealthCheckService healthCheckService, ICoreService coreService) :
-            base(loggingService, healthCheckService, coreService)
+        /// <inheritdoc />
+        public override bool IsWebSocketConnected => _webSocketService?.IsConnected ?? false;
+
+        /// <inheritdoc />
+        public override bool IsRestFallbackActive => _webSocketService?.IsRestFallbackActive ?? false;
+
+        /// <inheritdoc />
+        public override TimeSpan TimeSinceLastTickerUpdate => _webSocketService?.TimeSinceLastUpdate ?? TimeSpan.MaxValue;
+
+        public BinanceExchangeService(
+            ILoggingService loggingService,
+            IHealthCheckService healthCheckService,
+            ICoreService coreService,
+            IConfigProvider configProvider)
+            : base(loggingService, healthCheckService, coreService, configProvider)
         {
+            _loggingService = loggingService;
+            _healthCheckService = healthCheckService;
+            _coreService = coreService;
+
             // Build resilience pipeline with exponential backoff retry
             _resiliencePipeline = new ResiliencePipelineBuilder()
                 .AddRetry(new RetryStrategyOptions
@@ -50,7 +77,7 @@ namespace IntelliTrader.Exchange.Binance
                             ex.Message.Contains("500")),
                     OnRetry = args =>
                     {
-                        loggingService.Info($"Retrying exchange operation (attempt {args.AttemptNumber + 1}/{Constants.RetryPolicy.MaxRetryAttempts}) after {args.RetryDelay.TotalSeconds:0.0}s delay. Reason: {args.Outcome.Exception?.Message ?? "Unknown"}");
+                        _loggingService.Info($"Retrying exchange operation (attempt {args.AttemptNumber + 1}/{Constants.RetryPolicy.MaxRetryAttempts}) after {args.RetryDelay.TotalSeconds:0.0}s delay. Reason: {args.Outcome.Exception?.Message ?? "Unknown"}");
                         return ValueTask.CompletedTask;
                     }
                 })
@@ -59,17 +86,17 @@ namespace IntelliTrader.Exchange.Binance
 
         public override void Start(bool virtualTrading)
         {
-            loggingService.Info("Start Binance Exchange service...");
+            _loggingService.Info("Start Binance Exchange service...");
 
-            binanceApi = new ExchangeBinanceAPI();
-            binanceApi.RateLimit = new RateGate(Config.RateLimitOccurences, TimeSpan.FromSeconds(Config.RateLimitTimeframe));
+            _binanceApi = new ExchangeBinanceAPI();
+            _binanceApi.RateLimit = new RateGate(Config.RateLimitOccurences, TimeSpan.FromSeconds(Config.RateLimitTimeframe));
 
-            if (!virtualTrading && !String.IsNullOrWhiteSpace(Config.KeysPath))
+            if (!virtualTrading && !string.IsNullOrWhiteSpace(Config.KeysPath))
             {
                 if (File.Exists(Config.KeysPath))
                 {
-                    loggingService.Info("Load keys from encrypted file...");
-                    binanceApi.LoadAPIKeys(Config.KeysPath);
+                    _loggingService.Info("Load keys from encrypted file...");
+                    _binanceApi.LoadAPIKeys(Config.KeysPath);
                 }
                 else
                 {
@@ -77,96 +104,167 @@ namespace IntelliTrader.Exchange.Binance
                 }
             }
 
-            loggingService.Info("Get initial ticker values...");
-            var initialTickers = binanceApi.GetTickersAsync().GetAwaiter().GetResult();
-            tickers = new ConcurrentDictionary<string, Ticker>(initialTickers.Select(t => new KeyValuePair<string, Ticker>(t.Key, new Ticker
+            // Initialize WebSocket service
+            _webSocketService = new BinanceWebSocketService(_loggingService, _healthCheckService);
+            _webSocketService.TickersUpdated += OnWebSocketTickersUpdated;
+            _webSocketService.ConnectionStateChanged += OnConnectionStateChanged;
+
+            // Get initial ticker values via REST API before starting WebSocket
+            _loggingService.Info("Get initial ticker values via REST...");
+            try
             {
-                Pair = t.Key,
-                AskPrice = t.Value.Ask,
-                BidPrice = t.Value.Bid,
-                LastPrice = t.Value.Last
-            })));
-            lastTickersUpdate = DateTimeOffset.Now;
-            healthCheckService.UpdateHealthCheck(Constants.HealthChecks.TickersUpdated, $"Updates: {tickers.Count}");
+                var initialTickers = _webSocketService.FetchTickersViaRestAsync().GetAwaiter().GetResult();
+                _tickers = new ConcurrentDictionary<string, Ticker>(
+                    initialTickers.Select(t => new KeyValuePair<string, Ticker>(t.Pair, new Ticker
+                    {
+                        Pair = t.Pair,
+                        AskPrice = t.AskPrice,
+                        BidPrice = t.BidPrice,
+                        LastPrice = t.LastPrice
+                    })));
+                _healthCheckService.UpdateHealthCheck(Constants.HealthChecks.TickersUpdated, $"Initial: {_tickers.Count} tickers");
+            }
+            catch (Exception ex)
+            {
+                _loggingService.Warning($"Failed to get initial tickers via REST, falling back to ExchangeSharp: {ex.Message}");
+                var initialTickers = _binanceApi.GetTickersAsync().GetAwaiter().GetResult();
+                _tickers = new ConcurrentDictionary<string, Ticker>(initialTickers.Select(t => new KeyValuePair<string, Ticker>(t.Key, new Ticker
+                {
+                    Pair = t.Key,
+                    AskPrice = t.Value.Ask,
+                    BidPrice = t.Value.Bid,
+                    LastPrice = t.Value.Last
+                })));
+            }
+
+            // Connect WebSocket for real-time updates
             ConnectTickersWebsocket();
 
-            loggingService.Info("Binance Exchange service started");
+            _started = true;
+            _loggingService.Info("Binance Exchange service started");
         }
 
         public override void Stop()
         {
-            loggingService.Info("Stop Binance Exchange service...");
+            _loggingService.Info("Stop Binance Exchange service...");
 
+            _started = false;
             DisconnectTickersWebsocket();
-            lastTickersUpdate = DateTimeOffset.MinValue;
-            tickers.Clear();
-            healthCheckService.RemoveHealthCheck(Constants.HealthChecks.TickersUpdated);
 
-            loggingService.Info("Binance Exchange service stopped");
+            if (_webSocketService != null)
+            {
+                _webSocketService.TickersUpdated -= OnWebSocketTickersUpdated;
+                _webSocketService.ConnectionStateChanged -= OnConnectionStateChanged;
+                _webSocketService.Dispose();
+                _webSocketService = null;
+            }
+
+            _tickers.Clear();
+            _healthCheckService.RemoveHealthCheck(Constants.HealthChecks.TickersUpdated);
+
+            _loggingService.Info("Binance Exchange service stopped");
         }
 
+        /// <summary>
+        /// Connects to the Binance WebSocket ticker stream.
+        /// </summary>
         public void ConnectTickersWebsocket()
         {
             try
             {
-                loggingService.Info("Connect to Binance Exchange tickers...");
-                socket = binanceApi.GetTickersWebSocketAsync(OnTickersUpdated).GetAwaiter().GetResult();
-                loggingService.Info("Connected to Binance Exchange tickers");
+                _loggingService.Info("Connect to Binance Exchange tickers via WebSocket...");
 
-                tickersMonitorTimedTask = new BinanceTickersMonitorTimedTask(loggingService, this);
-                tickersMonitorTimedTask.RunInterval = MAX_TICKERS_AGE_TO_RECONNECT_SECONDS / 2;
-                coreService.AddTask(nameof(BinanceTickersMonitorTimedTask), tickersMonitorTimedTask);
+                _webSocketService?.ConnectAsync().GetAwaiter().GetResult();
+
+                // Start monitor task to check connection health
+                _tickersMonitorTimedTask = new BinanceTickersMonitorTimedTask(_loggingService, this);
+                _tickersMonitorTimedTask.RunInterval = MaxTickersAgeToReconnectSeconds / 2;
+                _coreService.AddTask(nameof(BinanceTickersMonitorTimedTask), _tickersMonitorTimedTask);
+
+                _loggingService.Info("Connected to Binance Exchange tickers");
             }
             catch (Exception ex)
             {
-                loggingService.Error("Unable to connect to Binance Exchange tickers", ex);
+                _loggingService.Error("Unable to connect to Binance Exchange tickers via WebSocket", ex);
+                _loggingService.Info("WebSocket will fall back to REST polling automatically");
             }
         }
 
+        /// <summary>
+        /// Disconnects from the Binance WebSocket ticker stream.
+        /// </summary>
         public void DisconnectTickersWebsocket()
         {
             try
             {
-                coreService.StopTask(nameof(BinanceTickersMonitorTimedTask));
-                coreService.RemoveTask(nameof(BinanceTickersMonitorTimedTask));
+                _coreService.StopTask(nameof(BinanceTickersMonitorTimedTask));
+                _coreService.RemoveTask(nameof(BinanceTickersMonitorTimedTask));
 
-                loggingService.Info("Disconnect from Binance Exchange tickers...");
-                // Give Dispose time to complete before timing out
-                Task.Run(() => socket.Dispose()).Wait(TimeSpan.FromSeconds(Constants.Timeouts.SocketDisconnectTimeoutSeconds));
-                socket = null;
-                loggingService.Info("Disconnected from Binance Exchange tickers");
+                _loggingService.Info("Disconnect from Binance Exchange tickers...");
+
+                _webSocketService?.DisconnectAsync().GetAwaiter().GetResult();
+
+                _loggingService.Info("Disconnected from Binance Exchange tickers");
             }
             catch (Exception ex)
             {
-                loggingService.Error("Unable to disconnect from Binance Exchange tickers", ex);
+                _loggingService.Error("Unable to disconnect from Binance Exchange tickers", ex);
             }
+        }
+
+        /// <inheritdoc />
+        public override async Task ReconnectWebSocketAsync()
+        {
+            if (_webSocketService != null)
+            {
+                await _webSocketService.ReconnectAsync();
+            }
+        }
+
+        /// <summary>
+        /// Gets the time elapsed since the last ticker update.
+        /// Used by the monitor task to determine if reconnection is needed.
+        /// </summary>
+        public TimeSpan GetTimeElapsedSinceLastTickersUpdate()
+        {
+            return _webSocketService?.TimeSinceLastUpdate ?? TimeSpan.MaxValue;
         }
 
         public override Task<IEnumerable<ITicker>> GetTickers(string market)
         {
-            return Task.FromResult(tickers.Values.Where(t => t.Pair.EndsWith(market)).Select(t => (ITicker)t));
+            return Task.FromResult(_tickers.Values.Where(t => t.Pair.EndsWith(market)).Select(t => (ITicker)t));
         }
 
         public override Task<IEnumerable<string>> GetMarketPairs(string market)
         {
-            return Task.FromResult(tickers.Keys.Where(t => t.EndsWith(market)));
+            return Task.FromResult(_tickers.Keys.Where(t => t.EndsWith(market)));
         }
 
         public override async Task<Dictionary<string, decimal>> GetAvailableAmounts()
         {
+            if (_binanceApi == null)
+            {
+                throw new InvalidOperationException("Binance API not initialized");
+            }
+
             return await _resiliencePipeline.ExecuteAsync(async cancellationToken =>
             {
-                var results = await binanceApi.GetAmountsAvailableToTradeAsync();
+                var results = await _binanceApi.GetAmountsAvailableToTradeAsync();
                 return results;
             });
         }
 
         public override async Task<IEnumerable<IOrderDetails>> GetMyTrades(string pair)
         {
+            if (_binanceApi == null)
+            {
+                throw new InvalidOperationException("Binance API not initialized");
+            }
+
             return await _resiliencePipeline.ExecuteAsync(async cancellationToken =>
             {
                 var myTrades = new List<OrderDetails>();
-                var results = await binanceApi.GetMyTradesAsync(pair);
+                var results = await _binanceApi.GetMyTradesAsync(pair);
 
                 foreach (var result in results)
                 {
@@ -191,25 +289,30 @@ namespace IntelliTrader.Exchange.Binance
             });
         }
 
-        public override async Task<decimal> GetLastPrice(string pair)
+        public override Task<decimal> GetLastPrice(string pair)
         {
-            if (tickers.TryGetValue(pair, out Ticker ticker))
+            if (_tickers.TryGetValue(pair, out Ticker? ticker))
             {
-                return ticker.LastPrice;
+                return Task.FromResult(ticker.LastPrice);
             }
             else
             {
-                return 0;
+                return Task.FromResult(0m);
             }
         }
 
         public override async Task<IOrderDetails> PlaceOrder(IOrder order)
         {
+            if (_binanceApi == null)
+            {
+                throw new InvalidOperationException("Binance API not initialized");
+            }
+
             // Note: Order placement uses retry policy carefully.
             // Retries only on connection/timeout errors, not on order rejection.
             return await _resiliencePipeline.ExecuteAsync(async cancellationToken =>
             {
-                var result = await binanceApi.PlaceOrderAsync(new ExchangeOrderRequest
+                var result = await _binanceApi.PlaceOrderAsync(new ExchangeOrderRequest
                 {
                     OrderType = (ExchangeSharp.OrderType)(int)order.Type,
                     IsBuy = order.Side == OrderSide.Buy,
@@ -236,41 +339,66 @@ namespace IntelliTrader.Exchange.Binance
             });
         }
 
-        public TimeSpan GetTimeElapsedSinceLastTickersUpdate()
+        private void OnWebSocketTickersUpdated(IReadOnlyCollection<ITicker> updatedTickers)
         {
-            return DateTimeOffset.Now - lastTickersUpdate;
-        }
+            if (!_started) return;
 
-        private void OnTickersUpdated(IReadOnlyCollection<KeyValuePair<string, ExchangeTicker>> updatedTickers)
-        {
-            if (!tickersChecked)
+            if (!_tickersChecked)
             {
-                loggingService.Info("Ticker updates are working, good!");
-                tickersChecked = true;
+                _loggingService.Info("Ticker updates are working via WebSocket, good!");
+                _tickersChecked = true;
             }
 
-            healthCheckService.UpdateHealthCheck(Constants.HealthChecks.TickersUpdated, $"Updates: {updatedTickers.Count}");
-
-            lastTickersUpdate = DateTimeOffset.Now;
+            var tickersList = new List<ITicker>();
 
             foreach (var update in updatedTickers)
             {
-                if (tickers.TryGetValue(update.Key, out Ticker ticker))
-                {
-                    ticker.AskPrice = update.Value.Ask;
-                    ticker.BidPrice = update.Value.Bid;
-                    ticker.LastPrice = update.Value.Last;
-                }
-                else
-                {
-                    tickers.TryAdd(update.Key, new Ticker
+                var ticker = _tickers.AddOrUpdate(
+                    update.Pair,
+                    key => new Ticker
                     {
-                        Pair = update.Key,
-                        AskPrice = update.Value.Ask,
-                        BidPrice = update.Value.Bid,
-                        LastPrice = update.Value.Last
+                        Pair = key,
+                        AskPrice = update.AskPrice,
+                        BidPrice = update.BidPrice,
+                        LastPrice = update.LastPrice
+                    },
+                    (key, existing) =>
+                    {
+                        existing.AskPrice = update.AskPrice;
+                        existing.BidPrice = update.BidPrice;
+                        existing.LastPrice = update.LastPrice;
+                        return existing;
                     });
-                }
+
+                tickersList.Add(ticker);
+            }
+
+            // Raise the TickersUpdated event from base class
+            OnTickersUpdated(tickersList);
+        }
+
+        private void OnConnectionStateChanged(WebSocketConnectionState state)
+        {
+            switch (state)
+            {
+                case WebSocketConnectionState.Connected:
+                    _loggingService.Info("WebSocket connection established");
+                    _healthCheckService.UpdateHealthCheck(Constants.HealthChecks.TickersUpdated, "WebSocket connected");
+                    break;
+
+                case WebSocketConnectionState.Disconnected:
+                    _loggingService.Warning("WebSocket connection lost");
+                    break;
+
+                case WebSocketConnectionState.Reconnecting:
+                    _loggingService.Info("WebSocket reconnecting...");
+                    _healthCheckService.UpdateHealthCheck(Constants.HealthChecks.TickersUpdated, "WebSocket reconnecting");
+                    break;
+
+                case WebSocketConnectionState.FallbackToRest:
+                    _loggingService.Warning("WebSocket unavailable, using REST fallback");
+                    _healthCheckService.UpdateHealthCheck(Constants.HealthChecks.TickersUpdated, "REST fallback active");
+                    break;
             }
         }
     }

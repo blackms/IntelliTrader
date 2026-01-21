@@ -1,4 +1,4 @@
-﻿using IntelliTrader.Core;
+using IntelliTrader.Core;
 using IntelliTrader.Exchange.Base;
 using System;
 using System.Collections.Generic;
@@ -7,20 +7,40 @@ using System.Threading.Tasks;
 
 namespace IntelliTrader.Backtesting
 {
-    public class BacktestingExchangeService : ConfigrableServiceBase<ExchangeConfig>, IExchangeService
+    public class BacktestingExchangeService(
+        ILoggingService loggingService,
+        IHealthCheckService healthCheckService,
+        IBacktestingService backtestingService,
+        IConfigProvider configProvider) : ConfigrableServiceBase<ExchangeConfig>(configProvider), IExchangeService
     {
         public override string ServiceName => Constants.ServiceNames.ExchangeService;
 
-        private readonly ILoggingService loggingService;
-        private readonly IHealthCheckService healthCheckService;
-        private readonly IBacktestingService backtestingService;
+        protected override ILoggingService LoggingService => loggingService;
 
-        public BacktestingExchangeService(ILoggingService loggingService, IHealthCheckService healthCheckService, IBacktestingService backtestingService)
-        {
-            this.loggingService = loggingService;
-            this.healthCheckService = healthCheckService;
-            this.backtestingService = backtestingService;
-        }
+        /// <summary>
+        /// Not applicable for backtesting - data is fed from snapshots.
+        /// </summary>
+        public event Action<IReadOnlyCollection<ITicker>>? TickersUpdated;
+
+        /// <summary>
+        /// Always false for backtesting - no WebSocket connection.
+        /// </summary>
+        public bool IsWebSocketConnected => false;
+
+        /// <summary>
+        /// Always false for backtesting - uses snapshot data.
+        /// </summary>
+        public bool IsRestFallbackActive => false;
+
+        /// <summary>
+        /// Not applicable for backtesting.
+        /// </summary>
+        public TimeSpan TimeSinceLastTickerUpdate => TimeSpan.Zero;
+
+        /// <summary>
+        /// No-op for backtesting.
+        /// </summary>
+        public Task ReconnectWebSocketAsync() => Task.CompletedTask;
 
         public void Start(bool virtualTrading)
         {

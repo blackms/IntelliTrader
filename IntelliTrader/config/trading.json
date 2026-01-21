@@ -34,6 +34,15 @@
     "SellStopLossAfterDCA": true,
     "SellStopLossMinAge": 3,
     "SellStopLossMargin": -20,
+    "StopLossInternal": {
+      "Type": "ATR",
+      "ATRPeriod": 14,
+      "ATRMultiplier": 3.0,
+      "MinimumPercent": 2.0,
+      "RangingMultiplier": 2.5,
+      "TrendingMultiplier": 3.5,
+      "AutoAdjustMultiplier": true
+    },
     "SellDCAMargin": 1.5,
     "SellDCATrailing": 0.5,
     "SellDCATrailingStopMargin": 1.25,
@@ -62,6 +71,25 @@
     "AccountFilePath": "data/exchange-account.json",
     "VirtualTrading": true,
     "VirtualAccountInitialBalance": 0.12,
-    "VirtualAccountFilePath": "data/virtual-account.json"
+    "VirtualAccountFilePath": "data/virtual-account.json",
+    "PositionSizing": {
+      "Enabled": false,
+      "Type": "Kelly",
+      "RiskPercent": 1.0,
+      "KellyFraction": 0.5,
+      "MaxPositionPercent": 10.0,
+      "DefaultStopLossPercent": 5.0,
+      "WinRate": 55.0,
+      "AverageWinLoss": 1.5,
+      "MinTradesForStats": 30
+    },
+    "RiskManagement": {
+      "Enabled": true,
+      "MaxPortfolioHeat": 6.0,
+      "MaxDrawdownPercent": 10.0,
+      "DailyLossLimitPercent": 5.0,
+      "CircuitBreakerEnabled": true,
+      "DefaultPositionRiskPercent": 1.0
+    }
   }
 }

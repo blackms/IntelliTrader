@@ -1,4 +1,3 @@
-﻿using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -7,9 +6,9 @@ namespace IntelliTrader.Core
 {
     public class OrderMetadata
     {
-        public List<string> TradingRules { get; set; }
-        public string SignalRule { get; set; }
-        public List<string> Signals { get; set; }
+        public List<string>? TradingRules { get; set; }
+        public string? SignalRule { get; set; }
+        public List<string>? Signals { get; set; }
         public double? BoughtRating { get; set; }
         public double? CurrentRating { get; set; }
         public double? BoughtGlobalRating { get; set; }
@@ -17,7 +16,7 @@ namespace IntelliTrader.Core
         public decimal? LastBuyMargin { get; set; }
         public int? AdditionalDCALevels { get; set; }
         public decimal? AdditionalCosts { get; set; }
-        public string SwapPair { get; set; }
+        public string? SwapPair { get; set; }
 
         public OrderMetadata MergeWith(OrderMetadata metadata)
         {

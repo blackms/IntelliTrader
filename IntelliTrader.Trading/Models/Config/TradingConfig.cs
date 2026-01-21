@@ -43,6 +43,23 @@ namespace IntelliTrader.Trading
         public double SellStopLossMinAge { get; set; }
         public decimal SellStopLossMargin { get; set; }
 
+        // Backing field for StopLoss to handle null deserialization
+        private StopLossConfig? _stopLoss;
+
+        /// <summary>
+        /// Configuration for dynamic ATR-based stop-loss.
+        /// </summary>
+        public StopLossConfig StopLossInternal
+        {
+            get => _stopLoss ?? new StopLossConfig();
+            set => _stopLoss = value;
+        }
+
+        /// <summary>
+        /// Interface accessor for stop-loss configuration.
+        /// </summary>
+        public IStopLossConfig StopLoss => StopLossInternal;
+
         public decimal SellDCAMargin { get; set; }
         public decimal SellDCATrailing { get; set; }
         public decimal SellDCATrailingStopMargin { get; set; }
@@ -60,6 +77,13 @@ namespace IntelliTrader.Trading
         public bool VirtualTrading { get; set; }
         public decimal VirtualAccountInitialBalance { get; set; }
         public string VirtualAccountFilePath { get; set; }
+
+        public int MaxOrderHistorySize { get; set; } = Constants.Trading.DefaultMaxOrderHistorySize;
+
+        public RiskManagementConfig RiskManagementInternal { get; set; } = new RiskManagementConfig();
+        public IRiskManagementConfig RiskManagement => RiskManagementInternal;
+
+        public PositionSizingConfig PositionSizing { get; set; } = new PositionSizingConfig();
 
         public ITradingConfig Clone()
         {
@@ -100,6 +124,7 @@ namespace IntelliTrader.Trading
                 SellStopLossAfterDCA = SellStopLossAfterDCA,
                 SellStopLossMinAge = SellStopLossMinAge,
                 SellStopLossMargin = SellStopLossMargin,
+                StopLossInternal = StopLossInternal?.Clone() ?? new StopLossConfig(),
 
                 SellDCAMargin = SellDCAMargin,
                 SellDCATrailing = SellDCATrailing,
@@ -117,7 +142,21 @@ namespace IntelliTrader.Trading
 
                 VirtualTrading = VirtualTrading,
                 VirtualAccountInitialBalance = VirtualAccountInitialBalance,
-                VirtualAccountFilePath = VirtualAccountFilePath
+                VirtualAccountFilePath = VirtualAccountFilePath,
+
+                MaxOrderHistorySize = MaxOrderHistorySize,
+
+                RiskManagementInternal = new RiskManagementConfig
+                {
+                    Enabled = RiskManagementInternal.Enabled,
+                    MaxPortfolioHeat = RiskManagementInternal.MaxPortfolioHeat,
+                    MaxDrawdownPercent = RiskManagementInternal.MaxDrawdownPercent,
+                    DailyLossLimitPercent = RiskManagementInternal.DailyLossLimitPercent,
+                    CircuitBreakerEnabled = RiskManagementInternal.CircuitBreakerEnabled,
+                    DefaultPositionRiskPercent = RiskManagementInternal.DefaultPositionRiskPercent
+                },
+
+                PositionSizing = PositionSizing?.Clone() ?? new PositionSizingConfig()
             };
         }
     }

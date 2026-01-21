@@ -1,4 +1,9 @@
-﻿using IntelliTrader.Core;
+using Autofac;
+using IntelliTrader.Core;
+using IntelliTrader.Infrastructure.Telemetry;
+using IntelliTrader.Web.BackgroundServices;
+using IntelliTrader.Web.Hubs;
+using IntelliTrader.Web.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -6,7 +11,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
-using Newtonsoft.Json.Serialization;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -15,25 +19,41 @@ namespace IntelliTrader.Web
 {
     public class Startup
     {
-        public Startup(IConfiguration configuration)
+        /// <summary>
+        /// The Autofac container/scope, must be set before web host starts.
+        /// </summary>
+        public static ILifetimeScope Container { get; set; }
+
+        public Startup(IConfiguration configuration, IWebHostEnvironment environment)
         {
             Configuration = configuration;
+            Environment = environment;
         }
 
         public IConfiguration Configuration { get; }
+        public IWebHostEnvironment Environment { get; }
 
         public void ConfigureServices(IServiceCollection services)
         {
             // Register services from Autofac container into ASP.NET Core DI
-            // This bridges the legacy service locator to proper constructor injection
-            services.AddSingleton(_ => Application.Resolve<ICoreService>());
-            services.AddSingleton(_ => Application.Resolve<ITradingService>());
-            services.AddSingleton(_ => Application.Resolve<ISignalsService>());
-            services.AddSingleton(_ => Application.Resolve<ILoggingService>());
-            services.AddSingleton(_ => Application.Resolve<IHealthCheckService>());
-            services.AddSingleton(_ => Application.Resolve<IEnumerable<IConfigurableService>>());
+            // This bridges the Autofac container to proper constructor injection
+            services.AddSingleton(_ => Container.Resolve<ICoreService>());
+            services.AddSingleton(_ => Container.Resolve<ITradingService>());
+            services.AddSingleton(_ => Container.Resolve<ISignalsService>());
+            services.AddSingleton(_ => Container.Resolve<ILoggingService>());
+            services.AddSingleton(_ => Container.Resolve<IHealthCheckService>());
+            services.AddSingleton(_ => Container.Resolve<IEnumerable<IConfigurableService>>());
 
-            var coreService = Application.Resolve<ICoreService>();
+            // Register password service for secure password hashing (BCrypt)
+            services.AddSingleton<IPasswordService, PasswordService>();
+
+            // Register SignalR hub notifier for broadcasting real-time updates
+            services.AddSingleton<ITradingHubNotifier, TradingHubNotifier>();
+
+            // Register SignalR broadcaster background service for push-based updates
+            services.AddHostedService<SignalRBroadcasterService>();
+
+            var coreService = Container.Resolve<ICoreService>();
 
             services.AddAuthentication(options =>
             {
@@ -46,10 +66,25 @@ namespace IntelliTrader.Web
                 options.Cookie.Name = $"{nameof(IntelliTrader)}_{coreService.Config.InstanceName}";
             });
 
-            services.AddMvc().AddNewtonsoftJson(opts =>
-            {
-                opts.SerializerSettings.ContractResolver = new DefaultContractResolver();
-            });
+            services.AddControllersWithViews()
+                .AddJsonOptions(opts =>
+                {
+                    // Preserve property names as-is (no camelCase conversion)
+                    opts.JsonSerializerOptions.PropertyNamingPolicy = null;
+                    opts.JsonSerializerOptions.WriteIndented = false;
+                });
+
+            services.AddSignalR()
+                .AddJsonProtocol(options =>
+                {
+                    // Preserve property names as-is (no camelCase conversion) - same as MVC JSON options
+                    options.PayloadSerializerOptions.PropertyNamingPolicy = null;
+                });
+
+            // Configure OpenTelemetry for comprehensive observability
+            // Includes tracing, metrics for trading operations, ASP.NET Core, HTTP, and runtime
+            var enableConsoleExporter = Environment.IsDevelopment();
+            services.AddIntelliTraderTelemetry(enableConsoleExporter);
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
@@ -70,15 +105,24 @@ namespace IntelliTrader.Web
                 RequestPath = "/Static"
             });
 
-            app.UseAuthentication();
+            app.UseRouting();
 
-            app.UseMvc(routes =>
+            app.UseAuthentication();
+            app.UseAuthorization();
+
+            app.UseEndpoints(endpoints =>
             {
-                routes.MapRoute(
-                    "Default",
-                    "{action}/{id?}",
-                    new { controller = "Home", action = "Index" }
-                );
+                // Map Minimal API endpoints for data-only operations
+                endpoints.MapMinimalApiEndpoints();
+
+                // Map MVC controller routes
+                endpoints.MapControllerRoute(
+                    name: "default",
+                    pattern: "{action=Index}/{id?}",
+                    defaults: new { controller = "Home" });
+
+                // Map SignalR hub for real-time trading updates
+                endpoints.MapHub<TradingHub>("/trading-hub");
             });
         }
     }

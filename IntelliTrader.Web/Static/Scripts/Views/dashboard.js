@@ -172,6 +172,55 @@ $(function () {
         }
     });
 
+    // Use SignalR for real-time updates if available
+    if (typeof IntelliTraderSignalR !== "undefined") {
+        initializeSignalRDashboard();
+    } else {
+        // Fallback to polling
+        initializePollingDashboard();
+    }
+});
+
+/**
+ * Initialize SignalR for real-time dashboard updates.
+ */
+function initializeSignalRDashboard() {
+    // Listen for trade executions to refresh the table
+    IntelliTraderSignalR.on("onTradeExecuted", function (data) {
+        console.log("Dashboard: Trade executed", data);
+        // Refresh table after a short delay to allow server state to update
+        setTimeout(function () {
+            refreshTable();
+        }, 500);
+    });
+
+    // Listen for position changes
+    IntelliTraderSignalR.on("onPositionChanged", function (data) {
+        console.log("Dashboard: Position changed", data);
+        // Only refresh if not in detail view
+        if ($(".additional-details").length == 0 && $(".dtr-details").length == 0) {
+            refreshTable();
+        }
+    });
+
+    // Fallback polling at a slower rate when SignalR is connected
+    setInterval(function () {
+        if (!IntelliTraderSignalR.isConnected()) {
+            refreshTable();
+        }
+    }, 10000); // Poll every 10 seconds as fallback
+
+    document.addEventListener("visibilitychange", function () {
+        if (!document.hidden) {
+            refreshTable();
+        }
+    }, false);
+}
+
+/**
+ * Initialize polling for dashboard updates (fallback).
+ */
+function initializePollingDashboard() {
     setInterval(function () {
         refreshTable();
     }, 5000);
@@ -179,7 +228,7 @@ $(function () {
     document.addEventListener("visibilitychange", function () {
         refreshTable();
     }, false);
-});
+}
 
 function refreshTable() {
     if (!document.hidden && $(".additional-details").length == 0 && $(".dtr-details").length == 0) {

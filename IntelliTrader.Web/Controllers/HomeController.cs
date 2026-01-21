@@ -1,11 +1,11 @@
 ﻿using IntelliTrader.Core;
 using IntelliTrader.Web.Models;
 using Microsoft.AspNetCore.Mvc;
-using Newtonsoft.Json;
 using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
@@ -13,8 +13,6 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.Primitives;
 using System.Threading.Tasks;
-using System.Security.Cryptography;
-using System.Text;
 
 namespace IntelliTrader.Web.Controllers
 {
@@ -26,7 +24,10 @@ namespace IntelliTrader.Web.Controllers
         private readonly ISignalsService _signalsService;
         private readonly ILoggingService _loggingService;
         private readonly IHealthCheckService _healthCheckService;
+        private readonly IPasswordService _passwordService;
+        private readonly IConfigProvider _configProvider;
         private readonly IEnumerable<IConfigurableService> _configurableServices;
+        private readonly IPortfolioRiskManager _portfolioRiskManager;
 
         public HomeController(
             ICoreService coreService,
@@ -34,14 +35,20 @@ namespace IntelliTrader.Web.Controllers
             ISignalsService signalsService,
             ILoggingService loggingService,
             IHealthCheckService healthCheckService,
-            IEnumerable<IConfigurableService> configurableServices)
+            IPasswordService passwordService,
+            IConfigProvider configProvider,
+            IEnumerable<IConfigurableService> configurableServices,
+            IPortfolioRiskManager portfolioRiskManager = null)
         {
             _coreService = coreService ?? throw new ArgumentNullException(nameof(coreService));
             _tradingService = tradingService ?? throw new ArgumentNullException(nameof(tradingService));
             _signalsService = signalsService ?? throw new ArgumentNullException(nameof(signalsService));
             _loggingService = loggingService ?? throw new ArgumentNullException(nameof(loggingService));
             _healthCheckService = healthCheckService ?? throw new ArgumentNullException(nameof(healthCheckService));
+            _passwordService = passwordService ?? throw new ArgumentNullException(nameof(passwordService));
+            _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
             _configurableServices = configurableServices ?? throw new ArgumentNullException(nameof(configurableServices));
+            _portfolioRiskManager = portfolioRiskManager; // Optional - may be null if not registered
         }
 
         #region Authentication
@@ -69,7 +76,8 @@ namespace IntelliTrader.Web.Controllers
         {
             if (ModelState.IsValid)
             {
-                var isValid = !_coreService.Config.PasswordProtected || VerifyPassword(model.Password, _coreService.Config.Password);
+                var isValid = !_coreService.Config.PasswordProtected ||
+                    _passwordService.VerifyPassword(model.Password, _coreService.Config.Password);
                 if (!isValid)
                 {
                     ModelState.AddModelError("Password", "Invalid Password");
@@ -77,6 +85,13 @@ namespace IntelliTrader.Web.Controllers
                 }
                 else
                 {
+                    // Log warning if using legacy MD5 hash - admin should migrate to BCrypt
+                    if (_passwordService.IsLegacyHash(_coreService.Config.Password))
+                    {
+                        _loggingService.Warning(
+                            "SECURITY WARNING: Password is using legacy MD5 hash. " +
+                            "Please generate a new BCrypt hash using /GeneratePasswordHash endpoint and update core.json");
+                    }
                     return await PerformLogin(model.RememberMe);
                 }
             }
@@ -113,65 +128,60 @@ namespace IntelliTrader.Web.Controllers
         }
 
         /// <summary>
-        /// Verifies a password against a stored hash.
-        /// Supports both legacy MD5 hashes (32 hex chars) and BCrypt hashes ($2a$/$2b$ prefix).
+        /// Generates a secure BCrypt hash for a password.
+        /// Use this endpoint to create a hash for core.json configuration.
+        ///
+        /// SECURITY NOTE: This endpoint requires authentication. Only authenticated
+        /// administrators can generate password hashes.
+        ///
+        /// USAGE:
+        /// 1. POST /GeneratePasswordHash with {"password": "your-new-password"}
+        /// 2. Copy the returned hash to core.json Password field
+        /// 3. Restart the service
         /// </summary>
-        private bool VerifyPassword(string password, string storedHash)
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public IActionResult GeneratePasswordHash([FromForm] string password)
         {
-            if (string.IsNullOrEmpty(password) || string.IsNullOrEmpty(storedHash))
+            if (string.IsNullOrEmpty(password))
             {
-                return false;
+                return BadRequest("Password cannot be empty");
             }
 
-            // Check if it's a BCrypt hash (starts with $2a$ or $2b$)
-            if (storedHash.StartsWith("$2a$") || storedHash.StartsWith("$2b$"))
+            if (password.Length < 8)
             {
-                return BCrypt.Net.BCrypt.Verify(password, storedHash);
+                return BadRequest("Password must be at least 8 characters long");
             }
 
-            // Legacy: MD5 hash (32 hex characters)
-            if (storedHash.Length == 32 && storedHash.All(c => char.IsLetterOrDigit(c)))
-            {
-                var md5Hash = ComputeMD5Hash(password);
-                return md5Hash.Equals(storedHash, StringComparison.OrdinalIgnoreCase);
-            }
+            var hash = _passwordService.HashPassword(password);
 
-            return false;
+            return Json(new
+            {
+                Hash = hash,
+                Instructions = "Copy this hash to core.json 'Password' field and restart the service. " +
+                              "The hash uses BCrypt with work factor 12 for secure password storage."
+            });
         }
 
         /// <summary>
-        /// Creates a secure BCrypt hash for a password.
-        /// Use this for new password storage.
+        /// Returns information about the current password hash type.
+        /// Useful for administrators to check if migration to BCrypt is needed.
         /// </summary>
-        private static string HashPassword(string password)
+        public IActionResult PasswordStatus()
         {
-            return BCrypt.Net.BCrypt.HashPassword(password, workFactor: 12);
-        }
+            var currentHash = _coreService.Config.Password;
+            var isLegacy = _passwordService.IsLegacyHash(currentHash);
+            var isBCrypt = _passwordService.IsBCryptHash(currentHash);
 
-        /// <summary>
-        /// Legacy MD5 hash for backward compatibility with existing stored passwords.
-        /// DO NOT use for new passwords - use HashPassword() instead.
-        /// </summary>
-        [Obsolete("Use HashPassword() for new passwords. This is only for verifying legacy MD5 hashes.")]
-        private static string ComputeMD5Hash(string input)
-        {
-            if (string.IsNullOrEmpty(input))
+            return Json(new
             {
-                throw new ArgumentNullException(nameof(input));
-            }
-
-            using (var md5 = MD5.Create())
-            {
-                byte[] inputBytes = Encoding.ASCII.GetBytes(input);
-                byte[] hash = md5.ComputeHash(inputBytes);
-
-                var sb = new StringBuilder();
-                for (int i = 0; i < hash.Length; i++)
-                {
-                    sb.Append(hash[i].ToString("X2"));
-                }
-                return sb.ToString();
-            }
+                PasswordProtected = _coreService.Config.PasswordProtected,
+                HashType = isBCrypt ? "BCrypt (secure)" : isLegacy ? "MD5 (legacy - migrate immediately)" : "Unknown",
+                NeedsMigration = isLegacy,
+                MigrationInstructions = isLegacy
+                    ? "Use POST /GeneratePasswordHash to create a new BCrypt hash and update core.json"
+                    : null
+            });
         }
 
         #endregion Authentication
@@ -282,7 +292,7 @@ namespace IntelliTrader.Web.Controllers
                 SellEnabled = _tradingService.Config.SellEnabled,
                 TradingSuspended = _tradingService.IsTradingSuspended,
                 HealthCheckEnabled = _coreService.Config.HealthCheckEnabled,
-                Configs = _configurableServices.Where(s => !s.GetType().Name.Contains(Constants.ServiceNames.BacktestingService)).OrderBy(s => s.ServiceName).ToDictionary(s => s.ServiceName, s => Application.ConfigProvider.GetSectionJson(s.ServiceName))
+                Configs = _configurableServices.Where(s => !s.GetType().Name.Contains(Constants.ServiceNames.BacktestingService)).OrderBy(s => s.ServiceName).ToDictionary(s => s.ServiceName, s => _configProvider.GetSectionJson(s.ServiceName))
             };
 
             return View(model);
@@ -313,6 +323,14 @@ namespace IntelliTrader.Web.Controllers
 
 
 
+        /// <summary>
+        /// Get current trading status.
+        /// </summary>
+        /// <remarks>
+        /// DEPRECATED: Use GET /api/status instead.
+        /// This endpoint is maintained for backward compatibility but will be removed in a future version.
+        /// </remarks>
+        [Obsolete("Use GET /api/status instead. This endpoint will be removed in a future version.")]
         public IActionResult Status()
         {
             var status = new
@@ -324,17 +342,47 @@ namespace IntelliTrader.Web.Controllers
                 TrailingSignals = _signalsService.GetTrailingSignals(),
                 TradingSuspended = _tradingService.IsTradingSuspended,
                 HealthChecks = _healthCheckService.GetHealthChecks().OrderBy(c => c.Name),
-                LogEntries = _loggingService.GetLogEntries().Reverse().Take(5)
+                LogEntries = _loggingService.GetLogEntries().Reverse().Take(5),
+                // Portfolio risk management metrics
+                RiskManagement = _portfolioRiskManager != null && _tradingService.Config.RiskManagement?.Enabled == true
+                    ? new
+                    {
+                        PortfolioHeat = _portfolioRiskManager.GetCurrentHeat(),
+                        MaxPortfolioHeat = _tradingService.Config.RiskManagement.MaxPortfolioHeat,
+                        CurrentDrawdown = _portfolioRiskManager.GetCurrentDrawdown(),
+                        MaxDrawdownPercent = _tradingService.Config.RiskManagement.MaxDrawdownPercent,
+                        DailyProfitLoss = _portfolioRiskManager.GetDailyProfitLoss(),
+                        DailyLossLimitPercent = _tradingService.Config.RiskManagement.DailyLossLimitPercent,
+                        CircuitBreakerTriggered = _portfolioRiskManager.IsCircuitBreakerTriggered(),
+                        DailyLossLimitReached = _portfolioRiskManager.IsDailyLossLimitReached()
+                    }
+                    : null
             };
             return Json(status);
         }
 
+        /// <summary>
+        /// Get all available signal names.
+        /// </summary>
+        /// <remarks>
+        /// DEPRECATED: Use GET /api/signal-names instead.
+        /// This endpoint is maintained for backward compatibility but will be removed in a future version.
+        /// </remarks>
+        [Obsolete("Use GET /api/signal-names instead. This endpoint will be removed in a future version.")]
         public IActionResult SignalNames()
         {
             return Json(_signalsService.GetSignalNames());
         }
 
+        /// <summary>
+        /// Get all active trading pairs with their current status.
+        /// </summary>
+        /// <remarks>
+        /// DEPRECATED: Use POST /api/trading-pairs instead.
+        /// This endpoint is maintained for backward compatibility but will be removed in a future version.
+        /// </remarks>
         [HttpPost]
+        [Obsolete("Use POST /api/trading-pairs instead. This endpoint will be removed in a future version.")]
         public IActionResult TradingPairs()
         {
             var tradingPairs = from tradingPair in _tradingService.Account.GetTradingPairs()
@@ -368,7 +416,15 @@ namespace IntelliTrader.Web.Controllers
             return Json(tradingPairs);
         }
 
+        /// <summary>
+        /// Get all market pairs with their signal data.
+        /// </summary>
+        /// <remarks>
+        /// DEPRECATED: Use POST /api/market-pairs or POST /api/market-pairs/filtered instead.
+        /// This endpoint is maintained for backward compatibility but will be removed in a future version.
+        /// </remarks>
         [HttpPost]
+        [Obsolete("Use POST /api/market-pairs or POST /api/market-pairs/filtered instead. This endpoint will be removed in a future version.")]
         public IActionResult MarketPairs(List<string> signalsFilter)
         {
             var allSignals = _signalsService.GetAllSignals();
@@ -443,7 +499,7 @@ namespace IntelliTrader.Web.Controllers
                 return BadRequest("Invalid JSON format in configuration definition");
             }
 
-            Application.ConfigProvider.SetSectionJson(model.Name, model.Definition);
+            _configProvider.SetSectionJson(model.Name, model.Definition);
             return Ok();
         }
 
@@ -550,8 +606,8 @@ namespace IntelliTrader.Web.Controllers
                         {
                             var data = match.Groups["data"].ToString();
                             var json = Utils.FixInvalidJson(data.Replace(nameof(OrderMetadata), ""));
-                            TradeResult tradeResult = JsonConvert.DeserializeObject<TradeResult>(json);
-                            if (tradeResult.IsSuccessful)
+                            TradeResult? tradeResult = JsonSerializer.Deserialize<TradeResult>(json);
+                            if (tradeResult != null && tradeResult.IsSuccessful)
                             {
                                 DateTimeOffset tradeDate = tradeResult.SellDate.ToOffset(TimeSpan.FromHours(_coreService.Config.TimezoneOffset)).Date;
                                 if (date == null || date == tradeDate)

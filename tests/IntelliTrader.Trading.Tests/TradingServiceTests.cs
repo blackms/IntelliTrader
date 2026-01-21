@@ -19,6 +19,8 @@ public class TradingServiceTests
     private readonly Mock<ISignalsService> _signalsServiceMock;
     private readonly Mock<IExchangeService> _exchangeServiceMock;
     private readonly Mock<ITradingAccount> _accountMock;
+    private readonly Mock<IApplicationContext> _applicationContextMock;
+    private readonly Mock<IConfigProvider> _configProviderMock;
     private readonly TradingService _sut;
 
     public TradingServiceTests()
@@ -32,6 +34,8 @@ public class TradingServiceTests
         _signalsServiceMock = new Mock<ISignalsService>();
         _exchangeServiceMock = new Mock<IExchangeService>();
         _accountMock = new Mock<ITradingAccount>();
+        _applicationContextMock = new Mock<IApplicationContext>();
+        _configProviderMock = new Mock<IConfigProvider>();
 
         // Setup backtesting config (not replaying by default)
         var backtestingConfigMock = new Mock<IBacktestingConfig>();
@@ -60,7 +64,9 @@ public class TradingServiceTests
             _rulesServiceMock.Object,
             _backtestingServiceMock.Object,
             _signalsServiceMock.Object,
-            exchangeServiceFactory);
+            exchangeServiceFactory,
+            _applicationContextMock.Object,
+            _configProviderMock.Object);
 
         // Inject account via reflection (since it's set in Start())
         SetupAccount(_accountMock.Object);
@@ -2065,6 +2071,8 @@ public class TradingServiceTests
         var backtestingServiceMock = new Mock<IBacktestingService>();
         var signalsServiceMock = new Mock<ISignalsService>();
         var exchangeServiceMock = new Mock<IExchangeService>();
+        var applicationContextMock = new Mock<IApplicationContext>();
+        var configProviderMock = new Mock<IConfigProvider>();
 
         var backtestingConfigMock = new Mock<IBacktestingConfig>();
         backtestingConfigMock.Setup(x => x.Enabled).Returns(false);
@@ -2090,7 +2098,9 @@ public class TradingServiceTests
             rulesServiceMock.Object,
             backtestingServiceMock.Object,
             signalsServiceMock.Object,
-            exchangeServiceFactory);
+            exchangeServiceFactory,
+            applicationContextMock.Object,
+            configProviderMock.Object);
 
         // Act
         sut.Start();
@@ -2113,6 +2123,8 @@ public class TradingServiceTests
         var backtestingServiceMock = new Mock<IBacktestingService>();
         var signalsServiceMock = new Mock<ISignalsService>();
         var exchangeServiceMock = new Mock<IExchangeService>();
+        var applicationContextMock = new Mock<IApplicationContext>();
+        var configProviderMock = new Mock<IConfigProvider>();
 
         var backtestingConfigMock = new Mock<IBacktestingConfig>();
         backtestingConfigMock.Setup(x => x.Enabled).Returns(false);
@@ -2138,7 +2150,9 @@ public class TradingServiceTests
             rulesServiceMock.Object,
             backtestingServiceMock.Object,
             signalsServiceMock.Object,
-            exchangeServiceFactory);
+            exchangeServiceFactory,
+            applicationContextMock.Object,
+            configProviderMock.Object);
 
         sut.Start();
 
@@ -2169,6 +2183,8 @@ public class TradingServiceTests
         var backtestingServiceMock = new Mock<IBacktestingService>();
         var signalsServiceMock = new Mock<ISignalsService>();
         var exchangeServiceMock = new Mock<IExchangeService>();
+        var applicationContextMock = new Mock<IApplicationContext>();
+        var configProviderMock = new Mock<IConfigProvider>();
 
         var backtestingConfigMock = new Mock<IBacktestingConfig>();
         backtestingConfigMock.Setup(x => x.Enabled).Returns(false);
@@ -2194,7 +2210,9 @@ public class TradingServiceTests
             rulesServiceMock.Object,
             backtestingServiceMock.Object,
             signalsServiceMock.Object,
-            exchangeServiceFactory);
+            exchangeServiceFactory,
+            applicationContextMock.Object,
+            configProviderMock.Object);
 
         sut.Start();
 
@@ -2228,6 +2246,8 @@ public class TradingServiceTests
         var backtestingServiceMock = new Mock<IBacktestingService>();
         var signalsServiceMock = new Mock<ISignalsService>();
         var exchangeServiceMock = new Mock<IExchangeService>();
+        var applicationContextMock = new Mock<IApplicationContext>();
+        var configProviderMock = new Mock<IConfigProvider>();
 
         var backtestingConfigMock = new Mock<IBacktestingConfig>();
         backtestingConfigMock.Setup(x => x.Enabled).Returns(false);
@@ -2262,7 +2282,9 @@ public class TradingServiceTests
             rulesServiceMock.Object,
             backtestingServiceMock.Object,
             signalsServiceMock.Object,
-            exchangeServiceFactory);
+            exchangeServiceFactory,
+            applicationContextMock.Object,
+            configProviderMock.Object);
 
         // Act - Start() calls OnTradingRulesChanged internally
         sut.Start();

@@ -15,6 +15,7 @@ public class SignalsServiceTests
     private readonly Mock<ITradingService> _tradingServiceMock;
     private readonly Mock<IRulesService> _rulesServiceMock;
     private readonly Mock<IModuleRules> _moduleRulesMock;
+    private readonly Mock<IConfigProvider> _configProviderMock;
     private readonly SignalsService _sut;
     private readonly Dictionary<string, Mock<ISignalReceiver>> _receiverMocks;
     private readonly List<SignalDefinition> _definitions;
@@ -27,6 +28,7 @@ public class SignalsServiceTests
         _tradingServiceMock = new Mock<ITradingService>();
         _rulesServiceMock = new Mock<IRulesService>();
         _moduleRulesMock = new Mock<IModuleRules>();
+        _configProviderMock = new Mock<IConfigProvider>();
         _receiverMocks = new Dictionary<string, Mock<ISignalReceiver>>();
         _definitions = new List<SignalDefinition>();
 
@@ -52,7 +54,8 @@ public class SignalsServiceTests
             _healthCheckServiceMock.Object,
             _tradingServiceMock.Object,
             _rulesServiceMock.Object,
-            signalReceiverFactory);
+            signalReceiverFactory,
+            _configProviderMock.Object);
     }
 
     private Mock<ISignalReceiver> CreateMockReceiver(string name, int period, IEnumerable<ISignal>? signals = null, double? averageRating = null)
@@ -928,7 +931,8 @@ public class SignalsServiceTests
             _healthCheckServiceMock.Object,
             _tradingServiceMock.Object,
             _rulesServiceMock.Object,
-            (r, n, c) => null!);
+            (r, n, c) => null!,
+            _configProviderMock.Object);
 
         // Assert
         act.Should().Throw<ArgumentNullException>()
@@ -945,7 +949,8 @@ public class SignalsServiceTests
             _healthCheckServiceMock.Object,
             _tradingServiceMock.Object,
             _rulesServiceMock.Object,
-            (r, n, c) => null!);
+            (r, n, c) => null!,
+            _configProviderMock.Object);
 
         // Assert
         act.Should().Throw<ArgumentNullException>()
@@ -962,7 +967,8 @@ public class SignalsServiceTests
             null!,
             _tradingServiceMock.Object,
             _rulesServiceMock.Object,
-            (r, n, c) => null!);
+            (r, n, c) => null!,
+            _configProviderMock.Object);
 
         // Assert
         act.Should().Throw<ArgumentNullException>()
@@ -979,7 +985,8 @@ public class SignalsServiceTests
             _healthCheckServiceMock.Object,
             null!,
             _rulesServiceMock.Object,
-            (r, n, c) => null!);
+            (r, n, c) => null!,
+            _configProviderMock.Object);
 
         // Assert
         act.Should().Throw<ArgumentNullException>()
@@ -996,7 +1003,8 @@ public class SignalsServiceTests
             _healthCheckServiceMock.Object,
             _tradingServiceMock.Object,
             null!,
-            (r, n, c) => null!);
+            (r, n, c) => null!,
+            _configProviderMock.Object);
 
         // Assert
         act.Should().Throw<ArgumentNullException>()
@@ -1013,7 +1021,8 @@ public class SignalsServiceTests
             _healthCheckServiceMock.Object,
             _tradingServiceMock.Object,
             _rulesServiceMock.Object,
-            null!);
+            null!,
+            _configProviderMock.Object);
 
         // Assert
         act.Should().Throw<ArgumentNullException>()

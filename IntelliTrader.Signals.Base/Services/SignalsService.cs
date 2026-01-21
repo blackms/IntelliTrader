@@ -1,4 +1,4 @@
-﻿using IntelliTrader.Core;
+using IntelliTrader.Core;
 using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Concurrent;
@@ -8,18 +8,35 @@ using System.Threading;
 
 namespace IntelliTrader.Signals.Base
 {
-    public class SignalsService(
-        ICoreService coreService,
-        ILoggingService loggingService,
-        IHealthCheckService healthCheckService,
-        ITradingService tradingService,
-        IRulesService rulesService,
-        Func<string, string, IConfigurationSection, ISignalReceiver> signalReceiverFactory,
-        IConfigProvider configProvider) : ConfigrableServiceBase<SignalsConfig>(configProvider), ISignalsService
+    public class SignalsService : ConfigrableServiceBase<SignalsConfig>, ISignalsService
     {
+        private readonly ICoreService _coreService;
+        private readonly ILoggingService _loggingService;
+        private readonly IHealthCheckService _healthCheckService;
+        private readonly ITradingService _tradingService;
+        private readonly IRulesService _rulesService;
+        private readonly Func<string, string, IConfigurationSection, ISignalReceiver> _signalReceiverFactory;
+
+        public SignalsService(
+            ICoreService coreService,
+            ILoggingService loggingService,
+            IHealthCheckService healthCheckService,
+            ITradingService tradingService,
+            IRulesService rulesService,
+            Func<string, string, IConfigurationSection, ISignalReceiver> signalReceiverFactory,
+            IConfigProvider configProvider) : base(configProvider)
+        {
+            _coreService = coreService ?? throw new ArgumentNullException(nameof(coreService));
+            _loggingService = loggingService ?? throw new ArgumentNullException(nameof(loggingService));
+            _healthCheckService = healthCheckService ?? throw new ArgumentNullException(nameof(healthCheckService));
+            _tradingService = tradingService ?? throw new ArgumentNullException(nameof(tradingService));
+            _rulesService = rulesService ?? throw new ArgumentNullException(nameof(rulesService));
+            _signalReceiverFactory = signalReceiverFactory ?? throw new ArgumentNullException(nameof(signalReceiverFactory));
+        }
+
         public override string ServiceName => Constants.ServiceNames.SignalsService;
 
-        protected override ILoggingService LoggingService => loggingService;
+        protected override ILoggingService LoggingService => _loggingService;
 
         ISignalsConfig ISignalsService.Config => Config;
 
@@ -34,15 +51,15 @@ namespace IntelliTrader.Signals.Base
 
         public void Start()
         {
-            loggingService.Info("Start Signals service...");
+            _loggingService.Info("Start Signals service...");
 
             OnSignalRulesChanged();
-            rulesService.RegisterRulesChangeCallback(OnSignalRulesChanged);
+            _rulesService.RegisterRulesChangeCallback(OnSignalRulesChanged);
 
             signalReceivers.Clear();
             foreach (var definition in Config.Definitions)
             {
-                var receiver = signalReceiverFactory(definition.Receiver, definition.Name, definition.Configuration);
+                var receiver = _signalReceiverFactory(definition.Receiver, definition.Name, definition.Configuration);
 
                 if (receiver != null)
                 {
@@ -64,12 +81,12 @@ namespace IntelliTrader.Signals.Base
             // Note: Signal rule processing is now handled by SignalRuleProcessorService
             // registered in the Infrastructure layer as a BackgroundService
 
-            loggingService.Info("Signals service started");
+            _loggingService.Info("Signals service started");
         }
 
         public void Stop()
         {
-            loggingService.Info("Stop Signals service...");
+            _loggingService.Info("Stop Signals service...");
 
             // Create snapshot of values to avoid issues during iteration
             var receivers = signalReceivers.Values.ToList();
@@ -81,11 +98,11 @@ namespace IntelliTrader.Signals.Base
 
             // Note: BackgroundServices are stopped by the host when the application shuts down
 
-            rulesService.UnregisterRulesChangeCallback(OnSignalRulesChanged);
+            _rulesService.UnregisterRulesChangeCallback(OnSignalRulesChanged);
 
-            healthCheckService.RemoveHealthCheck(Constants.HealthChecks.SignalRulesProcessed);
+            _healthCheckService.RemoveHealthCheck(Constants.HealthChecks.SignalRulesProcessed);
 
-            loggingService.Info("Signals service stopped");
+            _loggingService.Info("Signals service stopped");
         }
 
         public void ClearTrailing()
@@ -218,14 +235,14 @@ namespace IntelliTrader.Signals.Base
             }
             catch (Exception ex)
             {
-                loggingService.Error("Unable to get global rating", ex);
+                _loggingService.Error("Unable to get global rating", ex);
                 return null;
             }
         }
 
         private void OnSignalRulesChanged()
         {
-            Rules = rulesService.GetRules(ServiceName);
+            Rules = _rulesService.GetRules(ServiceName);
             RulesConfig = Rules.GetConfiguration<SignalRulesConfig>();
         }
     }

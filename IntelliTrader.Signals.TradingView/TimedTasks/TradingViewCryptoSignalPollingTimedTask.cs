@@ -1,7 +1,5 @@
-﻿using IntelliTrader.Core;
+using IntelliTrader.Core;
 using IntelliTrader.Signals.Base;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -9,6 +7,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace IntelliTrader.Signals.TradingView
@@ -23,12 +22,11 @@ namespace IntelliTrader.Signals.TradingView
         private readonly IHealthCheckService healthCheckService;
         private readonly ITradingService tradingService;
         private readonly TradingViewCryptoSignalReceiver signalReceiver;
-        private readonly JsonSerializer signalsSerializer;
         private readonly HttpClient httpClient;
 
         private readonly ConcurrentDictionary<DateTimeOffset, List<Signal>> signalsHistory = new ConcurrentDictionary<DateTimeOffset, List<Signal>>();
         private DateTimeOffset lastSnapshotDate;
-        private List<Signal> signals;
+        private List<Signal>? signals;
         private double? averageRating;
 
         private object syncRoot = new object();
@@ -40,9 +38,6 @@ namespace IntelliTrader.Signals.TradingView
             this.healthCheckService = healthCheckService;
             this.tradingService = tradingService;
             this.signalReceiver = signalReceiver;
-
-            this.signalsSerializer = new JsonSerializer();
-            this.signalsSerializer.Converters.Add(new TradingViewCryptoSignalConverter());
             this.httpClient = CreateHttpClient();
         }
 
@@ -67,16 +62,27 @@ namespace IntelliTrader.Signals.TradingView
                 using (var response = await httpClient.PostAsync(signalReceiver.Config.RequestUrl, requestContent).ConfigureAwait(false))
                 {
                     var responseContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                    var jtokens = JObject.Parse(responseContent).SelectTokens("data[*].d");
+
+                    // Parse using System.Text.Json
+                    using var document = JsonDocument.Parse(responseContent);
+                    var dataArray = document.RootElement.GetProperty("data");
+
                     lock (syncRoot)
                     {
-                        List<Signal> historicalSignals = GetHistoricalSignals();
-                        signals = jtokens.Select(t =>
+                        List<Signal>? historicalSignals = GetHistoricalSignals();
+                        var parsedSignals = new List<Signal?>();
+
+                        foreach (var item in dataArray.EnumerateArray())
                         {
                             try
                             {
-                                var signal = t.ToObject<Signal>(signalsSerializer);
-                                if (signal.Pair.EndsWith(tradingService.Config.Market))
+                                if (!item.TryGetProperty("d", out var signalArray) || signalArray.ValueKind != JsonValueKind.Array)
+                                {
+                                    continue;
+                                }
+
+                                var signal = ParseSignalFromArray(signalArray);
+                                if (signal != null && signal.Pair != null && signal.Pair.EndsWith(tradingService.Config.Market))
                                 {
                                     signal.Name = signalReceiver.SignalName;
 
@@ -86,19 +92,16 @@ namespace IntelliTrader.Signals.TradingView
                                         signal.VolumeChange = CalculatePercentageChange(historicalSignal.Volume, signal.Volume);
                                         signal.RatingChange = CalculatePercentageChange(historicalSignal.Rating, signal.Rating);
                                     }
-                                    return signal;
-                                }
-                                else
-                                {
-                                    return null;
+                                    parsedSignals.Add(signal);
                                 }
                             }
                             catch (Exception ex)
                             {
                                 loggingService.Debug("Unable to parse Trading View Crypto Signal", ex);
-                                return null;
                             }
-                        }).Where(s => s != null && s.Pair != null).ToList();
+                        }
+
+                        signals = parsedSignals.Where(s => s != null && s.Pair != null).Cast<Signal>().ToList();
 
                         if (signals.Count > 0)
                         {
@@ -109,7 +112,7 @@ namespace IntelliTrader.Signals.TradingView
                                 CleanUpSignalsHistory();
                             }
                             averageRating = signals.Any(s => s.Rating.HasValue) ? signals.Where(s => s.Rating.HasValue).Average(s => s.Rating) : null;
-                            healthCheckService.UpdateHealthCheck($"{Constants.HealthChecks.TradingViewCryptoSignalsReceived} [{signalReceiver.SignalName}]", $"Total: {signals.Count()}");
+                            healthCheckService.UpdateHealthCheck($"{Constants.HealthChecks.TradingViewCryptoSignalsReceived} [{signalReceiver.SignalName}]", $"Total: {signals.Count}");
                         }
                     }
                 }
@@ -120,7 +123,44 @@ namespace IntelliTrader.Signals.TradingView
             }
         }
 
-        public IEnumerable<ISignal> GetSignals()
+        /// <summary>
+        /// Parses a Signal from a JSON array in the format: [pair, price, priceChange, volume, rating, volatility]
+        /// </summary>
+        private static Signal? ParseSignalFromArray(JsonElement array)
+        {
+            var signal = new Signal();
+
+            var index = 0;
+            foreach (var element in array.EnumerateArray())
+            {
+                switch (index)
+                {
+                    case 0:
+                        signal.Pair = element.ValueKind == JsonValueKind.String ? element.GetString() : null;
+                        break;
+                    case 1:
+                        signal.Price = element.ValueKind == JsonValueKind.Number ? element.GetDecimal() : null;
+                        break;
+                    case 2:
+                        signal.PriceChange = element.ValueKind == JsonValueKind.Number ? element.GetDecimal() : null;
+                        break;
+                    case 3:
+                        signal.Volume = element.ValueKind == JsonValueKind.Number ? element.GetInt64() : null;
+                        break;
+                    case 4:
+                        signal.Rating = element.ValueKind == JsonValueKind.Number ? element.GetDouble() : null;
+                        break;
+                    case 5:
+                        signal.Volatility = element.ValueKind == JsonValueKind.Number ? element.GetDouble() : null;
+                        break;
+                }
+                index++;
+            }
+
+            return signal;
+        }
+
+        public IEnumerable<ISignal>? GetSignals()
         {
             lock (syncRoot)
             {
@@ -136,7 +176,7 @@ namespace IntelliTrader.Signals.TradingView
             }
         }
 
-        private List<Signal> GetHistoricalSignals()
+        private List<Signal>? GetHistoricalSignals()
         {
             lock (syncRoot)
             {
@@ -162,7 +202,7 @@ namespace IntelliTrader.Signals.TradingView
                 {
                     if ((DateTimeOffset.Now - date).TotalMinutes > signalReceiver.Config.SignalPeriod + HISTORICAL_SIGNALS_ADDITIONAL_SAVE_MINUTES)
                     {
-                        signalsHistory.TryRemove(date, out List<Signal> signals);
+                        signalsHistory.TryRemove(date, out List<Signal>? _);
                     }
                 }
             }

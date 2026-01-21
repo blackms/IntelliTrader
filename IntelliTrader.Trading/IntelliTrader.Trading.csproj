@@ -11,7 +11,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\IntelliTrader.Application\IntelliTrader.Application.csproj" />
     <ProjectReference Include="..\IntelliTrader.Core\IntelliTrader.Core.csproj" />
+    <ProjectReference Include="..\IntelliTrader.Domain\IntelliTrader.Domain.csproj" />
     <ProjectReference Include="..\IntelliTrader.Exchange.Base\IntelliTrader.Exchange.Base.csproj" />
   </ItemGroup>
 

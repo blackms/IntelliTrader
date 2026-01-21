@@ -1,4 +1,6 @@
 using System;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace IntelliTrader.Core
 {
@@ -8,6 +10,7 @@ namespace IntelliTrader.Core
     /// </summary>
     public interface IBuyOrchestrator
     {
+        // Synchronous methods (for backward compatibility)
         /// <summary>
         /// Executes a buy operation with swap detection and trailing buy support.
         /// </summary>
@@ -28,5 +31,21 @@ namespace IntelliTrader.Core
         /// <param name="options">Buy options for the order.</param>
         /// <returns>Order details if successful; null otherwise.</returns>
         IOrderDetails PlaceBuyOrder(BuyOptions options);
+
+        // Async methods (preferred for new code)
+        /// <summary>
+        /// Asynchronously executes a buy operation with swap detection and trailing buy support.
+        /// </summary>
+        /// <param name="options">Buy options including pair, amount, and metadata.</param>
+        /// <param name="cancellationToken">Cancellation token for the operation.</param>
+        Task BuyAsync(BuyOptions options, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Asynchronously places a buy order after validation.
+        /// </summary>
+        /// <param name="options">Buy options for the order.</param>
+        /// <param name="cancellationToken">Cancellation token for the operation.</param>
+        /// <returns>Order details if successful; null otherwise.</returns>
+        Task<IOrderDetails> PlaceBuyOrderAsync(BuyOptions options, CancellationToken cancellationToken = default);
     }
 }

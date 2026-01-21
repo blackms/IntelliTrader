@@ -2,6 +2,8 @@ using IntelliTrader.Core;
 using IntelliTrader.Exchange.Base;
 using System;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace IntelliTrader.Trading
 {
@@ -198,6 +200,80 @@ namespace IntelliTrader.Trading
                 };
 
                 orderDetails = Account.PlaceOrder(orderRequest, options.Metadata);
+
+                if (orderDetails != null && orderDetails.Result == OrderResult.Filled)
+                {
+                    string newPairName = tradingPair != null ? tradingPair.FormattedName : options.Pair;
+                    _loggingService.Info($"Buy order filled for {newPairName}. Price: {orderDetails.AveragePrice:0.00000000}, Amount: {orderDetails.AmountFilled:0.00000000}, Cost: {orderDetails.AverageCost:0.00}");
+                    _ = _notificationService.NotifyAsync($"Buy order filled for {newPairName}. Price: {orderDetails.AveragePrice:0.00000000}, Cost: {orderDetails.AverageCost:0.00}");
+                    OrderHistory.Push(orderDetails);
+                }
+                else
+                {
+                    _loggingService.Info($"Unable to place buy order for {options.Pair}. Order result: {orderDetails?.Result}");
+                }
+
+                _reapplyTradingRules();
+            }
+            else
+            {
+                _loggingService.Info(message);
+            }
+            return orderDetails;
+        }
+
+        // Async methods (preferred for new code)
+        public Task BuyAsync(BuyOptions options, CancellationToken cancellationToken = default)
+        {
+            if (CanBuy(options, out string message))
+            {
+                return InitiateBuyAsync(options, cancellationToken);
+            }
+            else
+            {
+                _loggingService.Debug(message);
+                return Task.CompletedTask;
+            }
+        }
+
+        private async Task InitiateBuyAsync(BuyOptions options, CancellationToken cancellationToken = default)
+        {
+            IPairConfig pairConfig = GetPairConfig(options.Pair);
+
+            if (!options.ManualOrder && !options.Swap && pairConfig.BuyTrailing != 0)
+            {
+                // Initiate trailing buy (synchronous operation)
+                _trailingManager.InitiateTrailingBuy(options.Pair);
+            }
+            else
+            {
+                await PlaceBuyOrderAsync(options, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        public async Task<IOrderDetails> PlaceBuyOrderAsync(BuyOptions options, CancellationToken cancellationToken = default)
+        {
+            IOrderDetails orderDetails = null;
+            _trailingManager.CancelTrailingBuy(options.Pair);
+            _trailingManager.CancelTrailingSell(options.Pair);
+
+            if (CanBuy(options, out string message))
+            {
+                IPairConfig pairConfig = GetPairConfig(options.Pair);
+                ITradingPair tradingPair = Account.GetTradingPair(options.Pair);
+                decimal currentPrice = GetCurrentPrice(options.Pair);
+                decimal amount = options.Amount ?? Math.Round(options.MaxCost.Value / currentPrice, 4);
+
+                var orderRequest = new BuyOrder
+                {
+                    Type = pairConfig.BuyType,
+                    Pair = options.Pair,
+                    Amount = amount,
+                    Price = currentPrice
+                };
+
+                // Use async order placement for non-blocking I/O
+                orderDetails = await Account.PlaceOrderAsync(orderRequest, options.Metadata, cancellationToken).ConfigureAwait(false);
 
                 if (orderDetails != null && orderDetails.Result == OrderResult.Filled)
                 {

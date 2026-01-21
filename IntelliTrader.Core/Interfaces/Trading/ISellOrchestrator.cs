@@ -1,4 +1,6 @@
 using System;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace IntelliTrader.Core
 {
@@ -8,6 +10,7 @@ namespace IntelliTrader.Core
     /// </summary>
     public interface ISellOrchestrator
     {
+        // Synchronous methods (for backward compatibility)
         /// <summary>
         /// Executes a sell operation with trailing sell support.
         /// </summary>
@@ -28,5 +31,21 @@ namespace IntelliTrader.Core
         /// <param name="options">Sell options for the order.</param>
         /// <returns>Order details if successful; null otherwise.</returns>
         IOrderDetails PlaceSellOrder(SellOptions options);
+
+        // Async methods (preferred for new code)
+        /// <summary>
+        /// Asynchronously executes a sell operation with trailing sell support.
+        /// </summary>
+        /// <param name="options">Sell options including pair and amount.</param>
+        /// <param name="cancellationToken">Cancellation token for the operation.</param>
+        Task SellAsync(SellOptions options, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Asynchronously places a sell order after validation.
+        /// </summary>
+        /// <param name="options">Sell options for the order.</param>
+        /// <param name="cancellationToken">Cancellation token for the operation.</param>
+        /// <returns>Order details if successful; null otherwise.</returns>
+        Task<IOrderDetails> PlaceSellOrderAsync(SellOptions options, CancellationToken cancellationToken = default);
     }
 }

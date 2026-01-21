@@ -2,6 +2,8 @@ using IntelliTrader.Core;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace IntelliTrader.Trading
 {
@@ -177,6 +179,56 @@ namespace IntelliTrader.Trading
                 string feesPair = sellOrderDetails.FeesCurrency + Config.Market;
                 tradingPair.Metadata.AdditionalCosts += GetCurrentPrice(feesPair) * sellOrderDetails.Fees;
             }
+        }
+
+        // Async methods (preferred for new code)
+        public async Task SwapAsync(SwapOptions options, CancellationToken cancellationToken = default)
+        {
+            if (!CanSwap(options, out string message))
+            {
+                _loggingService.Info(message);
+                return;
+            }
+
+            ITradingPair oldTradingPair = Account.GetTradingPair(options.OldPair);
+            var sellOptions = CreateSwapSellOptions(options);
+
+            if (!_sellOrchestrator.CanSell(sellOptions, out message))
+            {
+                _loggingService.Info($"Unable to swap {options.OldPair} for {options.NewPair}: {message}");
+                return;
+            }
+
+            // Capture old pair state before selling
+            decimal currentMargin = oldTradingPair.CurrentMargin;
+            decimal additionalCosts = CalculateAdditionalCosts(oldTradingPair);
+            int additionalDCALevels = oldTradingPair.DCALevel;
+
+            // Use async sell order placement
+            IOrderDetails sellOrderDetails = await _sellOrchestrator.PlaceSellOrderAsync(sellOptions, cancellationToken).ConfigureAwait(false);
+
+            // Verify sell was successful
+            if (Account.HasTradingPair(options.OldPair))
+            {
+                _loggingService.Info($"Unable to swap {options.OldPair} for {options.NewPair}. Reason: failed to sell {options.OldPair}");
+                return;
+            }
+
+            // Execute buy for new pair using async method
+            var buyOptions = CreateSwapBuyOptions(options, sellOrderDetails, currentMargin, additionalCosts, additionalDCALevels);
+            IOrderDetails buyOrderDetails = await _buyOrchestrator.PlaceBuyOrderAsync(buyOptions, cancellationToken).ConfigureAwait(false);
+
+            var newTradingPair = Account.GetTradingPair(options.NewPair) as TradingPair;
+            if (newTradingPair == null)
+            {
+                _loggingService.Info($"Unable to swap {options.OldPair} for {options.NewPair}. Reason: failed to buy {options.NewPair}");
+                _ = _notificationService.NotifyAsync($"Unable to swap {options.OldPair} for {options.NewPair}: Failed to buy {options.NewPair}");
+                return;
+            }
+
+            // Add sell fees to new position's additional costs
+            AddSwapFeesToPosition(newTradingPair, sellOrderDetails);
+            _loggingService.Info($"Swap {oldTradingPair.FormattedName} for {newTradingPair.FormattedName}. Old margin: {oldTradingPair.CurrentMargin:0.00}, new margin: {newTradingPair.CurrentMargin:0.00}");
         }
     }
 }

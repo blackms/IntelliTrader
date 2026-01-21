@@ -1,4 +1,5 @@
 using IntelliTrader.Core;
+using IntelliTrader.Domain.Events;
 using IntelliTrader.Exchange.Base;
 using System;
 using System.Collections.Concurrent;
@@ -6,6 +7,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+
+// Aliases for disambiguation
+using DomainOrderSide = IntelliTrader.Domain.Events.OrderSide;
+using DomainOrderType = IntelliTrader.Domain.Events.OrderType;
+using CoreOrderSide = IntelliTrader.Core.OrderSide;
+using IDomainEventDispatcher = IntelliTrader.Application.Ports.Driven.IDomainEventDispatcher;
 
 namespace IntelliTrader.Trading
 {
@@ -25,10 +32,16 @@ namespace IntelliTrader.Trading
         IApplicationContext applicationContext,
         IConfigProvider configProvider,
         IPortfolioRiskManager portfolioRiskManager = null,
-        IPositionSizerFactory positionSizerFactory = null) : ConfigrableServiceBase<TradingConfig>(configProvider), ITradingService
+        IPositionSizerFactory positionSizerFactory = null,
+        IDomainEventDispatcher domainEventDispatcher = null) : ConfigrableServiceBase<TradingConfig>(configProvider), ITradingService
     {
         private readonly IApplicationContext _applicationContext = applicationContext ?? throw new ArgumentNullException(nameof(applicationContext));
+        private readonly IDomainEventDispatcher _domainEventDispatcher = domainEventDispatcher;
         private const int MIN_INTERVAL_BETWEEN_BUY_AND_SELL = 10000;
+
+        // Track suspension time for TradingResumedEvent
+        private DateTimeOffset? _suspendedAt;
+        private SuspensionReason? _lastSuspensionReason;
 
         public override string ServiceName => Constants.ServiceNames.TradingService;
 
@@ -245,7 +258,25 @@ namespace IntelliTrader.Trading
             if (IsTradingSuspended && (!tradingForcefullySuspended || forced))
             {
                 loggingService.Info("Trading started");
+
+                // Capture suspension duration before clearing state
+                var suspensionDuration = _suspendedAt.HasValue
+                    ? DateTimeOffset.UtcNow - _suspendedAt.Value
+                    : TimeSpan.Zero;
+                var previousReason = _lastSuspensionReason;
+
                 IsTradingSuspended = false;
+                _suspendedAt = null;
+
+                // Raise TradingResumedEvent
+                RaiseEventSafe(new TradingResumedEvent(
+                    resumedBy: forced ? "Manual (Forced)" : "Manual",
+                    wasForced: tradingForcefullySuspended,
+                    suspensionDuration: suspensionDuration,
+                    previousSuspensionReason: previousReason));
+
+                _lastSuspensionReason = null;
+
                 // BackgroundServices will automatically pick up trading when IsTradingSuspended is false
             }
         }
@@ -257,6 +288,20 @@ namespace IntelliTrader.Trading
                 loggingService.Info("Trading suspended");
                 IsTradingSuspended = true;
                 tradingForcefullySuspended = forced;
+                _suspendedAt = DateTimeOffset.UtcNow;
+                _lastSuspensionReason = SuspensionReason.Manual;
+
+                // Count open positions
+                int openPositions = Account?.GetTradingPairs().Count() ?? 0;
+                int pendingOrders = TrailingManager.GetTrailingBuys().Count + TrailingManager.GetTrailingSells().Count;
+
+                // Raise TradingSuspendedEvent
+                RaiseEventSafe(new TradingSuspendedEvent(
+                    reason: SuspensionReason.Manual,
+                    suspendedBy: forced ? "Manual (Forced)" : "Manual",
+                    isForced: forced,
+                    openPositions: openPositions,
+                    pendingOrders: pendingOrders));
 
                 // Note: BackgroundServices check IsTradingSuspended flag and pause automatically
                 // Clear all trailing operations via the TrailingOrderManager
@@ -469,6 +514,125 @@ namespace IntelliTrader.Trading
             }
         }
 
+        // Async trading methods (preferred for new code)
+        public async Task BuyAsync(BuyOptions options, CancellationToken cancellationToken = default)
+        {
+            IRule rule = signalsService.Rules.Entries.FirstOrDefault(r => r.Name == options.Metadata.SignalRule);
+
+            ITradingPair swappedPair = Account.GetTradingPairs().OrderBy(p => p.CurrentMargin).FirstOrDefault(tradingPair =>
+            {
+                IPairConfig pairConfig = GetPairConfig(tradingPair.Pair);
+                return pairConfig.SellEnabled && pairConfig.SwapEnabled && pairConfig.SwapSignalRules != null && pairConfig.SwapSignalRules.Contains(options.Metadata.SignalRule) &&
+                       pairConfig.SwapTimeout < (DateTimeOffset.Now - tradingPair.OrderDates.Max()).TotalSeconds;
+            });
+
+            if (swappedPair != null)
+            {
+                await SwapAsync(new SwapOptions(swappedPair.Pair, options.Pair, options.Metadata), cancellationToken).ConfigureAwait(false);
+            }
+            else if (rule?.Action != Constants.SignalRuleActions.Swap)
+            {
+                if (CanBuy(options, out string message))
+                {
+                    await InitiateBuyAsync(options, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    loggingService.Debug(message);
+                }
+            }
+        }
+
+        private async Task InitiateBuyAsync(BuyOptions options, CancellationToken cancellationToken = default)
+        {
+            IPairConfig pairConfig = GetPairConfig(options.Pair);
+
+            if (!options.ManualOrder && !options.Swap && pairConfig.BuyTrailing != 0)
+            {
+                // Initiate trailing buy via TrailingOrderManager (synchronous)
+                TrailingManager.InitiateTrailingBuy(options.Pair);
+            }
+            else
+            {
+                await PlaceBuyOrderAsync(options, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        public async Task SellAsync(SellOptions options, CancellationToken cancellationToken = default)
+        {
+            if (CanSell(options, out string message))
+            {
+                await InitiateSellAsync(options, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                loggingService.Debug(message);
+            }
+        }
+
+        private async Task InitiateSellAsync(SellOptions options, CancellationToken cancellationToken = default)
+        {
+            IPairConfig pairConfig = GetPairConfig(options.Pair);
+
+            if (!options.ManualOrder && !options.Swap && pairConfig.SellTrailing != 0)
+            {
+                // Initiate trailing sell via TrailingOrderManager (synchronous)
+                TrailingManager.InitiateTrailingSell(options.Pair);
+            }
+            else
+            {
+                await PlaceSellOrderAsync(options, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        public async Task SwapAsync(SwapOptions options, CancellationToken cancellationToken = default)
+        {
+            if (!CanSwap(options, out string message))
+            {
+                loggingService.Info(message);
+                return;
+            }
+
+            ITradingPair oldTradingPair = Account.GetTradingPair(options.OldPair);
+            var sellOptions = CreateSwapSellOptions(options);
+
+            if (!CanSell(sellOptions, out message))
+            {
+                loggingService.Info($"Unable to swap {options.OldPair} for {options.NewPair}: {message}");
+                return;
+            }
+
+            // Capture old pair state before selling
+            decimal currentMargin = oldTradingPair.CurrentMargin;
+            decimal additionalCosts = CalculateAdditionalCosts(oldTradingPair);
+            int additionalDCALevels = oldTradingPair.DCALevel;
+
+            IOrderDetails sellOrderDetails = await PlaceSellOrderAsync(sellOptions, cancellationToken).ConfigureAwait(false);
+
+            // Verify sell was successful
+            if (Account.HasTradingPair(options.OldPair))
+            {
+                loggingService.Info($"Unable to swap {options.OldPair} for {options.NewPair}. Reason: failed to sell {options.OldPair}");
+                return;
+            }
+
+            // Execute buy for new pair
+            var buyOptions = CreateSwapBuyOptions(options, sellOrderDetails, currentMargin, additionalCosts, additionalDCALevels);
+            IOrderDetails buyOrderDetails = await PlaceBuyOrderAsync(buyOptions, cancellationToken).ConfigureAwait(false);
+
+            var newTradingPair = Account.GetTradingPair(options.NewPair) as TradingPair;
+            if (newTradingPair == null)
+            {
+                loggingService.Info($"Unable to swap {options.OldPair} for {options.NewPair}. Reason: failed to buy {options.NewPair}");
+                _ = notificationService.NotifyAsync($"Unable to swap {options.OldPair} for {options.NewPair}: Failed to buy {options.NewPair}");
+                return;
+            }
+
+            // Add sell fees to new position's additional costs
+            AddSwapFeesToPosition(newTradingPair, sellOrderDetails);
+            loggingService.Info($"Swap {oldTradingPair.FormattedName} for {newTradingPair.FormattedName}. Old margin: {oldTradingPair.CurrentMargin:0.00}, new margin: {newTradingPair.CurrentMargin:0.00}");
+        }
+
         private SellOptions CreateSwapSellOptions(SwapOptions options)
         {
             return new SellOptions(options.OldPair)
@@ -567,7 +731,7 @@ namespace IntelliTrader.Trading
                 message = $"Cancel buy request for {options.Pair}. Reason: either max cost or amount needs to be specified (not both)";
                 return false;
             }
-            else if (!options.ManualOrder && !options.Swap && pairConfig.BuySamePairTimeout > 0 && OrderHistory.Any(h => h.Side == OrderSide.Buy && h.Pair == options.Pair) &&
+            else if (!options.ManualOrder && !options.Swap && pairConfig.BuySamePairTimeout > 0 && OrderHistory.Any(h => h.Side == CoreOrderSide.Buy && h.Pair == options.Pair) &&
                 (DateTimeOffset.Now - OrderHistory.Where(h => h.Pair == options.Pair).Max(h => h.Date)).TotalSeconds < pairConfig.BuySamePairTimeout)
             {
                 var elapsedSeconds = (DateTimeOffset.Now - OrderHistory.Where(h => h.Pair == options.Pair).Max(h => h.Date)).TotalSeconds;
@@ -757,8 +921,8 @@ namespace IntelliTrader.Trading
 
                 foreach (var pairOrders in ordersByPair)
                 {
-                    var buys = pairOrders.Where(o => o.Side == OrderSide.Buy).OrderBy(o => o.Date).ToList();
-                    var sells = pairOrders.Where(o => o.Side == OrderSide.Sell).OrderBy(o => o.Date).ToList();
+                    var buys = pairOrders.Where(o => o.Side == CoreOrderSide.Buy).OrderBy(o => o.Date).ToList();
+                    var sells = pairOrders.Where(o => o.Side == CoreOrderSide.Sell).OrderBy(o => o.Date).ToList();
 
                     // Match buys with sells
                     int matchCount = Math.Min(buys.Count, sells.Count);
@@ -849,12 +1013,36 @@ namespace IntelliTrader.Trading
 
                 orderDetails = Account.PlaceOrder(orderRequest, options.Metadata);
 
+                // Raise OrderPlacedEvent
+                if (orderDetails != null)
+                {
+                    RaiseEventSafe(new OrderPlacedEvent(
+                        orderId: orderDetails.OrderId?.ToString() ?? Guid.NewGuid().ToString(),
+                        pair: options.Pair,
+                        side: DomainOrderSide.Buy,
+                        amount: amount,
+                        price: currentPrice,
+                        orderType: ToDomainOrderType(pairConfig.BuyType),
+                        isManual: options.ManualOrder,
+                        signalRule: options.Metadata?.SignalRule));
+                }
+
                 if (orderDetails != null && orderDetails.Result == OrderResult.Filled)
                 {
                     string newPairName = tradingPair != null ? tradingPair.FormattedName : options.Pair;
                     loggingService.Info($"Buy order filled for {newPairName}. Price: {orderDetails.AveragePrice:0.00000000}, Amount: {orderDetails.AmountFilled:0.00000000}, Cost: {orderDetails.AverageCost:0.00}");
                     _ = notificationService.NotifyAsync($"Buy order filled for {newPairName}. Price: {orderDetails.AveragePrice:0.00000000}, Cost: {orderDetails.AverageCost:0.00}");
                     LogOrder(orderDetails);
+
+                    // Raise OrderFilledEvent
+                    RaiseEventSafe(new OrderFilledEvent(
+                        orderId: orderDetails.OrderId?.ToString() ?? Guid.NewGuid().ToString(),
+                        pair: options.Pair,
+                        side: DomainOrderSide.Buy,
+                        filledAmount: orderDetails.AmountFilled,
+                        averagePrice: orderDetails.AveragePrice,
+                        cost: orderDetails.AverageCost,
+                        fees: orderDetails.Fees));
 
                     // Register position with portfolio risk manager
                     if (portfolioRiskManager != null && Config.RiskManagement?.Enabled == true)
@@ -909,11 +1097,227 @@ namespace IntelliTrader.Trading
 
                 orderDetails = Account.PlaceOrder(orderRequest, null);
 
+                // Raise OrderPlacedEvent
+                if (orderDetails != null)
+                {
+                    RaiseEventSafe(new OrderPlacedEvent(
+                        orderId: orderDetails.OrderId?.ToString() ?? Guid.NewGuid().ToString(),
+                        pair: options.Pair,
+                        side: DomainOrderSide.Sell,
+                        amount: tradingPair.TotalAmount,
+                        price: tradingPair.CurrentPrice,
+                        orderType: ToDomainOrderType(pairConfig.SellType),
+                        isManual: options.ManualOrder));
+                }
+
                 if (orderDetails != null && orderDetails.Result == OrderResult.Filled)
                 {
                     loggingService.Info($"Sell order filled for {tradingPair.FormattedName}. Price: {orderDetails.AveragePrice:0.00000000}, Margin: {tradingPair.CurrentMargin:0.00}%");
                     _ = notificationService.NotifyAsync($"Sell order filled for {tradingPair.FormattedName}. Price: {orderDetails.AveragePrice:0.00000000}, Margin: {tradingPair.CurrentMargin:0.00}%");
                     LogOrder(orderDetails);
+
+                    // Raise OrderFilledEvent
+                    RaiseEventSafe(new OrderFilledEvent(
+                        orderId: orderDetails.OrderId?.ToString() ?? Guid.NewGuid().ToString(),
+                        pair: options.Pair,
+                        side: DomainOrderSide.Sell,
+                        filledAmount: orderDetails.AmountFilled,
+                        averagePrice: orderDetails.AveragePrice,
+                        cost: orderDetails.AverageCost,
+                        fees: orderDetails.Fees));
+
+                    // Update portfolio risk manager
+                    if (portfolioRiskManager != null && Config.RiskManagement?.Enabled == true)
+                    {
+                        // Close the position in risk tracking
+                        portfolioRiskManager.ClosePosition(options.Pair);
+
+                        // Record the trade for daily P/L tracking
+                        portfolioRiskManager.RecordTrade(profitLoss);
+
+                        // Update peak equity if we made a profit
+                        if (profitLoss > 0)
+                        {
+                            decimal currentEquity = Account.GetBalance();
+                            foreach (var pair in Account.GetTradingPairs())
+                            {
+                                currentEquity += pair.CurrentCost;
+                            }
+                            portfolioRiskManager.UpdatePeakEquity(currentEquity);
+                        }
+                    }
+                }
+                else
+                {
+                    loggingService.Info($"Unable to place sell order for {options.Pair}. Order result: {orderDetails?.Result}");
+                }
+
+                ReapplyTradingRules();
+            }
+            else
+            {
+                loggingService.Info(message);
+            }
+            return orderDetails;
+        }
+
+        private async Task<IOrderDetails> PlaceBuyOrderAsync(BuyOptions options, CancellationToken cancellationToken = default)
+        {
+            IOrderDetails orderDetails = null;
+            TrailingManager.CancelTrailingBuy(options.Pair);
+            TrailingManager.CancelTrailingSell(options.Pair);
+
+            if (CanBuy(options, out string message))
+            {
+                IPairConfig pairConfig = GetPairConfig(options.Pair);
+                ITradingPair tradingPair = Account.GetTradingPair(options.Pair);
+                decimal currentPrice = await GetCurrentPriceAsync(options.Pair).ConfigureAwait(false);
+
+                // Determine the max cost: use position sizing if enabled, otherwise use provided MaxCost
+                decimal effectiveMaxCost;
+                if (options.Amount.HasValue)
+                {
+                    // Amount specified directly, calculate cost
+                    effectiveMaxCost = options.Amount.Value * currentPrice;
+                }
+                else if (Config.PositionSizing?.Enabled == true && !options.ManualOrder && !options.Swap)
+                {
+                    // Use position sizing for automated trades
+                    decimal? calculatedSize = CalculatePositionSize(options.Pair, currentPrice);
+                    effectiveMaxCost = calculatedSize ?? options.MaxCost.Value;
+                }
+                else
+                {
+                    effectiveMaxCost = options.MaxCost.Value;
+                }
+
+                decimal amount = options.Amount ?? Math.Round(effectiveMaxCost / currentPrice, 4);
+
+                var orderRequest = new BuyOrder
+                {
+                    Type = pairConfig.BuyType,
+                    Pair = options.Pair,
+                    Amount = amount,
+                    Price = currentPrice
+                };
+
+                // Use async order placement for non-blocking I/O
+                orderDetails = await Account.PlaceOrderAsync(orderRequest, options.Metadata, cancellationToken).ConfigureAwait(false);
+
+                // Raise OrderPlacedEvent
+                if (orderDetails != null)
+                {
+                    RaiseEventSafe(new OrderPlacedEvent(
+                        orderId: orderDetails.OrderId?.ToString() ?? Guid.NewGuid().ToString(),
+                        pair: options.Pair,
+                        side: DomainOrderSide.Buy,
+                        amount: amount,
+                        price: currentPrice,
+                        orderType: ToDomainOrderType(pairConfig.BuyType),
+                        isManual: options.ManualOrder,
+                        signalRule: options.Metadata?.SignalRule));
+                }
+
+                if (orderDetails != null && orderDetails.Result == OrderResult.Filled)
+                {
+                    string newPairName = tradingPair != null ? tradingPair.FormattedName : options.Pair;
+                    loggingService.Info($"Buy order filled for {newPairName}. Price: {orderDetails.AveragePrice:0.00000000}, Amount: {orderDetails.AmountFilled:0.00000000}, Cost: {orderDetails.AverageCost:0.00}");
+                    _ = notificationService.NotifyAsync($"Buy order filled for {newPairName}. Price: {orderDetails.AveragePrice:0.00000000}, Cost: {orderDetails.AverageCost:0.00}");
+                    LogOrder(orderDetails);
+
+                    // Raise OrderFilledEvent
+                    RaiseEventSafe(new OrderFilledEvent(
+                        orderId: orderDetails.OrderId?.ToString() ?? Guid.NewGuid().ToString(),
+                        pair: options.Pair,
+                        side: DomainOrderSide.Buy,
+                        filledAmount: orderDetails.AmountFilled,
+                        averagePrice: orderDetails.AveragePrice,
+                        cost: orderDetails.AverageCost,
+                        fees: orderDetails.Fees));
+
+                    // Register position with portfolio risk manager
+                    if (portfolioRiskManager != null && Config.RiskManagement?.Enabled == true)
+                    {
+                        decimal positionRisk = Config.RiskManagement.DefaultPositionRiskPercent;
+                        if (portfolioRiskManager is PortfolioRiskManager prm)
+                        {
+                            positionRisk = prm.CalculatePositionRisk(orderDetails.AverageCost, Math.Abs(Config.SellStopLossMargin));
+                        }
+                        portfolioRiskManager.RegisterPosition(options.Pair, positionRisk);
+                    }
+                }
+                else
+                {
+                    loggingService.Info($"Unable to place buy order for {options.Pair}. Order result: {orderDetails?.Result}");
+                }
+
+                ReapplyTradingRules();
+            }
+            else
+            {
+                loggingService.Info(message);
+            }
+            return orderDetails;
+        }
+
+        private async Task<IOrderDetails> PlaceSellOrderAsync(SellOptions options, CancellationToken cancellationToken = default)
+        {
+            IOrderDetails orderDetails = null;
+            TrailingManager.CancelTrailingSell(options.Pair);
+            TrailingManager.CancelTrailingBuy(options.Pair);
+
+            // Capture the trading pair profit/loss before selling for risk management
+            decimal profitLoss = 0m;
+
+            if (CanSell(options, out string message))
+            {
+                IPairConfig pairConfig = GetPairConfig(options.Pair);
+                ITradingPair tradingPair = Account.GetTradingPair(options.Pair);
+                decimal currentPrice = await GetCurrentPriceAsync(options.Pair).ConfigureAwait(false);
+                tradingPair.SetCurrentPrice(currentPrice);
+
+                // Calculate profit/loss before the order is executed
+                profitLoss = tradingPair.CurrentCost - tradingPair.AverageCostPaid;
+
+                var orderRequest = new SellOrder
+                {
+                    Type = pairConfig.SellType,
+                    Pair = options.Pair,
+                    Amount = tradingPair.TotalAmount,
+                    Price = tradingPair.CurrentPrice
+                };
+
+                // Use async order placement for non-blocking I/O
+                orderDetails = await Account.PlaceOrderAsync(orderRequest, null, cancellationToken).ConfigureAwait(false);
+
+                // Raise OrderPlacedEvent
+                if (orderDetails != null)
+                {
+                    RaiseEventSafe(new OrderPlacedEvent(
+                        orderId: orderDetails.OrderId?.ToString() ?? Guid.NewGuid().ToString(),
+                        pair: options.Pair,
+                        side: DomainOrderSide.Sell,
+                        amount: tradingPair.TotalAmount,
+                        price: tradingPair.CurrentPrice,
+                        orderType: ToDomainOrderType(pairConfig.SellType),
+                        isManual: options.ManualOrder));
+                }
+
+                if (orderDetails != null && orderDetails.Result == OrderResult.Filled)
+                {
+                    loggingService.Info($"Sell order filled for {tradingPair.FormattedName}. Price: {orderDetails.AveragePrice:0.00000000}, Margin: {tradingPair.CurrentMargin:0.00}%");
+                    _ = notificationService.NotifyAsync($"Sell order filled for {tradingPair.FormattedName}. Price: {orderDetails.AveragePrice:0.00000000}, Margin: {tradingPair.CurrentMargin:0.00}%");
+                    LogOrder(orderDetails);
+
+                    // Raise OrderFilledEvent
+                    RaiseEventSafe(new OrderFilledEvent(
+                        orderId: orderDetails.OrderId?.ToString() ?? Guid.NewGuid().ToString(),
+                        pair: options.Pair,
+                        side: DomainOrderSide.Sell,
+                        filledAmount: orderDetails.AmountFilled,
+                        averagePrice: orderDetails.AveragePrice,
+                        cost: orderDetails.AverageCost,
+                        fees: orderDetails.Fees));
 
                     // Update portfolio risk manager
                     if (portfolioRiskManager != null && Config.RiskManagement?.Enabled == true)
@@ -1044,6 +1448,53 @@ namespace IntelliTrader.Trading
             {
                 Config.DCALevels = new List<DCALevel>();
             }
+        }
+
+        /// <summary>
+        /// Safely raises a domain event without blocking or throwing exceptions.
+        /// If no dispatcher is configured, the event is silently dropped.
+        /// </summary>
+        /// <param name="domainEvent">The event to raise.</param>
+        private void RaiseEventSafe(Domain.SharedKernel.IDomainEvent domainEvent)
+        {
+            if (_domainEventDispatcher == null)
+            {
+                return;
+            }
+
+            try
+            {
+                // Fire and forget - don't block trading operations for event dispatch
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _domainEventDispatcher.DispatchAsync(domainEvent);
+                    }
+                    catch (Exception ex)
+                    {
+                        loggingService.Error($"Failed to dispatch domain event {domainEvent.GetType().Name}: {ex.Message}");
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                loggingService.Error($"Failed to queue domain event {domainEvent.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Converts Core OrderType to Domain OrderType.
+        /// </summary>
+        private static DomainOrderType ToDomainOrderType(Core.OrderType orderType)
+        {
+            return orderType switch
+            {
+                Core.OrderType.Market => DomainOrderType.Market,
+                Core.OrderType.Limit => DomainOrderType.Limit,
+                Core.OrderType.Stop => DomainOrderType.StopLoss,
+                _ => DomainOrderType.Limit
+            };
         }
     }
 }

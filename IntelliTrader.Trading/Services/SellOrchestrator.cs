@@ -2,6 +2,8 @@ using IntelliTrader.Core;
 using IntelliTrader.Exchange.Base;
 using System;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace IntelliTrader.Trading
 {
@@ -140,6 +142,78 @@ namespace IntelliTrader.Trading
                 };
 
                 orderDetails = Account.PlaceOrder(orderRequest, null);
+
+                if (orderDetails != null && orderDetails.Result == OrderResult.Filled)
+                {
+                    _loggingService.Info($"Sell order filled for {tradingPair.FormattedName}. Price: {orderDetails.AveragePrice:0.00000000}, Margin: {tradingPair.CurrentMargin:0.00}%");
+                    _ = _notificationService.NotifyAsync($"Sell order filled for {tradingPair.FormattedName}. Price: {orderDetails.AveragePrice:0.00000000}, Margin: {tradingPair.CurrentMargin:0.00}%");
+                    OrderHistory.Push(orderDetails);
+                }
+                else
+                {
+                    _loggingService.Info($"Unable to place sell order for {options.Pair}. Order result: {orderDetails?.Result}");
+                }
+
+                _reapplyTradingRules();
+            }
+            else
+            {
+                _loggingService.Info(message);
+            }
+            return orderDetails;
+        }
+
+        // Async methods (preferred for new code)
+        public Task SellAsync(SellOptions options, CancellationToken cancellationToken = default)
+        {
+            if (CanSell(options, out string message))
+            {
+                return InitiateSellAsync(options, cancellationToken);
+            }
+            else
+            {
+                _loggingService.Debug(message);
+                return Task.CompletedTask;
+            }
+        }
+
+        private async Task InitiateSellAsync(SellOptions options, CancellationToken cancellationToken = default)
+        {
+            IPairConfig pairConfig = GetPairConfig(options.Pair);
+
+            if (!options.ManualOrder && !options.Swap && pairConfig.SellTrailing != 0)
+            {
+                // Initiate trailing sell (synchronous operation)
+                _trailingManager.InitiateTrailingSell(options.Pair);
+            }
+            else
+            {
+                await PlaceSellOrderAsync(options, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        public async Task<IOrderDetails> PlaceSellOrderAsync(SellOptions options, CancellationToken cancellationToken = default)
+        {
+            IOrderDetails orderDetails = null;
+            _trailingManager.CancelTrailingSell(options.Pair);
+            _trailingManager.CancelTrailingBuy(options.Pair);
+
+            if (CanSell(options, out string message))
+            {
+                IPairConfig pairConfig = GetPairConfig(options.Pair);
+                ITradingPair tradingPair = Account.GetTradingPair(options.Pair);
+                tradingPair.SetCurrentPrice(GetCurrentPrice(options.Pair));
+
+                var orderRequest = new SellOrder
+                {
+                    Type = pairConfig.SellType,
+                    Pair = options.Pair,
+                    Amount = tradingPair.TotalAmount,
+                    Price = tradingPair.CurrentPrice
+                };
+
+                // Use async order placement for non-blocking I/O
+                orderDetails = await Account.PlaceOrderAsync(orderRequest, null, cancellationToken).ConfigureAwait(false);
 
                 if (orderDetails != null && orderDetails.Result == OrderResult.Filled)
                 {

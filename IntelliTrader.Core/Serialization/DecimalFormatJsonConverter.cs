@@ -1,9 +1,13 @@
-﻿using Newtonsoft.Json;
 using System;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace IntelliTrader.Core
 {
-    public class DecimalFormatJsonConverter : JsonConverter
+    /// <summary>
+    /// JSON converter that rounds decimal values to a specified number of decimal places during serialization.
+    /// </summary>
+    public class DecimalFormatJsonConverter : JsonConverter<decimal>
     {
         private readonly int _numberOfDecimals;
 
@@ -12,27 +16,41 @@ namespace IntelliTrader.Core
             _numberOfDecimals = numberOfDecimals;
         }
 
-        public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
+        public override decimal Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
-            var d = (decimal)value;
-            var rounded = Math.Round(d, _numberOfDecimals, MidpointRounding.AwayFromZero);
-            writer.WriteValue(rounded);
+            // Read the decimal as-is without rounding
+            return reader.GetDecimal();
         }
 
-        public override object ReadJson(JsonReader reader, Type objectType, object existingValue,
-            JsonSerializer serializer)
+        public override void Write(Utf8JsonWriter writer, decimal value, JsonSerializerOptions options)
         {
-            throw new NotImplementedException("Unnecessary because CanRead is false. The type will skip the converter.");
+            var rounded = Math.Round(value, _numberOfDecimals, MidpointRounding.AwayFromZero);
+            writer.WriteNumberValue(rounded);
+        }
+    }
+
+    /// <summary>
+    /// Attribute to apply DecimalFormatJsonConverter with a specified number of decimal places.
+    /// Usage: [JsonConverter(typeof(DecimalFormatJsonConverterAttribute), 8)]
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
+    public class DecimalFormatJsonConverterAttribute : JsonConverterAttribute
+    {
+        private readonly int _numberOfDecimals;
+
+        public DecimalFormatJsonConverterAttribute(int numberOfDecimals)
+        {
+            _numberOfDecimals = numberOfDecimals;
         }
 
-        public override bool CanRead
+        public override JsonConverter? CreateConverter(Type typeToConvert)
         {
-            get { return false; }
-        }
+            if (typeToConvert != typeof(decimal))
+            {
+                throw new InvalidOperationException($"DecimalFormatJsonConverter can only be applied to decimal properties, not {typeToConvert.Name}");
+            }
 
-        public override bool CanConvert(Type objectType)
-        {
-            return objectType == typeof(decimal);
+            return new DecimalFormatJsonConverter(_numberOfDecimals);
         }
     }
 }

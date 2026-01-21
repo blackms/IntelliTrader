@@ -8,6 +8,7 @@ namespace IntelliTrader.Domain.Trading.Events;
 /// </summary>
 public sealed record PositionRemovedFromPortfolio : IDomainEvent
 {
+    public Guid EventId { get; }
     public PortfolioId PortfolioId { get; }
     public PositionId PositionId { get; }
     public TradingPair Pair { get; }
@@ -15,6 +16,7 @@ public sealed record PositionRemovedFromPortfolio : IDomainEvent
     public Money PnL { get; }
     public int ActivePositionCount { get; }
     public DateTimeOffset OccurredAt { get; }
+    public string? CorrelationId { get; }
 
     public PositionRemovedFromPortfolio(
         PortfolioId portfolioId,
@@ -22,8 +24,10 @@ public sealed record PositionRemovedFromPortfolio : IDomainEvent
         TradingPair pair,
         Money proceeds,
         Money pnl,
-        int activePositionCount)
+        int activePositionCount,
+        string? correlationId = null)
     {
+        EventId = Guid.NewGuid();
         PortfolioId = portfolioId;
         PositionId = positionId;
         Pair = pair;
@@ -31,5 +35,6 @@ public sealed record PositionRemovedFromPortfolio : IDomainEvent
         PnL = pnl;
         ActivePositionCount = activePositionCount;
         OccurredAt = DateTimeOffset.UtcNow;
+        CorrelationId = correlationId;
     }
 }

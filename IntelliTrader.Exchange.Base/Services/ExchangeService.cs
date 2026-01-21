@@ -1,4 +1,4 @@
-﻿using ExchangeSharp;
+using ExchangeSharp;
 using IntelliTrader.Core;
 using System;
 using System.Collections.Generic;
@@ -7,20 +7,29 @@ using System.Threading.Tasks;
 
 namespace IntelliTrader.Exchange.Base
 {
-    public abstract class ExchangeService : ConfigrableServiceBase<ExchangeConfig>, IExchangeService
+    public abstract class ExchangeService(
+        ILoggingService loggingService,
+        IHealthCheckService healthCheckService,
+        ICoreService coreService,
+        IConfigProvider configProvider) : ConfigrableServiceBase<ExchangeConfig>(configProvider), IExchangeService
     {
         public override string ServiceName => Constants.ServiceNames.ExchangeService;
 
-        protected readonly ILoggingService loggingService;
-        protected readonly IHealthCheckService healthCheckService;
-        protected readonly ICoreService coreService;
+        protected override ILoggingService LoggingService => loggingService;
+        protected IHealthCheckService HealthCheckService => healthCheckService;
+        protected ICoreService CoreService => coreService;
 
-        public ExchangeService(ILoggingService loggingService, IHealthCheckService healthCheckService, ICoreService coreService)
-        {
-            this.loggingService = loggingService ?? throw new ArgumentNullException(nameof(loggingService));
-            this.healthCheckService = healthCheckService ?? throw new ArgumentNullException(nameof(healthCheckService));
-            this.coreService = coreService ?? throw new ArgumentNullException(nameof(coreService));
-        }
+        /// <inheritdoc />
+        public virtual event Action<IReadOnlyCollection<ITicker>>? TickersUpdated;
+
+        /// <inheritdoc />
+        public virtual bool IsWebSocketConnected => false;
+
+        /// <inheritdoc />
+        public virtual bool IsRestFallbackActive => false;
+
+        /// <inheritdoc />
+        public virtual TimeSpan TimeSinceLastTickerUpdate => TimeSpan.Zero;
 
         public abstract void Start(bool virtualTrading);
 
@@ -37,5 +46,20 @@ namespace IntelliTrader.Exchange.Base
         public abstract Task<decimal> GetLastPrice(string pair);
 
         public abstract Task<IOrderDetails> PlaceOrder(IOrder order);
+
+        /// <inheritdoc />
+        public virtual Task ReconnectWebSocketAsync()
+        {
+            LoggingService.Debug("WebSocket reconnect not implemented for this exchange");
+            return Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Raises the TickersUpdated event.
+        /// </summary>
+        protected virtual void OnTickersUpdated(IReadOnlyCollection<ITicker> tickers)
+        {
+            TickersUpdated?.Invoke(tickers);
+        }
     }
 }

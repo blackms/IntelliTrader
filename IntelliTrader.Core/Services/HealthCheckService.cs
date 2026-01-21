@@ -1,38 +1,27 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 
 namespace IntelliTrader.Core
 {
-    internal class HealthCheckService : IHealthCheckService
+    internal class HealthCheckService(
+        ILoggingService loggingService,
+        INotificationService notificationService,
+        ICoreService coreService,
+        ITradingService tradingService,
+        IApplicationContext applicationContext) : IHealthCheckService
     {
-        private readonly ILoggingService loggingService;
-        private readonly INotificationService notificationService;
-        private readonly ICoreService coreService;
-        private readonly ITradingService tradingService;
-
+        private readonly IApplicationContext _applicationContext = applicationContext ?? throw new ArgumentNullException(nameof(applicationContext));
         private readonly ConcurrentDictionary<string, HealthCheck> healthChecks = new ConcurrentDictionary<string, HealthCheck>();
         private HealthCheckTimedTask healthCheckTimedTask;
-
-        public HealthCheckService(
-            ILoggingService loggingService,
-            INotificationService notificationService,
-            ICoreService coreService,
-            ITradingService tradingService)
-        {
-            this.loggingService = loggingService ?? throw new ArgumentNullException(nameof(loggingService));
-            this.notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
-            this.coreService = coreService ?? throw new ArgumentNullException(nameof(coreService));
-            this.tradingService = tradingService ?? throw new ArgumentNullException(nameof(tradingService));
-        }
 
         public void Start()
         {
             loggingService.Info($"Start Health Check service...");
 
             healthCheckTimedTask = new HealthCheckTimedTask(loggingService, notificationService, this, coreService, tradingService);
-            healthCheckTimedTask.RunInterval = (float)(coreService.Config.HealthCheckInterval * 1000 / Application.Speed);
-            healthCheckTimedTask.StartDelay = Constants.TimedTasks.StandardDelay / Application.Speed;
+            healthCheckTimedTask.RunInterval = (float)(coreService.Config.HealthCheckInterval * 1000 / _applicationContext.Speed);
+            healthCheckTimedTask.StartDelay = Constants.TimedTasks.StandardDelay / _applicationContext.Speed;
             coreService.AddTask(nameof(HealthCheckTimedTask), healthCheckTimedTask);
 
             loggingService.Info("Health Check service started");

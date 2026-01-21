@@ -4,6 +4,8 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace IntelliTrader.Trading
 {
@@ -31,6 +33,8 @@ namespace IntelliTrader.Trading
         }
 
         public abstract void Refresh();
+
+        public abstract Task RefreshAsync(CancellationToken cancellationToken = default);
 
         public abstract void Save();
 
@@ -222,6 +226,48 @@ namespace IntelliTrader.Trading
             {
                 // Return a snapshot to allow safe iteration outside the lock
                 return tradingPairs.Values.ToList<ITradingPair>();
+            }
+        }
+
+        public virtual IOrderDetails PlaceOrder(IOrder order, OrderMetadata metadata)
+        {
+            lock (SyncRoot)
+            {
+                var orderDetails = tradingService.PlaceOrder(order);
+                if (orderDetails != null && metadata != null)
+                {
+                    orderDetails.SetMetadata(metadata);
+                }
+
+                if (orderDetails != null && (orderDetails.Result == OrderResult.Filled || orderDetails.Result == OrderResult.FilledPartially))
+                {
+                    AddOrder(orderDetails);
+                    Save();
+                }
+
+                return orderDetails;
+            }
+        }
+
+        public virtual async Task<IOrderDetails> PlaceOrderAsync(IOrder order, OrderMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            // Use async exchange method for non-blocking I/O
+            var orderDetails = await tradingService.PlaceOrderAsync(order).ConfigureAwait(false);
+
+            lock (SyncRoot)
+            {
+                if (orderDetails != null && metadata != null)
+                {
+                    orderDetails.SetMetadata(metadata);
+                }
+
+                if (orderDetails != null && (orderDetails.Result == OrderResult.Filled || orderDetails.Result == OrderResult.FilledPartially))
+                {
+                    AddOrder(orderDetails);
+                    Save();
+                }
+
+                return orderDetails;
             }
         }
 

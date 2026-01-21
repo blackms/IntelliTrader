@@ -1,4 +1,4 @@
-﻿using IntelliTrader.Core;
+using IntelliTrader.Core;
 using IntelliTrader.Signals.Base;
 using Microsoft.Extensions.Configuration;
 using System;
@@ -10,17 +10,19 @@ namespace IntelliTrader.Signals.TradingView
     {
         public string SignalName { get; private set; }
         public TradingViewCryptoSignalReceiverConfig Config { get; private set; }
-        
+
         private readonly ILoggingService loggingService;
         private readonly IHealthCheckService healthCheckService;
         private readonly ISignalsService signalsService;
         private readonly ITradingService tradingService;
         private readonly ICoreService coreService;
+        private readonly IApplicationContext applicationContext;
 
         private TradingViewCryptoSignalPollingTimedTask tradingViewCryptoSignalPollingTimedTask;
 
         public TradingViewCryptoSignalReceiver(string signalName, IConfigurationSection configuration,
-            ILoggingService loggingService, IHealthCheckService healthCheckService, ISignalsService signalsService, ITradingService tradingService, ICoreService coreService)
+            ILoggingService loggingService, IHealthCheckService healthCheckService, ISignalsService signalsService,
+            ITradingService tradingService, ICoreService coreService, IApplicationContext applicationContext)
         {
             this.SignalName = signalName;
             this.Config = configuration.Get<TradingViewCryptoSignalReceiverConfig>();
@@ -30,6 +32,7 @@ namespace IntelliTrader.Signals.TradingView
             this.signalsService = signalsService ?? throw new ArgumentNullException(nameof(signalsService));
             this.tradingService = tradingService ?? throw new ArgumentNullException(nameof(tradingService));
             this.coreService = coreService ?? throw new ArgumentNullException(nameof(coreService));
+            this.applicationContext = applicationContext ?? throw new ArgumentNullException(nameof(applicationContext));
         }
 
         public void Start()
@@ -37,7 +40,7 @@ namespace IntelliTrader.Signals.TradingView
             loggingService.Info("Start TradingViewCryptoSignalReceiver...");
 
             tradingViewCryptoSignalPollingTimedTask = new TradingViewCryptoSignalPollingTimedTask(loggingService, healthCheckService, tradingService, this);
-            tradingViewCryptoSignalPollingTimedTask.RunInterval = (float)(Config.PollingInterval * 1000 / Application.Speed);
+            tradingViewCryptoSignalPollingTimedTask.RunInterval = (float)(Config.PollingInterval * 1000 / applicationContext.Speed);
             tradingViewCryptoSignalPollingTimedTask.Run();
             coreService.AddTask($"{nameof(TradingViewCryptoSignalPollingTimedTask)} [{SignalName}]", tradingViewCryptoSignalPollingTimedTask);
 

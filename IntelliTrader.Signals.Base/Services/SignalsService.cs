@@ -8,43 +8,29 @@ using System.Threading;
 
 namespace IntelliTrader.Signals.Base
 {
-    public class SignalsService : ConfigrableServiceBase<SignalsConfig>, ISignalsService
+    public class SignalsService(
+        ICoreService coreService,
+        ILoggingService loggingService,
+        IHealthCheckService healthCheckService,
+        ITradingService tradingService,
+        IRulesService rulesService,
+        Func<string, string, IConfigurationSection, ISignalReceiver> signalReceiverFactory,
+        IConfigProvider configProvider) : ConfigrableServiceBase<SignalsConfig>(configProvider), ISignalsService
     {
         public override string ServiceName => Constants.ServiceNames.SignalsService;
+
+        protected override ILoggingService LoggingService => loggingService;
 
         ISignalsConfig ISignalsService.Config => Config;
 
         public IModuleRules Rules { get; private set; }
         public ISignalRulesConfig RulesConfig { get; private set; }
 
-        private readonly ICoreService coreService;
-        private readonly ILoggingService loggingService;
-        private readonly IHealthCheckService healthCheckService;
-        private readonly ITradingService tradingService;
-        private readonly IRulesService rulesService;
-        private readonly Func<string, string, IConfigurationSection, ISignalReceiver> signalReceiverFactory;
-
         private ConcurrentDictionary<string, ISignalReceiver> signalReceivers = new ConcurrentDictionary<string, ISignalReceiver>();
 
         // Note: Old SignalRulesTimedTask has been replaced by SignalRuleProcessorService in IntelliTrader.Infrastructure
         // These collections are kept for UI display purposes
         private readonly ConcurrentDictionary<string, bool> trailingSignals = new ConcurrentDictionary<string, bool>();
-
-        public SignalsService(
-            ICoreService coreService,
-            ILoggingService loggingService,
-            IHealthCheckService healthCheckService,
-            ITradingService tradingService,
-            IRulesService rulesService,
-            Func<string, string, IConfigurationSection, ISignalReceiver> signalReceiverFactory)
-        {
-            this.coreService = coreService ?? throw new ArgumentNullException(nameof(coreService));
-            this.loggingService = loggingService ?? throw new ArgumentNullException(nameof(loggingService));
-            this.healthCheckService = healthCheckService ?? throw new ArgumentNullException(nameof(healthCheckService));
-            this.tradingService = tradingService ?? throw new ArgumentNullException(nameof(tradingService));
-            this.rulesService = rulesService ?? throw new ArgumentNullException(nameof(rulesService));
-            this.signalReceiverFactory = signalReceiverFactory ?? throw new ArgumentNullException(nameof(signalReceiverFactory));
-        }
 
         public void Start()
         {

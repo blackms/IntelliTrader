@@ -8,6 +8,7 @@ namespace IntelliTrader.Domain.Trading.Events;
 /// </summary>
 public sealed record PositionOpened : IDomainEvent
 {
+    public Guid EventId { get; }
     public PositionId PositionId { get; }
     public TradingPair Pair { get; }
     public OrderId OrderId { get; }
@@ -17,6 +18,7 @@ public sealed record PositionOpened : IDomainEvent
     public Money Fees { get; }
     public string? SignalRule { get; }
     public DateTimeOffset OccurredAt { get; }
+    public string? CorrelationId { get; }
 
     public PositionOpened(
         PositionId positionId,
@@ -26,8 +28,10 @@ public sealed record PositionOpened : IDomainEvent
         Quantity quantity,
         Money cost,
         Money fees,
-        string? signalRule)
+        string? signalRule,
+        string? correlationId = null)
     {
+        EventId = Guid.NewGuid();
         PositionId = positionId;
         Pair = pair;
         OrderId = orderId;
@@ -37,5 +41,6 @@ public sealed record PositionOpened : IDomainEvent
         Fees = fees;
         SignalRule = signalRule;
         OccurredAt = DateTimeOffset.UtcNow;
+        CorrelationId = correlationId;
     }
 }

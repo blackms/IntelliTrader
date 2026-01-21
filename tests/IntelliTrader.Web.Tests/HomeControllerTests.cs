@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Moq;
+using Xunit;
 using IntelliTrader.Core;
 using IntelliTrader.Web.Controllers;
 using IntelliTrader.Web.Models;
@@ -17,7 +18,10 @@ public class HomeControllerTests
     private readonly Mock<ISignalsService> _signalsServiceMock;
     private readonly Mock<ILoggingService> _loggingServiceMock;
     private readonly Mock<IHealthCheckService> _healthCheckServiceMock;
+    private readonly Mock<IPasswordService> _passwordServiceMock;
+    private readonly Mock<IConfigProvider> _configProviderMock;
     private readonly Mock<ITradingAccount> _accountMock;
+    private readonly List<IConfigurableService> _configurableServices;
     private readonly HomeController _sut;
 
     public HomeControllerTests()
@@ -27,7 +31,10 @@ public class HomeControllerTests
         _signalsServiceMock = new Mock<ISignalsService>();
         _loggingServiceMock = new Mock<ILoggingService>();
         _healthCheckServiceMock = new Mock<IHealthCheckService>();
+        _passwordServiceMock = new Mock<IPasswordService>();
+        _configProviderMock = new Mock<IConfigProvider>();
         _accountMock = new Mock<ITradingAccount>();
+        _configurableServices = new List<IConfigurableService>();
 
         // Setup core config
         var coreConfigMock = new Mock<ICoreConfig>();
@@ -56,7 +63,7 @@ public class HomeControllerTests
         _accountMock.Setup(x => x.GetTradingPairs()).Returns(new List<ITradingPair>());
 
         // Setup signals service
-        _signalsServiceMock.Setup(x => x.GetGlobalRating()).Returns(0.5m);
+        _signalsServiceMock.Setup(x => x.GetGlobalRating()).Returns(0.5);
         _signalsServiceMock.Setup(x => x.GetSignalNames()).Returns(new List<string> { "Signal1", "Signal2" });
         _signalsServiceMock.Setup(x => x.GetTrailingSignals()).Returns(new List<string>());
 
@@ -66,8 +73,14 @@ public class HomeControllerTests
         // Setup logging service
         _loggingServiceMock.Setup(x => x.GetLogEntries()).Returns(new string[0]);
 
-        // Create controller with empty configurable services
-        var configurableServices = new List<IConfigurableService>();
+        // Setup password service with default behavior
+        _passwordServiceMock.Setup(x => x.VerifyPassword(It.IsAny<string>(), It.IsAny<string>())).Returns(true);
+        _passwordServiceMock.Setup(x => x.IsLegacyHash(It.IsAny<string>())).Returns(false);
+        _passwordServiceMock.Setup(x => x.IsBCryptHash(It.IsAny<string>())).Returns(true);
+        _passwordServiceMock.Setup(x => x.HashPassword(It.IsAny<string>())).Returns("$2a$12$hashedpassword");
+
+        // Setup config provider
+        _configProviderMock.Setup(x => x.GetSectionJson(It.IsAny<string>())).Returns("{}");
 
         _sut = new HomeController(
             _coreServiceMock.Object,
@@ -75,7 +88,9 @@ public class HomeControllerTests
             _signalsServiceMock.Object,
             _loggingServiceMock.Object,
             _healthCheckServiceMock.Object,
-            configurableServices);
+            _passwordServiceMock.Object,
+            _configProviderMock.Object,
+            _configurableServices);
 
         // Setup HttpContext for controller
         var httpContext = new DefaultHttpContext();
@@ -97,7 +112,9 @@ public class HomeControllerTests
             _signalsServiceMock.Object,
             _loggingServiceMock.Object,
             _healthCheckServiceMock.Object,
-            new List<IConfigurableService>());
+            _passwordServiceMock.Object,
+            _configProviderMock.Object,
+            _configurableServices);
 
         // Assert
         act.Should().Throw<ArgumentNullException>().WithParameterName("coreService");
@@ -113,10 +130,30 @@ public class HomeControllerTests
             _signalsServiceMock.Object,
             _loggingServiceMock.Object,
             _healthCheckServiceMock.Object,
-            new List<IConfigurableService>());
+            _passwordServiceMock.Object,
+            _configProviderMock.Object,
+            _configurableServices);
 
         // Assert
         act.Should().Throw<ArgumentNullException>().WithParameterName("tradingService");
+    }
+
+    [Fact]
+    public void Constructor_WithNullPasswordService_ThrowsArgumentNullException()
+    {
+        // Act
+        var act = () => new HomeController(
+            _coreServiceMock.Object,
+            _tradingServiceMock.Object,
+            _signalsServiceMock.Object,
+            _loggingServiceMock.Object,
+            _healthCheckServiceMock.Object,
+            null!,
+            _configProviderMock.Object,
+            _configurableServices);
+
+        // Assert
+        act.Should().Throw<ArgumentNullException>().WithParameterName("passwordService");
     }
 
     #endregion
@@ -515,7 +552,7 @@ public class HomeControllerTests
 
         // Assert
         result.Should().BeOfType<ViewResult>();
-        _tradingServiceMock.Verify(x => x.SuspendTrading(), Times.Once);
+        _tradingServiceMock.Verify(x => x.SuspendTrading(false), Times.Once);
     }
 
     [Fact]
@@ -546,7 +583,7 @@ public class HomeControllerTests
 
         // Assert
         result.Should().BeOfType<ViewResult>();
-        _tradingServiceMock.Verify(x => x.ResumeTrading(), Times.Once);
+        _tradingServiceMock.Verify(x => x.ResumeTrading(false), Times.Once);
     }
 
     #endregion

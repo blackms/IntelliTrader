@@ -16,5 +16,11 @@ namespace IntelliTrader.Core
         bool SellStopLossAfterDCA { get; }
         double SellStopLossMinAge { get; }
         decimal SellStopLossMargin { get; }
+
+        /// <summary>
+        /// Configuration for dynamic ATR-based stop-loss.
+        /// When StopLoss.Type is ATR, the SellStopLossMargin becomes a fallback minimum.
+        /// </summary>
+        IStopLossConfig StopLoss { get; }
     }
 }

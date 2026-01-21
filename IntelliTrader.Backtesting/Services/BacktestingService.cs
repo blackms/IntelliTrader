@@ -7,37 +7,26 @@ using System.Threading;
 
 namespace IntelliTrader.Backtesting
 {
-    internal class BacktestingService : ConfigrableServiceBase<BacktestingConfig>, IBacktestingService
+    internal class BacktestingService(
+        ILoggingService loggingService,
+        IHealthCheckService healthCheckService,
+        ICoreService coreService,
+        ISignalsService signalsService,
+        ITradingService tradingService,
+        IConfigProvider configProvider) : ConfigrableServiceBase<BacktestingConfig>(configProvider), IBacktestingService
     {
         public const string SNAPSHOT_FILE_EXTENSION = "bin";
 
         public override string ServiceName => Constants.ServiceNames.BacktestingService;
 
+        protected override ILoggingService LoggingService => loggingService;
+
         IBacktestingConfig IBacktestingService.Config => Config;
 
         public object SyncRoot { get; private set; } = new object();
 
-        private readonly ILoggingService loggingService;
-        private readonly IHealthCheckService healthCheckService;
-        private readonly ICoreService coreService;
-        private readonly ISignalsService signalsService;
-        private readonly ITradingService tradingService;
         private BacktestingLoadSnapshotsTimedTask backtestingLoadSnapshotsTimedTask;
         private BacktestingSaveSnapshotsTimedTask backtestingSaveSnapshotsTimedTask;
-
-        public BacktestingService(
-            ILoggingService loggingService,
-            IHealthCheckService healthCheckService,
-            ICoreService coreService,
-            ISignalsService signalsService,
-            ITradingService tradingService)
-        {
-            this.loggingService = loggingService ?? throw new ArgumentNullException(nameof(loggingService));
-            this.healthCheckService = healthCheckService ?? throw new ArgumentNullException(nameof(healthCheckService));
-            this.coreService = coreService ?? throw new ArgumentNullException(nameof(coreService));
-            this.signalsService = signalsService ?? throw new ArgumentNullException(nameof(signalsService));
-            this.tradingService = tradingService ?? throw new ArgumentNullException(nameof(tradingService));
-        }
 
         public void Start()
         {

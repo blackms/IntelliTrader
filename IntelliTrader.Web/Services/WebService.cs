@@ -1,4 +1,5 @@
-﻿using IntelliTrader.Core;
+﻿using Autofac;
+using IntelliTrader.Core;
 using Microsoft.AspNetCore.Hosting;
 using System;
 using System.Collections.Generic;
@@ -8,20 +9,18 @@ using System.Text;
 
 namespace IntelliTrader.Web
 {
-    internal class WebService : ConfigrableServiceBase<WebConfig>, IWebService
+    internal class WebService(
+        ILoggingService loggingService,
+        ILifetimeScope container,
+        IConfigProvider configProvider) : ConfigrableServiceBase<WebConfig>(configProvider), IWebService
     {
         public override string ServiceName => Constants.ServiceNames.WebService;
 
+        protected override ILoggingService LoggingService => loggingService;
+
         IWebConfig IWebService.Config => Config;
 
-        private readonly ILoggingService loggingService;
-
         private IWebHost webHost;
-
-        public WebService(ILoggingService loggingService)
-        {
-            this.loggingService = loggingService;
-        }
 
         public void Start()
         {
@@ -29,6 +28,9 @@ namespace IntelliTrader.Web
 
             try
             {
+                // Set the container for Startup to use when registering services
+                Startup.Container = container;
+
                 var contentRoot = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "IntelliTrader.Web"));
 #if RELEASE
                 if (!System.Diagnostics.Debugger.IsAttached)

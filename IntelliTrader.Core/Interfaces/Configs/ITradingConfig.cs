@@ -26,6 +26,22 @@ namespace IntelliTrader.Core
         decimal VirtualAccountInitialBalance { get; }
         string VirtualAccountFilePath { get; }
 
+        /// <summary>
+        /// Maximum number of orders to keep in history. Oldest orders are removed when this limit is exceeded.
+        /// Default is 10,000. Valid range is 100 to 100,000.
+        /// </summary>
+        int MaxOrderHistorySize { get; }
+
+        /// <summary>
+        /// Portfolio risk management configuration.
+        /// </summary>
+        IRiskManagementConfig RiskManagement { get; }
+
+        /// <summary>
+        /// Position sizing configuration for Kelly Criterion and percentage-based sizing.
+        /// </summary>
+        PositionSizingConfig PositionSizing { get; }
+
         ITradingConfig Clone();
 
     }

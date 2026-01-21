@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using IntelliTrader.Application.Ports.Driven;
 using IntelliTrader.Domain.Trading.ValueObjects;
+using IntelliTrader.Infrastructure.Telemetry;
 
 namespace IntelliTrader.Infrastructure.BackgroundServices;
 
@@ -152,8 +153,12 @@ public class TradingRuleProcessorService : TimedBackgroundService
         var positions = await _positionRepository.GetAllActiveAsync(cancellationToken);
         var positionsByPair = positions.ToDictionary(p => p.Pair);
 
+        // Start rule processing activity for tracing
+        using var activity = TradingTelemetry.StartRuleProcessingActivity(positions.Count);
+
         // Get current prices for all pairs with positions
         var newConfigs = new Dictionary<TradingPair, PairTradingConfig>();
+        decimal totalPortfolioValue = 0m;
 
         foreach (var position in positions)
         {
@@ -168,6 +173,9 @@ public class TradingRuleProcessorService : TimedBackgroundService
             var currentPrice = priceResult.Value;
             var currentMargin = position.CalculateMargin(currentPrice);
 
+            // Accumulate portfolio value
+            totalPortfolioValue += position.TotalQuantity.Value * currentPrice.Value;
+
             // Get aggregated signal for the pair
             var signalResult = await _signalProvider.GetAggregatedSignalAsync(position.Pair, cancellationToken);
 
@@ -181,6 +189,13 @@ public class TradingRuleProcessorService : TimedBackgroundService
         {
             _pairConfigs = newConfigs;
         }
+
+        // Update telemetry gauges
+        TradingTelemetry.SetOpenPositionsCount(positions.Count);
+        TradingTelemetry.SetPortfolioValue(totalPortfolioValue);
+
+        activity?.SetTag("trading.positions_count", positions.Count);
+        activity?.SetTag("trading.portfolio_value", totalPortfolioValue);
 
         // Raise event
         ConfigurationsUpdated?.Invoke(this, new PairConfigsUpdatedEventArgs(newConfigs));

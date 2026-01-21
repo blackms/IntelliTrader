@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.IO;
@@ -9,57 +9,51 @@ using System.Threading.Tasks;
 
 namespace IntelliTrader.Core
 {
-    internal class CoreService : ConfigrableServiceBase<CoreConfig>, ICoreService
+    internal class CoreService(
+        ILoggingService loggingService,
+        INotificationService notificationService,
+        IHealthCheckService healthCheckService,
+        ITradingService tradingService,
+        IWebService webService,
+        IBacktestingService backtestingService,
+        IApplicationContext applicationContext,
+        IConfigProvider configProvider) : ConfigrableServiceBase<CoreConfig>(configProvider), ICoreService
     {
+        private readonly IApplicationContext _applicationContext = applicationContext ?? throw new ArgumentNullException(nameof(applicationContext));
         public override string ServiceName => Constants.ServiceNames.CoreService;
+
+        protected override ILoggingService LoggingService => loggingService;
 
         ICoreConfig ICoreService.Config => Config;
 
-        public string Version { get; private set; }
+        public string Version { get; private set; } = typeof(CoreService).Assembly.GetCustomAttribute<AssemblyFileVersionAttribute>().Version;
 
         public bool Running { get; private set; }
 
-        private readonly ILoggingService loggingService;
-        private readonly INotificationService notificationService;
-        private readonly IHealthCheckService healthCheckService;
-        private readonly ITradingService tradingService;
-        private readonly IWebService webService;
-        private readonly IBacktestingService backtestingService;
+        private readonly ConcurrentDictionary<string, HighResolutionTimedTask> timedTasks = new ConcurrentDictionary<string, HighResolutionTimedTask>();
 
-        private ConcurrentDictionary<string, HighResolutionTimedTask> timedTasks;
-
-        public CoreService(ILoggingService loggingService, INotificationService notificationService, IHealthCheckService healthCheckService, ITradingService tradingService, IWebService webService, IBacktestingService backtestingService)
+        // Static constructor to set up global handlers and culture
+        static CoreService()
         {
-            this.loggingService = loggingService;
-            this.notificationService = notificationService;
-            this.healthCheckService = healthCheckService;
-            this.tradingService = tradingService;
-            this.webService = webService;
-            this.backtestingService = backtestingService;
-
-            this.timedTasks = new ConcurrentDictionary<string, HighResolutionTimedTask>();
-
-            // Log unhandled exceptions
-            AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
-
             // Set decimal separator to a dot for all cultures
             var cultureInfo = new CultureInfo(CultureInfo.CurrentCulture.Name);
             cultureInfo.NumberFormat.NumberDecimalSeparator = ".";
             CultureInfo.DefaultThreadCurrentCulture = cultureInfo;
             CultureInfo.DefaultThreadCurrentUICulture = cultureInfo;
-
-            Version = GetType().Assembly.GetCustomAttribute<AssemblyFileVersionAttribute>().Version;
         }
 
         public void Start()
         {
+            // Register unhandled exception handler
+            AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+
             loggingService.Info($"Start Core service (Version: {Version})...");
             if (backtestingService.Config.Enabled)
             {
                 backtestingService.Start();
                 if (backtestingService.Config.Replay)
                 {
-                    Application.Speed = backtestingService.Config.ReplaySpeed;
+                    _applicationContext.Speed = backtestingService.Config.ReplaySpeed;
                 }
             }
             if (Config.HealthCheckInterval > 0 && (!backtestingService.Config.Enabled || !backtestingService.Config.Replay))
@@ -124,9 +118,29 @@ namespace IntelliTrader.Core
 
         public void Restart()
         {
+            // Synchronous wrapper - calls async implementation with timeout
+            RestartAsync(CancellationToken.None).GetAwaiter().GetResult();
+        }
+
+        public async Task RestartAsync(CancellationToken cancellationToken = default)
+        {
             _ = notificationService.NotifyAsync("IntelliTrader restarting...");
             loggingService.Info("Restart Core service...");
-            Task.Run(() => Stop()).Wait(TimeSpan.FromSeconds(Constants.Timeouts.RestartTimeoutSeconds));
+
+            // Use Task.Run to offload Stop() to thread pool with proper timeout handling
+            using (var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            {
+                cts.CancelAfter(TimeSpan.FromSeconds(Constants.Timeouts.RestartTimeoutSeconds));
+                try
+                {
+                    await Task.Run(() => Stop(), cts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    loggingService.Info("Stop operation timed out during restart, proceeding with Start...");
+                }
+            }
+
             Start();
         }
 
@@ -211,7 +225,14 @@ namespace IntelliTrader.Core
             {
                 loggingService.Error(message);
                 _ = notificationService.NotifyAsync(message);
-            } catch { }
+            }
+            catch (Exception logEx)
+            {
+                // Last resort: write to console if logging/notification fails
+                // This ensures we don't lose visibility into the original unhandled exception
+                Console.Error.WriteLine($"[CRITICAL] Failed to log unhandled exception. Logging error: {logEx.Message}");
+                Console.Error.WriteLine($"[CRITICAL] Original exception: {message}");
+            }
         }
     }
 }

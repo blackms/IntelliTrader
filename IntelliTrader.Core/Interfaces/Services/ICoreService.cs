@@ -1,4 +1,6 @@
 ﻿using System.Collections.Concurrent;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace IntelliTrader.Core
 {
@@ -9,6 +11,7 @@ namespace IntelliTrader.Core
         void Start();
         void Stop();
         void Restart();
+        Task RestartAsync(CancellationToken cancellationToken = default);
         void AddTask(string name, HighResolutionTimedTask task);
         void RemoveTask(string name);
         void RemoveAllTasks();

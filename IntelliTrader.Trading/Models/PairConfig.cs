@@ -7,7 +7,7 @@ namespace IntelliTrader.Trading
 {
     internal class PairConfig : IPairConfig
     {
-        public IEnumerable<string> Rules { get; set; }
+        public IEnumerable<string> Rules { get; set; } = new List<string>();
 
         public bool BuyEnabled { get; set; }
         public OrderType BuyType { get; set; }
@@ -30,8 +30,25 @@ namespace IntelliTrader.Trading
         public double SellStopLossMinAge { get; set; }
         public decimal SellStopLossMargin { get; set; }
 
+        // Backing field for StopLoss
+        private StopLossConfig? _stopLoss;
+
+        /// <summary>
+        /// Configuration for dynamic ATR-based stop-loss.
+        /// </summary>
+        public StopLossConfig StopLossInternal
+        {
+            get => _stopLoss ?? new StopLossConfig();
+            set => _stopLoss = value;
+        }
+
+        /// <summary>
+        /// Interface accessor for stop-loss configuration.
+        /// </summary>
+        public IStopLossConfig StopLoss => StopLossInternal;
+
         public bool SwapEnabled { get; set; }
-        public List<string> SwapSignalRules { get; set; }
+        public List<string> SwapSignalRules { get; set; } = new List<string>();
         public int SwapTimeout { get; set; }
 
         public decimal? CurrentDCAMargin { get; set; }

@@ -1,41 +1,64 @@
-﻿using IntelliTrader.Signals.Base;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
+using IntelliTrader.Signals.Base;
 using System;
-using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace IntelliTrader.Signals.TradingView
 {
-    internal class TradingViewCryptoSignalConverter : JsonConverter
+    /// <summary>
+    /// JSON converter for Signal objects from TradingView API responses.
+    /// Converts JSON arrays in format [pair, price, priceChange, volume, rating, volatility] to Signal objects.
+    /// Note: This converter is currently unused as parsing is done inline in TradingViewCryptoSignalPollingTimedTask.
+    /// </summary>
+    internal class TradingViewCryptoSignalConverter : JsonConverter<Signal>
     {
-        public override bool CanConvert(Type objectType)
+        public override Signal? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
-            return objectType == typeof(Signal);
-        }
-
-        public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
-        {
-            if (reader.TokenType == JsonToken.StartArray)
-            {
-                var array = JArray.Load(reader);
-                var item = (existingValue as Signal ?? new Signal());
-                item.Pair = (string)array.ElementAtOrDefault(0);
-                item.Price = (decimal?)array.ElementAtOrDefault(1);
-                item.PriceChange = (decimal?)array.ElementAtOrDefault(2);
-                item.Volume = (long?)array.ElementAtOrDefault(3);
-                item.Rating = (double?)array.ElementAtOrDefault(4);
-                item.Volatility = (double?)array.ElementAtOrDefault(5);
-                return item;
-            }
-            else
+            if (reader.TokenType != JsonTokenType.StartArray)
             {
                 return null;
             }
+
+            var signal = new Signal();
+            var index = 0;
+
+            while (reader.Read())
+            {
+                if (reader.TokenType == JsonTokenType.EndArray)
+                {
+                    break;
+                }
+
+                switch (index)
+                {
+                    case 0:
+                        signal.Pair = reader.TokenType == JsonTokenType.String ? reader.GetString() : null;
+                        break;
+                    case 1:
+                        signal.Price = reader.TokenType == JsonTokenType.Number ? reader.GetDecimal() : null;
+                        break;
+                    case 2:
+                        signal.PriceChange = reader.TokenType == JsonTokenType.Number ? reader.GetDecimal() : null;
+                        break;
+                    case 3:
+                        signal.Volume = reader.TokenType == JsonTokenType.Number ? reader.GetInt64() : null;
+                        break;
+                    case 4:
+                        signal.Rating = reader.TokenType == JsonTokenType.Number ? reader.GetDouble() : null;
+                        break;
+                    case 5:
+                        signal.Volatility = reader.TokenType == JsonTokenType.Number ? reader.GetDouble() : null;
+                        break;
+                }
+                index++;
+            }
+
+            return signal;
         }
 
-        public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
+        public override void Write(Utf8JsonWriter writer, Signal value, JsonSerializerOptions options)
         {
-            throw new NotSupportedException();
+            throw new NotSupportedException("Serialization of Signal to array format is not supported.");
         }
     }
 }

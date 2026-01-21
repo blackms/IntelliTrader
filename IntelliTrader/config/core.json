@@ -2,7 +2,8 @@
   "Core": {
     "DebugMode": true,
     "PasswordProtected": true,
-    "Password": "b84967c4f073b71405404f3719c788cd",
+    "_PasswordMigrationNote": "This password uses BCrypt. To generate a new hash: POST /GeneratePasswordHash with your password after logging in. Legacy MD5 hashes (32 hex chars) are still supported for backward compatibility but should be migrated.",
+    "Password": "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4/jJrZk.oB8C6.Hy",
     "InstanceName": "Main",
     "TimezoneOffset": 1,
     "HealthCheckEnabled": true,

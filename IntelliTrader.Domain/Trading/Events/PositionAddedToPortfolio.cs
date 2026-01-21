@@ -8,25 +8,30 @@ namespace IntelliTrader.Domain.Trading.Events;
 /// </summary>
 public sealed record PositionAddedToPortfolio : IDomainEvent
 {
+    public Guid EventId { get; }
     public PortfolioId PortfolioId { get; }
     public PositionId PositionId { get; }
     public TradingPair Pair { get; }
     public Money Cost { get; }
     public int ActivePositionCount { get; }
     public DateTimeOffset OccurredAt { get; }
+    public string? CorrelationId { get; }
 
     public PositionAddedToPortfolio(
         PortfolioId portfolioId,
         PositionId positionId,
         TradingPair pair,
         Money cost,
-        int activePositionCount)
+        int activePositionCount,
+        string? correlationId = null)
     {
+        EventId = Guid.NewGuid();
         PortfolioId = portfolioId;
         PositionId = positionId;
         Pair = pair;
         Cost = cost;
         ActivePositionCount = activePositionCount;
         OccurredAt = DateTimeOffset.UtcNow;
+        CorrelationId = correlationId;
     }
 }

@@ -1,4 +1,4 @@
-﻿using IntelliTrader.Core;
+using IntelliTrader.Core;
 using System;
 using System.Linq;
 using System.Collections.Generic;
@@ -7,39 +7,31 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Diagnostics;
 using System.Threading;
-using Newtonsoft.Json;
+using System.Text.Json;
 
 namespace IntelliTrader.Core
 {
-    internal class CachingService : ConfigrableServiceBase<CachingConfig>, ICachingService
+    internal class CachingService(ILoggingService loggingService) : ConfigrableServiceBase<CachingConfig>, ICachingService
     {
         public override string ServiceName => Constants.ServiceNames.CachingService;
 
+        protected override ILoggingService LoggingService => loggingService;
+
         ICachingConfig ICachingService.Config => Config;
 
-        private readonly ILoggingService loggingService;
         private readonly ConcurrentDictionary<string, CachedObject> cachedObjects = new ConcurrentDictionary<string, CachedObject>();
 
         // Shared cache
-        private readonly JsonSerializer serializer;
-        private DateTimeOffset lastSharedCacheCleanup;
-        private DirectoryInfo sharedCacheDirectoryInfo;
-        private int processId;
+        private readonly JsonSerializerOptions serializerOptions = new JsonSerializerOptions();
+        private DateTimeOffset lastSharedCacheCleanup = DateTimeOffset.Now;
+        private DirectoryInfo? sharedCacheDirectoryInfo;
+        private readonly int processId = Process.GetCurrentProcess().Id;
 
-        public CachingService(ILoggingService loggingService)
-        {
-            this.loggingService = loggingService;
-
-            this.serializer = new JsonSerializer();
-            this.lastSharedCacheCleanup = DateTimeOffset.Now;
-            this.processId = Process.GetCurrentProcess().Id;
-        }
-
-        public T GetOrRefresh<T>(string objectName, Func<T> refresh)
+        public T? GetOrRefresh<T>(string objectName, Func<T> refresh)
         {
             lock (cachedObjects)
             {
-                T value = default(T);
+                T? value = default;
 
                 if (Config.Enabled)
                 {
@@ -60,11 +52,8 @@ namespace IntelliTrader.Core
                             {
                                 try
                                 {
-                                    using (var cacheFile = existingCache.OpenText())
-                                    using (var cacheReader = new JsonTextReader(cacheFile))
-                                    {
-                                        value = serializer.Deserialize<T>(cacheReader);
-                                    }
+                                    using var cacheFileStream = existingCache.OpenRead();
+                                    value = JsonSerializer.Deserialize<T>(cacheFileStream, serializerOptions);
                                 }
                                 catch (Exception ex)
                                 {
@@ -80,11 +69,8 @@ namespace IntelliTrader.Core
 
                                 try
                                 {
-                                    using (var cacheFile = new StreamWriter(cacheFilePath))
-                                    using (var cacheWriter = new JsonTextWriter(cacheFile))
-                                    {
-                                        serializer.Serialize(cacheWriter, value);
-                                    }
+                                    using var cacheFileStream = new FileStream(cacheFilePath, FileMode.Create, FileAccess.Write);
+                                    JsonSerializer.Serialize(cacheFileStream, value, serializerOptions);
                                 }
                                 catch (Exception ex)
                                 {
@@ -99,9 +85,9 @@ namespace IntelliTrader.Core
                         }
                         else
                         {
-                            if (cachedObjects.TryGetValue(objectName, out CachedObject obj) && (DateTimeOffset.Now - obj.LastUpdated).TotalSeconds <= maxAge)
+                            if (cachedObjects.TryGetValue(objectName, out CachedObject? obj) && (DateTimeOffset.Now - obj.LastUpdated).TotalSeconds <= maxAge)
                             {
-                                value = (T)obj.Value;
+                                value = (T?)obj.Value;
                             }
                             else
                             {
@@ -136,6 +122,8 @@ namespace IntelliTrader.Core
             {
                 if ((DateTimeOffset.Now - lastSharedCacheCleanup).TotalSeconds > Config.SharedCacheCleanupInterval)
                 {
+                    if (sharedCacheDirectoryInfo == null) return;
+
                     foreach (var cache in sharedCacheDirectoryInfo.EnumerateFiles($"*.{Constants.Caching.SharedCacheFileExtension}", SearchOption.TopDirectoryOnly))
                     {
                         if ((DateTimeOffset.Now - cache.CreationTimeUtc).TotalSeconds > Config.SharedCacheCleanupInterval)

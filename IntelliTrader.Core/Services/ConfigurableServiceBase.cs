@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Primitives;
 using System;
 using System.Collections.Generic;
@@ -11,7 +11,40 @@ namespace IntelliTrader.Core
     {
         private const double DELAY_BETWEEN_CONFIG_RELOADS_MILLISECONDS = 500;
 
+        private readonly IConfigProvider _configProvider;
+
         public abstract string ServiceName { get; }
+
+        /// <summary>
+        /// Gets the logging service. Derived classes should override this to provide
+        /// the injected logging service. Returns null by default (e.g., for LoggingService itself).
+        /// </summary>
+        protected virtual ILoggingService LoggingService => null;
+
+        /// <summary>
+        /// Gets the config provider. Derived classes should override this to provide
+        /// the injected config provider. Returns the static fallback by default for backward compatibility.
+        /// </summary>
+        protected virtual IConfigProvider ConfigProvider => _configProvider ?? Application.ConfigProvider;
+
+        /// <summary>
+        /// Default constructor for backward compatibility.
+        /// Services should migrate to use the constructor that accepts IConfigProvider.
+        /// </summary>
+        protected ConfigrableServiceBase()
+        {
+            _configProvider = null;
+        }
+
+        /// <summary>
+        /// Constructor that accepts an injected IConfigProvider.
+        /// Preferred constructor for proper DI usage.
+        /// </summary>
+        /// <param name="configProvider">The configuration provider</param>
+        protected ConfigrableServiceBase(IConfigProvider configProvider)
+        {
+            _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
+        }
 
         public TConfig Config
         {
@@ -37,7 +70,7 @@ namespace IntelliTrader.Core
                 {
                     if (rawConfig == null)
                     {
-                        rawConfig = Application.ConfigProvider.GetSection(ServiceName, OnRawConfigChanged);
+                        rawConfig = ConfigProvider.GetSection(ServiceName, OnRawConfigChanged);
                     }
                     return rawConfig;
                 }
@@ -65,7 +98,7 @@ namespace IntelliTrader.Core
                 lastReloadDate = DateTimeOffset.Now;
                 PrepareConfig();
                 OnConfigReloaded();
-                Application.Resolve<ILoggingService>().Info($"{ServiceName} configuration reloaded");
+                LoggingService?.Info($"{ServiceName} configuration reloaded");
             }
         }
     }

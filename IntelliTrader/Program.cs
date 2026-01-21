@@ -8,6 +8,8 @@ namespace IntelliTrader
 {
     class Program
     {
+        private static IContainer _container;
+
         static void Main(string[] args)
         {
             var parsedArgs = ParseCommandLineArgs(args);
@@ -30,9 +32,21 @@ namespace IntelliTrader
             }
         }
 
+        internal static IContainer Container => _container ?? (_container = BuildAndConfigureContainer());
+
+        private static IContainer BuildAndConfigureContainer()
+        {
+            var container = Core.Application.BuildContainer();
+
+            // Wire up deferred logging for ConfigProvider now that the container is built
+            Core.Application.ConfigProvider.SetLoggingServiceFactory(() => container.Resolve<ILoggingService>());
+
+            return container;
+        }
+
         private static void StartCoreService()
         {
-            var coreService = Application.Resolve<ICoreService>();
+            var coreService = Container.Resolve<ICoreService>();
             coreService.Start();
             Console.ReadLine();
             coreService.Stop();

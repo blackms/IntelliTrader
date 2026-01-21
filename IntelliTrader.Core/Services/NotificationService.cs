@@ -8,24 +8,19 @@ using Telegram.Bot.Types.Enums;
 
 namespace IntelliTrader.Core
 {
-    internal class NotificationService : ConfigrableServiceBase<NotificationConfig>, INotificationService
+    internal class NotificationService(
+        ILoggingService loggingService,
+        ICoreService coreService) : ConfigrableServiceBase<NotificationConfig>, INotificationService
     {
         public override string ServiceName => Constants.ServiceNames.NotificationService;
 
-        INotificationConfig INotificationService.Config => Config;
+        protected override ILoggingService LoggingService => loggingService;
 
-        private readonly ILoggingService loggingService;
-        private readonly ICoreService coreService;
+        INotificationConfig INotificationService.Config => Config;
 
         // Telegram
         private TelegramBotClient telegramBotClient;
         private ChatId telegramChatId;
-
-        public NotificationService(ILoggingService loggingService, ICoreService coreService)
-        {
-            this.loggingService = loggingService ?? throw new ArgumentNullException(nameof(loggingService));
-            this.coreService = coreService ?? throw new ArgumentNullException(nameof(coreService));
-        }
 
         public async Task StartAsync()
         {

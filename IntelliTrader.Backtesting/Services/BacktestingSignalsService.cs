@@ -7,41 +7,26 @@ using System.Linq;
 
 namespace IntelliTrader.Backtesting
 {
-    public class BacktestingSignalsService : ConfigrableServiceBase<SignalsConfig>, ISignalsService
+    public class BacktestingSignalsService(
+        ILoggingService loggingService,
+        IHealthCheckService healthCheckService,
+        ITradingService tradingService,
+        IRulesService rulesService,
+        IBacktestingService backtestingService,
+        ICoreService coreService) : ConfigrableServiceBase<SignalsConfig>, ISignalsService
     {
         public override string ServiceName => Constants.ServiceNames.SignalsService;
+
+        protected override ILoggingService LoggingService => loggingService;
 
         ISignalsConfig ISignalsService.Config => Config;
 
         public IModuleRules Rules { get; private set; }
         public ISignalRulesConfig RulesConfig { get; private set; }
 
-        private readonly ILoggingService loggingService;
-        private readonly IHealthCheckService healthCheckService;
-        private readonly ITradingService tradingService;
-        private readonly IRulesService rulesService;
-        private readonly IBacktestingService backtestingService;
-        private readonly ICoreService coreService;
-
         // Note: Old SignalRulesTimedTask has been replaced by SignalRuleProcessorService in IntelliTrader.Infrastructure
         private readonly ConcurrentDictionary<string, bool> trailingSignals = new ConcurrentDictionary<string, bool>();
         private IEnumerable<string> signalNames;
-
-        public BacktestingSignalsService(
-            ILoggingService loggingService,
-            IHealthCheckService healthCheckService,
-            ITradingService tradingService,
-            IRulesService rulesService,
-            IBacktestingService backtestingService,
-            ICoreService coreService)
-        {
-            this.loggingService = loggingService ?? throw new ArgumentNullException(nameof(loggingService));
-            this.healthCheckService = healthCheckService ?? throw new ArgumentNullException(nameof(healthCheckService));
-            this.tradingService = tradingService ?? throw new ArgumentNullException(nameof(tradingService));
-            this.rulesService = rulesService ?? throw new ArgumentNullException(nameof(rulesService));
-            this.backtestingService = backtestingService ?? throw new ArgumentNullException(nameof(backtestingService));
-            this.coreService = coreService ?? throw new ArgumentNullException(nameof(coreService));
-        }
 
         public void Start()
         {

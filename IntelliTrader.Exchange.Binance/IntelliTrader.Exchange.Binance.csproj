@@ -12,6 +12,8 @@
 
   <ItemGroup>
     <PackageReference Include="Polly" Version="8.2.1" />
+    <PackageReference Include="Polly.RateLimiting" Version="8.2.1" />
+    <PackageReference Include="Polly.Extensions" Version="8.2.1" />
   </ItemGroup>
 
   <ItemGroup>

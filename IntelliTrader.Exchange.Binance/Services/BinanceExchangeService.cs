@@ -1,6 +1,8 @@
 using ExchangeSharp;
 using IntelliTrader.Core;
 using IntelliTrader.Exchange.Base;
+using IntelliTrader.Exchange.Binance.Config;
+using IntelliTrader.Exchange.Binance.Resilience;
 using Polly;
 using Polly.Retry;
 using System;
@@ -35,8 +37,8 @@ namespace IntelliTrader.Exchange.Binance
         private bool _tickersChecked;
         private bool _started;
 
-        // Polly retry pipeline for exchange operations
-        private readonly ResiliencePipeline _resiliencePipeline;
+        // Polly resilience pipelines for exchange operations
+        private readonly ExchangeResiliencePipelines _resiliencePipelines;
 
         /// <inheritdoc />
         public override bool IsWebSocketConnected => _webSocketService?.IsConnected ?? false;
@@ -58,30 +60,13 @@ namespace IntelliTrader.Exchange.Binance
             _healthCheckService = healthCheckService;
             _coreService = coreService;
 
-            // Build resilience pipeline with exponential backoff retry
-            _resiliencePipeline = new ResiliencePipelineBuilder()
-                .AddRetry(new RetryStrategyOptions
-                {
-                    MaxRetryAttempts = Constants.RetryPolicy.MaxRetryAttempts,
-                    Delay = TimeSpan.FromMilliseconds(Constants.RetryPolicy.InitialRetryDelayMs),
-                    BackoffType = DelayBackoffType.Exponential,
-                    ShouldHandle = new PredicateBuilder()
-                        .Handle<HttpRequestException>()
-                        .Handle<TaskCanceledException>()
-                        .Handle<TimeoutException>()
-                        .Handle<Exception>(ex =>
-                            // Retry on rate limit or server errors
-                            ex.Message.Contains("429") ||
-                            ex.Message.Contains("503") ||
-                            ex.Message.Contains("502") ||
-                            ex.Message.Contains("500")),
-                    OnRetry = args =>
-                    {
-                        _loggingService.Info($"Retrying exchange operation (attempt {args.AttemptNumber + 1}/{Constants.RetryPolicy.MaxRetryAttempts}) after {args.RetryDelay.TotalSeconds:0.0}s delay. Reason: {args.Outcome.Exception?.Message ?? "Unknown"}");
-                        return ValueTask.CompletedTask;
-                    }
-                })
-                .Build();
+            // Initialize resilience pipelines with separate policies for reads and orders
+            // - ReadPipeline: 3 retries, 30s timeout, circuit breaker (for GetTickers, GetAvailableAmounts, GetMyTrades)
+            // - OrderPipeline: 1 retry ONLY, 15s timeout, stricter circuit breaker (for PlaceOrder - CRITICAL)
+            // - WebSocketPipeline: For connection management
+            _resiliencePipelines = new ExchangeResiliencePipelines(loggingService, ResilienceConfig.Default);
+
+            _loggingService.Info("[Resilience] Exchange resilience pipelines initialized");
         }
 
         public override void Start(bool virtualTrading)
@@ -247,7 +232,8 @@ namespace IntelliTrader.Exchange.Binance
                 throw new InvalidOperationException("Binance API not initialized");
             }
 
-            return await _resiliencePipeline.ExecuteAsync(async cancellationToken =>
+            // Use ReadPipeline for idempotent read operations
+            return await _resiliencePipelines.ReadPipeline.ExecuteAsync(async cancellationToken =>
             {
                 var results = await _binanceApi.GetAmountsAvailableToTradeAsync();
                 return results;
@@ -261,7 +247,8 @@ namespace IntelliTrader.Exchange.Binance
                 throw new InvalidOperationException("Binance API not initialized");
             }
 
-            return await _resiliencePipeline.ExecuteAsync(async cancellationToken =>
+            // Use ReadPipeline for idempotent read operations
+            return await _resiliencePipelines.ReadPipeline.ExecuteAsync(async cancellationToken =>
             {
                 var myTrades = new List<OrderDetails>();
                 var results = await _binanceApi.GetMyTradesAsync(pair);
@@ -308,9 +295,12 @@ namespace IntelliTrader.Exchange.Binance
                 throw new InvalidOperationException("Binance API not initialized");
             }
 
-            // Note: Order placement uses retry policy carefully.
-            // Retries only on connection/timeout errors, not on order rejection.
-            return await _resiliencePipeline.ExecuteAsync(async cancellationToken =>
+            // CRITICAL: Use OrderPipeline for non-idempotent order operations.
+            // - Max 1 retry only (to prevent duplicate orders)
+            // - Only retries on true connection errors, NOT on HTTP responses
+            // - 15s timeout (markets move fast, stale orders are problematic)
+            // - Stricter circuit breaker (30% failure ratio vs 50% for reads)
+            return await _resiliencePipelines.OrderPipeline.ExecuteAsync(async cancellationToken =>
             {
                 var result = await _binanceApi.PlaceOrderAsync(new ExchangeOrderRequest
                 {

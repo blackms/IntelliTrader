@@ -1,4 +1,4 @@
-﻿using Autofac;
+using Autofac;
 using ExchangeSharp;
 using IntelliTrader.Core;
 using System;
@@ -9,6 +9,7 @@ namespace IntelliTrader
     class Program
     {
         private static IContainer _container;
+        private static IApplicationBootstrapper _bootstrapper;
 
         static void Main(string[] args)
         {
@@ -36,10 +37,13 @@ namespace IntelliTrader
 
         private static IContainer BuildAndConfigureContainer()
         {
-            var container = Core.Application.BuildContainer();
+            // Use the new bootstrapper for proper DI-based initialization
+            _bootstrapper = new ApplicationBootstrapper();
+            var container = _bootstrapper.BuildContainer();
 
             // Wire up deferred logging for ConfigProvider now that the container is built
-            Core.Application.ConfigProvider.SetLoggingServiceFactory(() => container.Resolve<ILoggingService>());
+            var configProvider = container.Resolve<IConfigProvider>();
+            configProvider.SetLoggingServiceFactory(() => container.Resolve<ILoggingService>());
 
             return container;
         }

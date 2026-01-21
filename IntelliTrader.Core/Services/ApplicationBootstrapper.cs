@@ -54,6 +54,10 @@ namespace IntelliTrader.Core
         /// <inheritdoc/>
         public IContainer BuildContainer(Action<ContainerBuilder> configureBuilder)
         {
+            // Initialize the static Application facade before module registration
+            // This ensures modules can access config during registration (backward compatibility)
+            Application.Initialize(_configProvider, _applicationContext);
+
             var builder = new ContainerBuilder();
 
             // Register the singleton instances created during bootstrapping

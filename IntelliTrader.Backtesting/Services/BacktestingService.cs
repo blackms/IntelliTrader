@@ -12,7 +12,8 @@ namespace IntelliTrader.Backtesting
         IHealthCheckService healthCheckService,
         ICoreService coreService,
         ISignalsService signalsService,
-        ITradingService tradingService) : ConfigrableServiceBase<BacktestingConfig>, IBacktestingService
+        ITradingService tradingService,
+        IConfigProvider configProvider) : ConfigrableServiceBase<BacktestingConfig>(configProvider), IBacktestingService
     {
         public const string SNAPSHOT_FILE_EXTENSION = "bin";
 

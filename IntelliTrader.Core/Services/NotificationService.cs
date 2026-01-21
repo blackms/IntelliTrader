@@ -10,7 +10,8 @@ namespace IntelliTrader.Core
 {
     internal class NotificationService(
         ILoggingService loggingService,
-        ICoreService coreService) : ConfigrableServiceBase<NotificationConfig>, INotificationService
+        ICoreService coreService,
+        IConfigProvider configProvider) : ConfigrableServiceBase<NotificationConfig>(configProvider), INotificationService
     {
         public override string ServiceName => Constants.ServiceNames.NotificationService;
 

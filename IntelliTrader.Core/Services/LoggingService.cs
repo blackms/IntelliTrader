@@ -24,7 +24,7 @@ namespace IntelliTrader.Core
 
         private readonly object syncRoot = new object();
 
-        public LoggingService()
+        public LoggingService(IConfigProvider configProvider) : base(configProvider)
         {
             if (Config.Enabled)
             {

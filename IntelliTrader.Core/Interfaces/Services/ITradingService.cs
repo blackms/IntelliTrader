@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
@@ -16,7 +15,11 @@ namespace IntelliTrader.Core
         void ResumeTrading(bool forced = false);
         void SuspendTrading(bool forced = false);
         ITradingAccount Account { get; }
-        ConcurrentStack<IOrderDetails> OrderHistory { get; }
+
+        /// <summary>
+        /// Gets the bounded order history collection. Oldest orders are automatically removed when MaxOrderHistorySize is exceeded.
+        /// </summary>
+        BoundedConcurrentStack<IOrderDetails> OrderHistory { get; }
         IPairConfig GetPairConfig(string pair);
         void ReapplyTradingRules();
         void Buy(BuyOptions options);

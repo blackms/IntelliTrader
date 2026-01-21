@@ -14,7 +14,8 @@ namespace IntelliTrader.Signals.Base
         IHealthCheckService healthCheckService,
         ITradingService tradingService,
         IRulesService rulesService,
-        Func<string, string, IConfigurationSection, ISignalReceiver> signalReceiverFactory) : ConfigrableServiceBase<SignalsConfig>, ISignalsService
+        Func<string, string, IConfigurationSection, ISignalReceiver> signalReceiverFactory,
+        IConfigProvider configProvider) : ConfigrableServiceBase<SignalsConfig>(configProvider), ISignalsService
     {
         public override string ServiceName => Constants.ServiceNames.SignalsService;
 

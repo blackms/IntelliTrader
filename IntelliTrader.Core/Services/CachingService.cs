@@ -11,7 +11,9 @@ using System.Text.Json;
 
 namespace IntelliTrader.Core
 {
-    internal class CachingService(ILoggingService loggingService) : ConfigrableServiceBase<CachingConfig>, ICachingService
+    internal class CachingService(
+        ILoggingService loggingService,
+        IConfigProvider configProvider) : ConfigrableServiceBase<CachingConfig>(configProvider), ICachingService
     {
         public override string ServiceName => Constants.ServiceNames.CachingService;
 

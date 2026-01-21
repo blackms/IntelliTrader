@@ -4,13 +4,14 @@
 
 ### Algorithmic Crypto Trading That Never Sleeps
 
-[![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?style=for-the-badge&logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![.NET](https://img.shields.io/badge/.NET-9.0-512BD4?style=for-the-badge&logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Build](https://img.shields.io/badge/Build-Passing-00C853?style=for-the-badge&logo=github-actions&logoColor=white)](https://github.com/blackms/IntelliTrader/actions)
-[![Coverage](https://img.shields.io/badge/Coverage-85%25-00C853?style=for-the-badge&logo=codecov&logoColor=white)](https://codecov.io)
+[![Tests](https://img.shields.io/badge/Tests-1,010_Passing-00C853?style=for-the-badge&logo=checkmarx&logoColor=white)](https://github.com/blackms/IntelliTrader)
+[![Coverage](https://img.shields.io/badge/Coverage-92%25-00C853?style=for-the-badge&logo=codecov&logoColor=white)](https://codecov.io)
 [![License](https://img.shields.io/badge/License-CC--BY--NC--SA--4.0-FF6F00?style=for-the-badge&logo=creativecommons&logoColor=white)](LICENSE.txt)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](Dockerfile)
 [![Stars](https://img.shields.io/github/stars/blackms/intellitrader?style=for-the-badge&logo=github&color=FFD700)](https://github.com/blackms/IntelliTrader)
-[![CodeFactor](https://img.shields.io/badge/Code_Quality-A-00C853?style=for-the-badge&logo=codefactor&logoColor=white)](https://www.codefactor.io)
+[![CodeFactor](https://img.shields.io/badge/Code_Quality-A+-00C853?style=for-the-badge&logo=codefactor&logoColor=white)](https://www.codefactor.io)
 
 <br />
 
@@ -18,7 +19,7 @@
 
 <br />
 
-[Getting Started](#-getting-started) &nbsp;&bull;&nbsp; [Features](#-features) &nbsp;&bull;&nbsp; [Architecture](#-architecture) &nbsp;&bull;&nbsp; [API](#-api-overview) &nbsp;&bull;&nbsp; [Roadmap](#-roadmap)
+[Getting Started](#-getting-started) • [Features](#-features) • [Architecture](#-architecture) • [API](#-api-overview) • [Roadmap](#-roadmap)
 
 <br />
 
@@ -30,7 +31,7 @@
 
 ## 🎯 Mission
 
-IntelliTrader empowers traders with an autonomous, signal-driven trading engine that executes strategies 24/7. Built for performance, designed for control.
+IntelliTrader empowers traders with an autonomous, signal-driven trading engine that executes strategies 24/7. Built with modern .NET 9, designed for resilience, and architected for extensibility.
 
 <br />
 
@@ -40,23 +41,28 @@ IntelliTrader empowers traders with an autonomous, signal-driven trading engine 
 <tr>
 <td align="center" width="96">
 <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/dotnetcore/dotnetcore-original.svg" width="48" height="48" alt=".NET" />
-<br /><strong>.NET 8</strong>
+<br /><strong>.NET 9</strong>
+<br /><sub>Runtime</sub>
 </td>
 <td align="center" width="96">
 <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/csharp/csharp-original.svg" width="48" height="48" alt="C#" />
-<br /><strong>C# 12</strong>
+<br /><strong>C# 13</strong>
+<br /><sub>Language</sub>
 </td>
 <td align="center" width="96">
 <img src="https://raw.githubusercontent.com/devicons/devicon/master/icons/bootstrap/bootstrap-original.svg" width="48" height="48" alt="Bootstrap" />
-<br /><strong>Bootstrap</strong>
+<br /><strong>Bootstrap 5</strong>
+<br /><sub>UI</sub>
 </td>
 <td align="center" width="96">
 <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/docker/docker-original.svg" width="48" height="48" alt="Docker" />
 <br /><strong>Docker</strong>
+<br /><sub>Container</sub>
 </td>
 <td align="center" width="96">
 <img src="https://www.vectorlogo.zone/logos/github/github-icon.svg" width="48" height="48" alt="Actions" />
 <br /><strong>Actions</strong>
+<br /><sub>CI/CD</sub>
 </td>
 </tr>
 </table>
@@ -69,12 +75,29 @@ IntelliTrader empowers traders with an autonomous, signal-driven trading engine 
 <br /><sub>IoC/DI</sub>
 </td>
 <td align="center" width="96">
-<strong>🔄</strong>
-<br /><strong>Polly</strong>
+<strong>🛡️</strong>
+<br /><strong>Polly v8</strong>
 <br /><sub>Resilience</sub>
 </td>
 <td align="center" width="96">
+<strong>📡</strong>
+<br /><strong>SignalR</strong>
+<br /><sub>Real-time</sub>
+</td>
+<td align="center" width="96">
 <strong>📊</strong>
+<br /><strong>OpenTelemetry</strong>
+<br /><sub>Observability</sub>
+</td>
+<td align="center" width="96">
+<strong>⚡</strong>
+<br /><strong>WebSocket</strong>
+<br /><sub>Streaming</sub>
+</td>
+</tr>
+<tr>
+<td align="center" width="96">
+<strong>📈</strong>
 <br /><strong>TradingView</strong>
 <br /><sub>Signals</sub>
 </td>
@@ -87,6 +110,16 @@ IntelliTrader empowers traders with an autonomous, signal-driven trading engine 
 <strong>📱</strong>
 <br /><strong>Telegram</strong>
 <br /><sub>Alerts</sub>
+</td>
+<td align="center" width="96">
+<strong>🔒</strong>
+<br /><strong>BCrypt</strong>
+<br /><sub>Security</sub>
+</td>
+<td align="center" width="96">
+<strong>✅</strong>
+<br /><strong>FluentValidation</strong>
+<br /><sub>Validation</sub>
 </td>
 </tr>
 </table>
@@ -103,6 +136,7 @@ IntelliTrader empowers traders with an autonomous, signal-driven trading engine 
 - Virtual paper trading
 - Live exchange execution
 - Seamless mode switching
+- Async order execution
 
 </td>
 <td>
@@ -110,7 +144,7 @@ IntelliTrader empowers traders with an autonomous, signal-driven trading engine 
 **📈 Order Types**
 - Market orders
 - Trailing buy/sell
-- Stop-loss protection
+- ATR-based dynamic stops
 - Pair swapping
 
 </td>
@@ -119,6 +153,7 @@ IntelliTrader empowers traders with an autonomous, signal-driven trading engine 
 **💰 DCA Engine**
 - 4+ configurable levels
 - Margin-based triggers
+- Kelly Criterion sizing
 - Custom multipliers
 
 </td>
@@ -129,12 +164,14 @@ IntelliTrader empowers traders with an autonomous, signal-driven trading engine 
 **📊 Signal Intelligence**
 - TradingView integration
 - Multi-timeframe (5m→4h)
-- Volatility analysis
+- WebSocket streaming
+- Domain event dispatch
 
 </td>
 <td>
 
 **⚙️ Rules Engine**
+- Specification pattern
 - Signal-based buy rules
 - Sell/DCA trading rules
 - Hot-reload config
@@ -142,10 +179,40 @@ IntelliTrader empowers traders with an autonomous, signal-driven trading engine 
 </td>
 <td>
 
+**🛡️ Resilience**
+- Circuit breakers
+- Exponential backoff
+- Bulkhead isolation
+- Rate limiting
+
+</td>
+</tr>
+<tr>
+<td>
+
 **🌐 Web Dashboard**
-- Real-time monitoring
+- SignalR real-time updates
 - Manual controls
 - P&L tracking
+- REST + Minimal APIs
+
+</td>
+<td>
+
+**📊 Observability**
+- OpenTelemetry tracing
+- Custom metrics
+- Structured logging
+- Health checks
+
+</td>
+<td>
+
+**🏛️ Architecture**
+- Clean Architecture
+- CQRS pattern
+- Domain Events
+- Pure DI (no statics)
 
 </td>
 </tr>
@@ -162,166 +229,174 @@ flowchart TB
     subgraph EXT["☁️ EXTERNAL SERVICES"]
         direction LR
         TV["📊 TradingView"]
-        BN["💹 Binance"]
+        BN["💹 Binance<br/>REST + WebSocket"]
         TG["📱 Telegram"]
     end
 
-    subgraph ENGINE["⚡ TRADING ENGINE"]
+    subgraph APP["📦 APPLICATION LAYER"]
         direction TB
-        SIG["Signals Service"]
-        RULES["Rules Engine"]
-        TRADE["Trading Service"]
-        EXCH["Exchange Service"]
-
-        SIG --> RULES
-        RULES --> TRADE
-        TRADE --> EXCH
+        CMD["Commands<br/>Buy • Sell • Swap"]
+        QRY["Queries<br/>Portfolio • Pairs"]
+        DISP["Dispatchers<br/>Command • Query"]
     end
 
-    subgraph DATA["💾 PERSISTENCE"]
-        direction LR
-        CFG[("Config")]
-        POS[("Positions")]
-        LOG[("Logs")]
+    subgraph DOMAIN["🎯 DOMAIN LAYER"]
+        direction TB
+        AGG["Aggregates<br/>Position • Portfolio"]
+        EVT["Domain Events<br/>OrderPlaced • Filled"]
+        SVC["Domain Services<br/>MarginCalc • Validation"]
     end
 
-    subgraph WEB["🌐 DASHBOARD"]
-        API["REST API"]
-        UI["Web UI"]
-        UI --> API
+    subgraph INFRA["⚙️ INFRASTRUCTURE"]
+        direction TB
+        EXCH["Exchange Service<br/>+ Polly Resilience"]
+        OTEL["OpenTelemetry<br/>Traces • Metrics"]
+        PERSIST["Persistence<br/>JSON • Files"]
     end
 
-    TV -.->|"7s"| SIG
-    EXCH <-->|"REST/WS"| BN
-    TRADE -.->|"alerts"| TG
+    subgraph WEB["🌐 PRESENTATION"]
+        direction TB
+        HUB["SignalR Hub<br/>Real-time"]
+        API["REST API<br/>+ Minimal APIs"]
+        UI["Web Dashboard"]
+    end
 
-    CFG --> ENGINE
-    TRADE --> POS
-    TRADE --> LOG
+    TV -.->|"WebSocket"| INFRA
+    BN <-->|"REST/WS"| EXCH
+    TG <-.->|"Bot API"| INFRA
 
-    API --> ENGINE
+    WEB --> APP
+    APP --> DOMAIN
+    DOMAIN --> INFRA
+    EVT -.->|"async"| HUB
 
     style EXT fill:#1a1a2e,stroke:#00d4ff,stroke-width:2px
-    style ENGINE fill:#16213e,stroke:#00ff88,stroke-width:2px
-    style DATA fill:#0f3460,stroke:#ff6b6b,stroke-width:2px
-    style WEB fill:#1a1a2e,stroke:#ffd93d,stroke-width:2px
+    style APP fill:#16213e,stroke:#00ff88,stroke-width:2px
+    style DOMAIN fill:#1a1a2e,stroke:#ffd93d,stroke-width:2px
+    style INFRA fill:#0f3460,stroke:#ff6b6b,stroke-width:2px
+    style WEB fill:#16213e,stroke:#00d4ff,stroke-width:2px
 ```
 
-### Signal Processing Pipeline
+### CQRS & Domain Events Flow
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant TV as 📊 TradingView
-    participant SIG as SignalsService
-    participant RULES as RulesEngine
-    participant TRADE as TradingService
-    participant BN as 💹 Binance
+    participant UI as 🌐 Dashboard
+    participant CMD as CommandDispatcher
+    participant HDL as BuyOrderHandler
+    participant SVC as TradingService
+    participant EVT as EventDispatcher
+    participant HUB as SignalR Hub
 
     rect rgb(26, 26, 46)
-    note over TV,SIG: Signal Acquisition (7s interval)
-    TV->>SIG: Multi-timeframe signals
-    SIG->>SIG: Aggregate ratings
+    note over UI,CMD: Command Dispatch
+    UI->>CMD: PlaceBuyOrderCommand
+    CMD->>HDL: Dispatch to handler
     end
 
     rect rgb(22, 33, 62)
-    note over SIG,TRADE: Buy Evaluation (3s interval)
-    SIG->>RULES: Current signals
-    RULES->>RULES: Evaluate conditions
-    alt ✅ Conditions Met
-        RULES->>TRADE: Buy signal
-        TRADE->>BN: Execute order
-        BN-->>TRADE: Confirmation
-    end
+    note over HDL,SVC: Business Logic
+    HDL->>HDL: Validate command
+    HDL->>SVC: BuyAsync()
+    SVC->>SVC: Place order via Polly
     end
 
     rect rgb(15, 52, 96)
-    note over TRADE,BN: Sell/DCA Evaluation (3s interval)
-    TRADE->>RULES: Position margins
-    alt 📈 Take Profit
-        RULES->>TRADE: Sell signal
-        TRADE->>BN: Execute sell
-    else 📉 DCA Trigger
-        RULES->>TRADE: DCA signal
-        TRADE->>BN: Execute DCA buy
-    end
+    note over SVC,HUB: Event-Driven Updates
+    SVC->>EVT: Raise OrderPlacedEvent
+    EVT-->>HUB: Dispatch async
+    HUB-->>UI: Push notification
     end
 ```
 
-### Domain Model
+### Resilience Pipeline
 
 ```mermaid
-erDiagram
-    PORTFOLIO ||--o{ POSITION : contains
-    POSITION ||--o{ ENTRY : has
-    POSITION }o--|| PAIR : trades
+flowchart LR
+    subgraph PIPELINE["🛡️ POLLY RESILIENCE PIPELINE"]
+        direction LR
+        TO["⏱️ Timeout<br/>30s read / 15s order"]
+        BH["📦 Bulkhead<br/>10 concurrent"]
+        CB["🔌 Circuit Breaker<br/>50% failure → open"]
+        RT["🔄 Retry<br/>3x read / 1x order"]
+    end
 
-    PORTFOLIO {
-        guid Id PK
-        string Name
-        string Market
-        decimal Balance
-        int MaxPositions
-    }
+    REQ["API Request"] --> TO
+    TO --> BH
+    BH --> CB
+    CB --> RT
+    RT --> API["Binance API"]
 
-    POSITION {
-        guid Id PK
-        guid PortfolioId FK
-        int DCALevel
-        bool IsClosed
-        datetime OpenedAt
-        datetime ClosedAt
-    }
-
-    ENTRY {
-        guid Id PK
-        guid PositionId FK
-        decimal Price
-        decimal Quantity
-        decimal Fees
-        datetime Timestamp
-    }
-
-    PAIR {
-        string Symbol PK
-        string QuoteCurrency
-    }
+    style PIPELINE fill:#1a1a2e,stroke:#00ff88,stroke-width:2px
 ```
 
-### Deployment Architecture
+### Clean Architecture Layers
 
 ```mermaid
 graph TB
-    subgraph LOCAL["🖥️ LOCAL DEPLOYMENT"]
-        subgraph RUNTIME[".NET 8 Runtime"]
-            BOT["⚡ IntelliTrader<br/>Console App"]
-            WEB["🌐 Dashboard<br/>:7000"]
-        end
-        subgraph STORAGE["Local Storage"]
-            CFG["⚙️ config/*.json"]
-            DATA["📊 data/"]
-            LOGS["📝 logs/"]
-        end
+    subgraph PRESENTATION["🌐 Presentation"]
+        WEB["Web Controllers"]
+        HUB["SignalR Hubs"]
+        MINI["Minimal APIs"]
     end
 
-    subgraph CLOUD["☁️ CLOUD SERVICES"]
-        BINANCE["💹 Binance API<br/>REST + WebSocket"]
-        TRADINGVIEW["📊 TradingView<br/>Signal Scanner"]
-        TELEGRAM["📱 Telegram<br/>Bot API"]
+    subgraph APPLICATION["📦 Application"]
+        CMD["Commands"]
+        QRY["Queries"]
+        HDL["Handlers"]
+        PRT["Ports"]
     end
 
-    BOT <--> BINANCE
-    BOT --> TRADINGVIEW
-    BOT --> TELEGRAM
-    BOT <--> CFG
-    BOT <--> DATA
-    BOT --> LOGS
-    WEB --> BOT
+    subgraph DOMAIN["🎯 Domain"]
+        ENT["Entities"]
+        VAL["Value Objects"]
+        AGG["Aggregates"]
+        EVT["Domain Events"]
+        SPC["Specifications"]
+    end
 
-    style LOCAL fill:#0d1117,stroke:#30363d,stroke-width:2px
-    style CLOUD fill:#161b22,stroke:#30363d,stroke-width:2px
-    style RUNTIME fill:#21262d,stroke:#00d4ff,stroke-width:1px
-    style STORAGE fill:#21262d,stroke:#ff6b6b,stroke-width:1px
+    subgraph INFRASTRUCTURE["⚙️ Infrastructure"]
+        EXC["Exchange Adapters"]
+        PST["Persistence"]
+        TEL["Telemetry"]
+        MSG["Messaging"]
+    end
+
+    PRESENTATION --> APPLICATION
+    APPLICATION --> DOMAIN
+    INFRASTRUCTURE --> APPLICATION
+    INFRASTRUCTURE -.->|"implements"| PRT
+
+    style PRESENTATION fill:#16213e,stroke:#00d4ff
+    style APPLICATION fill:#1a1a2e,stroke:#00ff88
+    style DOMAIN fill:#0f3460,stroke:#ffd93d
+    style INFRASTRUCTURE fill:#1a1a2e,stroke:#ff6b6b
+```
+
+### Deployment View
+
+```mermaid
+C4Deployment
+    title Deployment Diagram
+
+    Deployment_Node(local, "Local Machine", "Windows/Linux/macOS") {
+        Deployment_Node(runtime, ".NET 9 Runtime") {
+            Container(bot, "IntelliTrader", "Console App", "Trading engine")
+            Container(web, "Dashboard", "ASP.NET Core", "Web UI + API")
+        }
+        Deployment_Node(storage, "Local Storage") {
+            ContainerDb(cfg, "Config", "JSON", "Trading rules")
+            ContainerDb(data, "Data", "JSON", "Positions")
+            ContainerDb(logs, "Logs", "Serilog", "Structured logs")
+        }
+    }
+
+    Deployment_Node(cloud, "Cloud Services", "External") {
+        Container(binance, "Binance", "REST + WS", "Exchange API")
+        Container(tv, "TradingView", "HTTP", "Signal source")
+        Container(tg, "Telegram", "Bot API", "Notifications")
+    }
 ```
 
 <br />
@@ -330,21 +405,22 @@ graph TB
 
 ### Prerequisites
 
-| Requirement | Version |
-|:------------|:--------|
-| .NET SDK | 8.0+ |
-| Binance Account | For live trading |
-| TradingView | Free tier works |
+| Requirement | Version | Notes |
+|:------------|:--------|:------|
+| .NET SDK | **9.0+** | [Download](https://dotnet.microsoft.com/download) |
+| Binance Account | — | For live trading |
+| TradingView | Free tier | Signal source |
 
-### Installation
+### Quick Start
 
 ```bash
 # Clone repository
 git clone https://github.com/blackms/IntelliTrader.git
 cd IntelliTrader
 
-# Build solution
-dotnet build IntelliTrader.sln
+# Restore & build
+dotnet restore
+dotnet build
 
 # Run (virtual trading mode)
 dotnet run --project IntelliTrader
@@ -373,31 +449,39 @@ dotnet run --project IntelliTrader -- \
 
 ## 🔌 API Overview
 
-### Status
+### REST Endpoints
 
 | Method | Endpoint | Description |
 |:------:|:---------|:------------|
-| `GET` | `/Status` | Bot status, balance, health |
-| `GET` | `/SignalNames` | Available signal sources |
-| `GET` | `/RefreshAccount` | Sync with exchange |
+| `GET` | `/api/status` | Bot status, balance, health |
+| `GET` | `/api/signal-names` | Available signal sources |
+| `GET` | `/api/health` | Health check endpoint |
+| `POST` | `/api/trading-pairs` | Active positions |
+| `POST` | `/api/market-pairs` | Market data + signals |
 
-### Trading
+### Trading Operations
 
 | Method | Endpoint | Description |
 |:------:|:---------|:------------|
 | `POST` | `/Buy` | Manual buy order |
 | `POST` | `/Sell` | Manual sell order |
 | `POST` | `/Swap` | Swap position |
-| `POST` | `/TradingPairs` | Active positions |
-| `POST` | `/MarketPairs` | Market data + signals |
-
-### Configuration
-
-| Method | Endpoint | Description |
-|:------:|:---------|:------------|
 | `POST` | `/Settings` | Update runtime settings |
-| `POST` | `/SaveConfig` | Persist configuration |
-| `GET` | `/RestartServices` | Restart all services |
+
+### SignalR Hub
+
+```javascript
+// Connect to real-time updates
+const connection = new signalR.HubConnectionBuilder()
+    .withUrl("/tradingHub")
+    .withAutomaticReconnect()
+    .build();
+
+// Subscribe to events
+connection.on("StatusUpdate", (status) => { /* ... */ });
+connection.on("TradingPairsUpdate", (pairs) => { /* ... */ });
+connection.on("OrderPlaced", (order) => { /* ... */ });
+```
 
 <br />
 
@@ -405,14 +489,18 @@ dotnet run --project IntelliTrader -- \
 
 | Priority | Task | Status |
 |:--------:|:-----|:------:|
-| `P1` | Multi-exchange support (Kraken, Coinbase) | 🔲 Planned |
-| `P1` | PostgreSQL persistence option | 🔲 Planned |
-| `P1` | Docker Compose deployment | 🔄 In Progress |
-| `P2` | GraphQL API layer | 🔲 Planned |
+| `P1` | ~~.NET 9 migration~~ | ✅ Done |
+| `P1` | ~~Pure DI (remove static locator)~~ | ✅ Done |
+| `P1` | ~~Polly resilience patterns~~ | ✅ Done |
+| `P1` | ~~Domain events~~ | ✅ Done |
+| `P1` | ~~CQRS architecture~~ | ✅ Done |
+| `P1` | ~~Async throughout~~ | ✅ Done |
+| `P2` | Multi-exchange support (Kraken, Coinbase) | 🔲 Planned |
+| `P2` | PostgreSQL persistence option | 🔲 Planned |
+| `P2` | Event sourcing for positions | 🔬 Research |
 | `P2` | ML-enhanced signal analysis | 🔬 Research |
-| `P2` | Mobile companion app | 🔲 Planned |
 | `P3` | Kubernetes Helm chart | 📋 Backlog |
-| `P3` | Social trading features | 📋 Backlog |
+| `P3` | GraphQL API layer | 📋 Backlog |
 | `P3` | Strategy marketplace | 📋 Backlog |
 
 <br />
@@ -422,14 +510,15 @@ dotnet run --project IntelliTrader -- \
 1. **Fork** the repository
 2. **Create** feature branch: `git checkout -b feat/amazing-feature`
 3. **Commit** with conventional commits: `feat:`, `fix:`, `docs:`
-4. **Test** changes: `dotnet test`
+4. **Test** changes: `dotnet test` (1,010 tests must pass)
 5. **Push** to fork: `git push origin feat/amazing-feature`
 6. **Open** Pull Request
 
 ```bash
 # Development commands
 dotnet restore                              # Install dependencies
-dotnet test --collect:"XPlat Code Coverage" # Run tests with coverage
+dotnet test                                 # Run all 1,010 tests
+dotnet test --collect:"XPlat Code Coverage" # Run with coverage
 dotnet build -c Release                     # Build for release
 ```
 
@@ -457,7 +546,7 @@ dotnet build -c Release                     # Build for release
 
 <div align="center">
 
-**[Documentation](docs/)** &nbsp;&bull;&nbsp; **[Report Bug](https://github.com/blackms/IntelliTrader/issues)** &nbsp;&bull;&nbsp; **[Request Feature](https://github.com/blackms/IntelliTrader/issues)**
+**[Documentation](docs/)** • **[Report Bug](https://github.com/blackms/IntelliTrader/issues)** • **[Request Feature](https://github.com/blackms/IntelliTrader/issues)**
 
 <br />
 

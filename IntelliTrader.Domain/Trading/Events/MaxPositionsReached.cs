@@ -8,19 +8,24 @@ namespace IntelliTrader.Domain.Trading.Events;
 /// </summary>
 public sealed record MaxPositionsReached : IDomainEvent
 {
+    public Guid EventId { get; }
     public PortfolioId PortfolioId { get; }
     public int MaxPositions { get; }
     public int CurrentPositions { get; }
     public DateTimeOffset OccurredAt { get; }
+    public string? CorrelationId { get; }
 
     public MaxPositionsReached(
         PortfolioId portfolioId,
         int maxPositions,
-        int currentPositions)
+        int currentPositions,
+        string? correlationId = null)
     {
+        EventId = Guid.NewGuid();
         PortfolioId = portfolioId;
         MaxPositions = maxPositions;
         CurrentPositions = currentPositions;
         OccurredAt = DateTimeOffset.UtcNow;
+        CorrelationId = correlationId;
     }
 }

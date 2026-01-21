@@ -8,6 +8,7 @@ namespace IntelliTrader.Domain.Trading.Events;
 /// </summary>
 public sealed record DCAExecuted : IDomainEvent
 {
+    public Guid EventId { get; }
     public PositionId PositionId { get; }
     public TradingPair Pair { get; }
     public OrderId OrderId { get; }
@@ -20,6 +21,7 @@ public sealed record DCAExecuted : IDomainEvent
     public Quantity NewTotalQuantity { get; }
     public Money NewTotalCost { get; }
     public DateTimeOffset OccurredAt { get; }
+    public string? CorrelationId { get; }
 
     public DCAExecuted(
         PositionId positionId,
@@ -32,8 +34,10 @@ public sealed record DCAExecuted : IDomainEvent
         Money fees,
         Price newAveragePrice,
         Quantity newTotalQuantity,
-        Money newTotalCost)
+        Money newTotalCost,
+        string? correlationId = null)
     {
+        EventId = Guid.NewGuid();
         PositionId = positionId;
         Pair = pair;
         OrderId = orderId;
@@ -46,5 +50,6 @@ public sealed record DCAExecuted : IDomainEvent
         NewTotalQuantity = newTotalQuantity;
         NewTotalCost = newTotalCost;
         OccurredAt = DateTimeOffset.UtcNow;
+        CorrelationId = correlationId;
     }
 }

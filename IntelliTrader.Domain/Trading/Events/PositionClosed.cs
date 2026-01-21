@@ -8,6 +8,7 @@ namespace IntelliTrader.Domain.Trading.Events;
 /// </summary>
 public sealed record PositionClosed : IDomainEvent
 {
+    public Guid EventId { get; }
     public PositionId PositionId { get; }
     public TradingPair Pair { get; }
     public OrderId SellOrderId { get; }
@@ -20,6 +21,7 @@ public sealed record PositionClosed : IDomainEvent
     public int DCALevel { get; }
     public TimeSpan Duration { get; }
     public DateTimeOffset OccurredAt { get; }
+    public string? CorrelationId { get; }
 
     public PositionClosed(
         PositionId positionId,
@@ -32,8 +34,10 @@ public sealed record PositionClosed : IDomainEvent
         Money totalFees,
         Margin finalMargin,
         int dcaLevel,
-        TimeSpan duration)
+        TimeSpan duration,
+        string? correlationId = null)
     {
+        EventId = Guid.NewGuid();
         PositionId = positionId;
         Pair = pair;
         SellOrderId = sellOrderId;
@@ -46,5 +50,6 @@ public sealed record PositionClosed : IDomainEvent
         DCALevel = dcaLevel;
         Duration = duration;
         OccurredAt = DateTimeOffset.UtcNow;
+        CorrelationId = correlationId;
     }
 }

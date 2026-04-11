@@ -30,3 +30,7 @@ packages/
 logs/
 *.log
 node_modules
+
+# Local environment overrides for docker compose (may contain secrets)
+.env
+!.env.example

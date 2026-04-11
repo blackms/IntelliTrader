@@ -1,0 +1,64 @@
+# Production-like Compose definition for IntelliTrader.
+#
+# Usage:
+#   cp .env.example .env        # tweak host port, image tag, etc. as needed
+#   docker compose up -d        # build (if needed) and start in background
+#   docker compose logs -f      # tail logs
+#   docker compose down         # stop and remove containers
+#
+# This file is intentionally kept production-like:
+#   * restart: unless-stopped
+#   * read-only config bind mount
+#   * no source code mounted
+#   * Production ASP.NET environment
+#
+# Local development overrides live in `docker-compose.override.yml`,
+# which Compose merges automatically. To run *only* this base file (i.e.
+# without dev overrides) use `docker compose -f docker-compose.yml ...`.
+#
+# NOTE: A pre-existing systemic Autofac DI bug (tracked in #38) currently
+# prevents the application from starting end-to-end. The container will
+# build and reach `Welcome to IntelliTrader`, then crash on bootstrap.
+# This compose file is correct and will work as soon as #38 is fixed.
+
+services:
+  intellitrader:
+    image: ${INTELLITRADER_IMAGE:-intellitrader}:${INTELLITRADER_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: intellitrader
+    restart: unless-stopped
+    ports:
+      # Host port is configurable via INTELLITRADER_HOST_PORT (defaults
+      # to 7000). Container always listens on 7000 — see ASPNETCORE_URLS
+      # baked into the Dockerfile.
+      - "${INTELLITRADER_HOST_PORT:-7000}:7000"
+    environment:
+      # Production by default. The dev override flips this to Development.
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      # Free-form additional environment overrides for the host operator,
+      # picked up by .NET via the standard configuration providers.
+      DOTNET_RUNNING_IN_CONTAINER: "true"
+    volumes:
+      # Configuration is bind-mounted read-only so operators edit JSON
+      # files directly on the host. The image ships sensible defaults at
+      # /app/config; this mount overrides them.
+      - ./IntelliTrader/config:/app/config:ro
+      # Persistent runtime state (positions, snapshots).
+      - intellitrader-data:/app/data
+      # Serilog output. Bind to ./log on the host if you prefer to tail
+      # files directly; using a named volume by default keeps the
+      # repository clean.
+      - intellitrader-log:/app/log
+      # Live trading: drop an encrypted keys.bin next to this compose
+      # file and uncomment the line below. Never bake secrets into the
+      # image.
+      # - ./keys.bin:/app/keys.bin:ro
+    # The Dockerfile already declares a HEALTHCHECK against /api/health.
+    # Compose inherits it; no override needed here.
+    stop_grace_period: 30s
+
+volumes:
+  intellitrader-data:
+  intellitrader-log:

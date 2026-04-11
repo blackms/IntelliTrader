@@ -17,6 +17,31 @@ namespace IntelliTrader.Signals.Base
         Func<string, string, IConfigurationSection, ISignalReceiver> signalReceiverFactory,
         IConfigProvider configProvider) : ConfigrableServiceBase<SignalsConfig>(configProvider), ISignalsService
     {
+        private readonly bool _dependenciesValidated = ValidateDependencies(
+            coreService,
+            loggingService,
+            healthCheckService,
+            tradingService,
+            rulesService,
+            signalReceiverFactory);
+
+        private static bool ValidateDependencies(
+            ICoreService coreService,
+            ILoggingService loggingService,
+            IHealthCheckService healthCheckService,
+            ITradingService tradingService,
+            IRulesService rulesService,
+            Func<string, string, IConfigurationSection, ISignalReceiver> signalReceiverFactory)
+        {
+            ArgumentNullException.ThrowIfNull(coreService);
+            ArgumentNullException.ThrowIfNull(loggingService);
+            ArgumentNullException.ThrowIfNull(healthCheckService);
+            ArgumentNullException.ThrowIfNull(tradingService);
+            ArgumentNullException.ThrowIfNull(rulesService);
+            ArgumentNullException.ThrowIfNull(signalReceiverFactory);
+            return true;
+        }
+
         public override string ServiceName => Constants.ServiceNames.SignalsService;
 
         protected override ILoggingService LoggingService => loggingService;

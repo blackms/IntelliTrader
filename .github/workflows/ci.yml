@@ -52,7 +52,7 @@ jobs:
           dotnet test ${{ env.SOLUTION }}
           --configuration ${{ env.CONFIGURATION }}
           --no-build
-          --logger "trx;LogFileName=test-results.trx"
+          --logger "trx"
           --logger "console;verbosity=normal"
           --results-directory ./TestResults
           --collect:"XPlat Code Coverage"

@@ -57,13 +57,12 @@ public class TradingServiceTests
         Func<string, IExchangeService> exchangeServiceFactory = (name) => _exchangeServiceMock.Object;
 
         _sut = new TradingService(
-            _coreServiceMock.Object,
             _loggingServiceMock.Object,
             _notificationServiceMock.Object,
             _healthCheckServiceMock.Object,
             _rulesServiceMock.Object,
-            _backtestingServiceMock.Object,
-            _signalsServiceMock.Object,
+            new Lazy<IBacktestingService>(() => _backtestingServiceMock.Object),
+            new Lazy<ISignalsService>(() => _signalsServiceMock.Object),
             exchangeServiceFactory,
             _applicationContextMock.Object,
             _configProviderMock.Object);
@@ -2091,13 +2090,12 @@ public class TradingServiceTests
         Func<string, IExchangeService> exchangeServiceFactory = (name) => exchangeServiceMock.Object;
 
         var sut = new TradingService(
-            coreServiceMock.Object,
             loggingServiceMock.Object,
             notificationServiceMock.Object,
             healthCheckServiceMock.Object,
             rulesServiceMock.Object,
-            backtestingServiceMock.Object,
-            signalsServiceMock.Object,
+            new Lazy<IBacktestingService>(() => backtestingServiceMock.Object),
+            new Lazy<ISignalsService>(() => signalsServiceMock.Object),
             exchangeServiceFactory,
             applicationContextMock.Object,
             configProviderMock.Object);
@@ -2143,13 +2141,12 @@ public class TradingServiceTests
         Func<string, IExchangeService> exchangeServiceFactory = (name) => exchangeServiceMock.Object;
 
         var sut = new TradingService(
-            coreServiceMock.Object,
             loggingServiceMock.Object,
             notificationServiceMock.Object,
             healthCheckServiceMock.Object,
             rulesServiceMock.Object,
-            backtestingServiceMock.Object,
-            signalsServiceMock.Object,
+            new Lazy<IBacktestingService>(() => backtestingServiceMock.Object),
+            new Lazy<ISignalsService>(() => signalsServiceMock.Object),
             exchangeServiceFactory,
             applicationContextMock.Object,
             configProviderMock.Object);
@@ -2203,13 +2200,12 @@ public class TradingServiceTests
         Func<string, IExchangeService> exchangeServiceFactory = (name) => exchangeServiceMock.Object;
 
         var sut = new TradingService(
-            coreServiceMock.Object,
             loggingServiceMock.Object,
             notificationServiceMock.Object,
             healthCheckServiceMock.Object,
             rulesServiceMock.Object,
-            backtestingServiceMock.Object,
-            signalsServiceMock.Object,
+            new Lazy<IBacktestingService>(() => backtestingServiceMock.Object),
+            new Lazy<ISignalsService>(() => signalsServiceMock.Object),
             exchangeServiceFactory,
             applicationContextMock.Object,
             configProviderMock.Object);
@@ -2275,13 +2271,12 @@ public class TradingServiceTests
         Func<string, IExchangeService> exchangeServiceFactory = (name) => exchangeServiceMock.Object;
 
         var sut = new TradingService(
-            coreServiceMock.Object,
             loggingServiceMock.Object,
             notificationServiceMock.Object,
             healthCheckServiceMock.Object,
             rulesServiceMock.Object,
-            backtestingServiceMock.Object,
-            signalsServiceMock.Object,
+            new Lazy<IBacktestingService>(() => backtestingServiceMock.Object),
+            new Lazy<ISignalsService>(() => signalsServiceMock.Object),
             exchangeServiceFactory,
             applicationContextMock.Object,
             configProviderMock.Object);

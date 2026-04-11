@@ -20,14 +20,24 @@ namespace IntelliTrader.Trading
     /// Facade service that coordinates trading operations through specialized orchestrators.
     /// Maintains backward compatibility while delegating to single-responsibility components.
     /// </summary>
+    // DI cycle notes:
+    //  * coreService was previously injected here but never used inside
+    //    the class. It has been removed entirely to break the
+    //    CoreService -> TradingService -> CoreService cycle.
+    //  * backtestingService and signalsService are injected as Lazy<T>
+    //    because TradingService is itself a constructor dependency of
+    //    BacktestingService and SignalsService. The lazy wrapper defers
+    //    resolution until the first runtime access (Start/Stop/order
+    //    execution paths), by which point the container is fully built.
+    //    See `IsReplayingSnapshots` below for the one place where this
+    //    used to live in a field initializer.
     internal class TradingService(
-        ICoreService coreService,
         ILoggingService loggingService,
         INotificationService notificationService,
         IHealthCheckService healthCheckService,
         IRulesService rulesService,
-        IBacktestingService backtestingService,
-        ISignalsService signalsService,
+        Lazy<IBacktestingService> backtestingService,
+        Lazy<ISignalsService> signalsService,
         Func<string, IExchangeService> exchangeServiceFactory,
         IApplicationContext applicationContext,
         IConfigProvider configProvider,
@@ -68,7 +78,17 @@ namespace IntelliTrader.Trading
         // - OrderExecutionService
         // - SignalRuleProcessorService
 
-        private readonly bool isReplayingSnapshots = backtestingService?.Config.Enabled == true && backtestingService.Config.Replay;
+        // Computed at first access (not in a field initializer) so we
+        // do not force-resolve the lazy IBacktestingService at construct
+        // time, which would re-introduce the DI cycle.
+        private bool IsReplayingSnapshots
+        {
+            get
+            {
+                var backtesting = backtestingService?.Value;
+                return backtesting?.Config.Enabled == true && backtesting.Config.Replay;
+            }
+        }
         private bool tradingForcefullySuspended;
 
         // Orchestrators for single-responsibility operations (lazily initialized)
@@ -151,7 +171,7 @@ namespace IntelliTrader.Trading
             ArgumentNullException.ThrowIfNull(exchangeServiceFactory);
             ArgumentNullException.ThrowIfNull(backtestingService);
 
-            var serviceName = isReplayingSnapshots
+            var serviceName = IsReplayingSnapshots
                 ? Constants.ServiceNames.BacktestingExchangeService
                 : Config.Exchange;
 
@@ -207,19 +227,19 @@ namespace IntelliTrader.Trading
 
             if (!Config.VirtualTrading)
             {
-                Account = new ExchangeAccount(loggingService, notificationService, healthCheckService, signalsService, this);
+                Account = new ExchangeAccount(loggingService, notificationService, healthCheckService, signalsService.Value, this);
             }
             else
             {
-                Account = new VirtualAccount(loggingService, notificationService, healthCheckService, signalsService, this);
+                Account = new VirtualAccount(loggingService, notificationService, healthCheckService, signalsService.Value, this);
             }
 
             // Initial account refresh
             Account.Refresh();
 
-            if (signalsService.Config.Enabled)
+            if (signalsService.Value.Config.Enabled)
             {
-                signalsService.Start();
+                signalsService.Value.Start();
             }
 
             // Note: Trading rules and order execution are now handled by BackgroundServices
@@ -236,9 +256,9 @@ namespace IntelliTrader.Trading
 
             exchangeService.Stop();
 
-            if (signalsService.Config.Enabled)
+            if (signalsService.Value.Config.Enabled)
             {
-                signalsService.Stop();
+                signalsService.Value.Stop();
             }
 
             // Note: BackgroundServices are stopped by the host when the application shuts down
@@ -391,7 +411,7 @@ namespace IntelliTrader.Trading
         {
             lock (SyncRoot)
             {
-                IRule rule = signalsService.Rules.Entries.FirstOrDefault(r => r.Name == options.Metadata.SignalRule);
+                IRule rule = signalsService.Value.Rules.Entries.FirstOrDefault(r => r.Name == options.Metadata.SignalRule);
 
                 ITradingPair swappedPair = Account.GetTradingPairs().OrderBy(p => p.CurrentMargin).FirstOrDefault(tradingPair =>
                 {
@@ -517,7 +537,7 @@ namespace IntelliTrader.Trading
         // Async trading methods (preferred for new code)
         public async Task BuyAsync(BuyOptions options, CancellationToken cancellationToken = default)
         {
-            IRule rule = signalsService.Rules.Entries.FirstOrDefault(r => r.Name == options.Metadata.SignalRule);
+            IRule rule = signalsService.Value.Rules.Entries.FirstOrDefault(r => r.Name == options.Metadata.SignalRule);
 
             ITradingPair swappedPair = Account.GetTradingPairs().OrderBy(p => p.CurrentMargin).FirstOrDefault(tradingPair =>
             {

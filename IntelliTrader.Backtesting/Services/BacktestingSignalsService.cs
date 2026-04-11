@@ -7,13 +7,16 @@ using System.Linq;
 
 namespace IntelliTrader.Backtesting
 {
+    // coreService was previously injected here but is never referenced
+    // inside the class. Removed to break the
+    //   CoreService -> ... -> BacktestingSignalsService -> CoreService
+    // back-edge consistently with the SignalsService refactor.
     public class BacktestingSignalsService(
         ILoggingService loggingService,
         IHealthCheckService healthCheckService,
         ITradingService tradingService,
         IRulesService rulesService,
         IBacktestingService backtestingService,
-        ICoreService coreService,
         IConfigProvider configProvider) : ConfigrableServiceBase<SignalsConfig>(configProvider), ISignalsService
     {
         public override string ServiceName => Constants.ServiceNames.SignalsService;

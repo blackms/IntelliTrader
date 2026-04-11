@@ -4,11 +4,17 @@ using System.Collections.Generic;
 
 namespace IntelliTrader.Core
 {
+    // Both ICoreService and ITradingService are injected as Lazy<T> on
+    // purpose: CoreService depends on IHealthCheckService and
+    // TradingService depends on IHealthCheckService, so direct injection
+    // would create cycles at container build time. Every use of these
+    // services happens at Start()/Stop()/runtime methods, never inside
+    // the constructor body, so deferring resolution via Lazy<T> is safe.
     internal class HealthCheckService(
         ILoggingService loggingService,
         INotificationService notificationService,
-        ICoreService coreService,
-        ITradingService tradingService,
+        Lazy<ICoreService> coreService,
+        Lazy<ITradingService> tradingService,
         IApplicationContext applicationContext) : IHealthCheckService
     {
         private readonly IApplicationContext _applicationContext = applicationContext ?? throw new ArgumentNullException(nameof(applicationContext));
@@ -19,10 +25,11 @@ namespace IntelliTrader.Core
         {
             loggingService.Info($"Start Health Check service...");
 
-            healthCheckTimedTask = new HealthCheckTimedTask(loggingService, notificationService, this, coreService, tradingService);
-            healthCheckTimedTask.RunInterval = (float)(coreService.Config.HealthCheckInterval * 1000 / _applicationContext.Speed);
+            var core = coreService.Value;
+            healthCheckTimedTask = new HealthCheckTimedTask(loggingService, notificationService, this, core, tradingService.Value);
+            healthCheckTimedTask.RunInterval = (float)(core.Config.HealthCheckInterval * 1000 / _applicationContext.Speed);
             healthCheckTimedTask.StartDelay = Constants.TimedTasks.StandardDelay / _applicationContext.Speed;
-            coreService.AddTask(nameof(HealthCheckTimedTask), healthCheckTimedTask);
+            core.AddTask(nameof(HealthCheckTimedTask), healthCheckTimedTask);
 
             loggingService.Info("Health Check service started");
         }
@@ -31,8 +38,9 @@ namespace IntelliTrader.Core
         {
             loggingService.Info($"Stop Health Check service...");
 
-            coreService.StopTask(nameof(HealthCheckTimedTask));
-            coreService.RemoveTask(nameof(HealthCheckTimedTask));
+            var core = coreService.Value;
+            core.StopTask(nameof(HealthCheckTimedTask));
+            core.RemoveTask(nameof(HealthCheckTimedTask));
 
             loggingService.Info("Health Check service stopped");
         }

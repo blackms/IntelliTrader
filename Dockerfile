@@ -66,15 +66,19 @@ RUN dotnet publish IntelliTrader/IntelliTrader.csproj \
 ########################
 FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION}-alpine AS runtime
 
-# Only wget is installed at runtime — it is needed by HEALTHCHECK to probe
-# /api/health. Two intentional omissions to keep the final image under
-# 200 MB:
-#   * icu-libs: we run with invariant globalization (see ENV) because the
-#     bot only parses JSON numbers, not localized strings.
-#   * tzdata: the codebase has no TimeZoneInfo / FindSystemTimeZoneById
-#     calls; the only timezone setting is a numeric TimezoneOffset in
-#     core.json, which does not require IANA zone data.
-RUN apk add --no-cache wget \
+# Runtime packages:
+#   * wget — needed by HEALTHCHECK to probe /api/health.
+#   * tzdata — required at runtime by the ExchangeSharp library, whose
+#     static initializer in CryptoUtility..cctor calls
+#     `TimeZoneInfo.FindSystemTimeZoneById("Asia/Shanghai")`. The
+#     IntelliTrader code itself does not use TimeZoneInfo (only a
+#     numeric TimezoneOffset in core.json), but the transitive
+#     dependency does, and the type initializer throws on import
+#     without IANA zone data.
+# icu-libs is intentionally NOT installed: we run with invariant
+# globalization (see ENV below) to keep the image small. The bot only
+# parses JSON numbers, not localized strings.
+RUN apk add --no-cache wget tzdata \
  && adduser -S -u ${APP_UID:-1654} -G root intellitrader || true
 
 WORKDIR /app
@@ -95,7 +99,8 @@ RUN mkdir -p /app/data /app/log \
 ENV ASPNETCORE_ENVIRONMENT=Production \
     ASPNETCORE_URLS=http://+:7000 \
     DOTNET_RUNNING_IN_CONTAINER=true \
-    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=true
+    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=true \
+    INTELLITRADER_HEADLESS=true
 
 EXPOSE 7000
 
@@ -104,11 +109,16 @@ EXPOSE 7000
 VOLUME ["/app/config", "/app/data", "/app/log"]
 
 # Anonymous liveness endpoint defined in
-# IntelliTrader.Web/MinimalApiEndpoints.cs — returns 200 OK as long as the
-# web host is running. Kept outside of the authenticated /api group on
-# purpose so container orchestrators can reach it without credentials.
+# IntelliTrader.Web/MinimalApiEndpoints.cs — returns 200 OK as long as
+# the web host is running. Kept outside of the authenticated /api group
+# on purpose so container orchestrators can reach it without credentials.
+#
+# We deliberately do NOT use `wget --spider`: the BusyBox build of wget
+# shipped with Alpine returns exit code 8 ("server issued an error
+# response") on perfectly valid 200 responses when in spider mode. The
+# `-O /dev/null` form is portable and matches GNU wget semantics.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD wget --quiet --tries=1 --spider http://127.0.0.1:7000/api/health || exit 1
+    CMD wget --quiet --tries=1 -O /dev/null http://127.0.0.1:7000/api/health || exit 1
 
 USER ${APP_UID}
 

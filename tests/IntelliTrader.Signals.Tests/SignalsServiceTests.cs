@@ -9,10 +9,8 @@ namespace IntelliTrader.Signals.Tests;
 
 public class SignalsServiceTests
 {
-    private readonly Mock<ICoreService> _coreServiceMock;
     private readonly Mock<ILoggingService> _loggingServiceMock;
     private readonly Mock<IHealthCheckService> _healthCheckServiceMock;
-    private readonly Mock<ITradingService> _tradingServiceMock;
     private readonly Mock<IRulesService> _rulesServiceMock;
     private readonly Mock<IModuleRules> _moduleRulesMock;
     private readonly Mock<IConfigProvider> _configProviderMock;
@@ -22,10 +20,8 @@ public class SignalsServiceTests
 
     public SignalsServiceTests()
     {
-        _coreServiceMock = new Mock<ICoreService>();
         _loggingServiceMock = new Mock<ILoggingService>();
         _healthCheckServiceMock = new Mock<IHealthCheckService>();
-        _tradingServiceMock = new Mock<ITradingService>();
         _rulesServiceMock = new Mock<IRulesService>();
         _moduleRulesMock = new Mock<IModuleRules>();
         _configProviderMock = new Mock<IConfigProvider>();
@@ -49,10 +45,8 @@ public class SignalsServiceTests
             };
 
         _sut = new SignalsService(
-            _coreServiceMock.Object,
             _loggingServiceMock.Object,
             _healthCheckServiceMock.Object,
-            _tradingServiceMock.Object,
             _rulesServiceMock.Object,
             signalReceiverFactory,
             _configProviderMock.Object);
@@ -921,33 +915,19 @@ public class SignalsServiceTests
 
     #region Constructor Validation Tests
 
-    [Fact]
-    public void Constructor_WithNullCoreService_ThrowsArgumentNullException()
-    {
-        // Arrange & Act
-        Action act = () => new SignalsService(
-            null!,
-            _loggingServiceMock.Object,
-            _healthCheckServiceMock.Object,
-            _tradingServiceMock.Object,
-            _rulesServiceMock.Object,
-            (r, n, c) => null!,
-            _configProviderMock.Object);
-
-        // Assert
-        act.Should().Throw<ArgumentNullException>()
-            .WithParameterName("coreService");
-    }
+    // NOTE: the SignalsService constructor no longer accepts ICoreService
+    // or ITradingService — both were dead parameters that contributed to
+    // a DI cycle (see #38). The corresponding null-guard tests have been
+    // removed accordingly. The remaining four tests still cover every
+    // current dependency that the constructor validates.
 
     [Fact]
     public void Constructor_WithNullLoggingService_ThrowsArgumentNullException()
     {
         // Arrange & Act
         Action act = () => new SignalsService(
-            _coreServiceMock.Object,
             null!,
             _healthCheckServiceMock.Object,
-            _tradingServiceMock.Object,
             _rulesServiceMock.Object,
             (r, n, c) => null!,
             _configProviderMock.Object);
@@ -962,10 +942,8 @@ public class SignalsServiceTests
     {
         // Arrange & Act
         Action act = () => new SignalsService(
-            _coreServiceMock.Object,
             _loggingServiceMock.Object,
             null!,
-            _tradingServiceMock.Object,
             _rulesServiceMock.Object,
             (r, n, c) => null!,
             _configProviderMock.Object);
@@ -976,32 +954,12 @@ public class SignalsServiceTests
     }
 
     [Fact]
-    public void Constructor_WithNullTradingService_ThrowsArgumentNullException()
-    {
-        // Arrange & Act
-        Action act = () => new SignalsService(
-            _coreServiceMock.Object,
-            _loggingServiceMock.Object,
-            _healthCheckServiceMock.Object,
-            null!,
-            _rulesServiceMock.Object,
-            (r, n, c) => null!,
-            _configProviderMock.Object);
-
-        // Assert
-        act.Should().Throw<ArgumentNullException>()
-            .WithParameterName("tradingService");
-    }
-
-    [Fact]
     public void Constructor_WithNullRulesService_ThrowsArgumentNullException()
     {
         // Arrange & Act
         Action act = () => new SignalsService(
-            _coreServiceMock.Object,
             _loggingServiceMock.Object,
             _healthCheckServiceMock.Object,
-            _tradingServiceMock.Object,
             null!,
             (r, n, c) => null!,
             _configProviderMock.Object);
@@ -1016,10 +974,8 @@ public class SignalsServiceTests
     {
         // Arrange & Act
         Action act = () => new SignalsService(
-            _coreServiceMock.Object,
             _loggingServiceMock.Object,
             _healthCheckServiceMock.Object,
-            _tradingServiceMock.Object,
             _rulesServiceMock.Object,
             null!,
             _configProviderMock.Object);

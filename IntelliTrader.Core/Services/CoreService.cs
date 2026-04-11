@@ -82,12 +82,14 @@ namespace IntelliTrader.Core
                 StartAllTasks();
             });
 
+            Running = true;
             loggingService.Info("Core service started");
             _ = notificationService.NotifyAsync("IntelliTrader started");
         }
 
         public void Stop()
         {
+            Running = false;
             _ = notificationService.NotifyAsync("IntelliTrader stopped");
             loggingService.Info("Stop Core service...");
             if (tradingService.Config.Enabled)

@@ -8,6 +8,12 @@ namespace IntelliTrader.Core
     {
         ICoreConfig Config { get; }
         string Version { get; }
+        /// <summary>
+        /// True once <see cref="Start"/> has completed and all timed
+        /// tasks are active. Used by Kubernetes readiness probes to
+        /// decide whether the bot is ready to serve traffic.
+        /// </summary>
+        bool Running { get; }
         void Start();
         void Stop();
         void Restart();

@@ -26,6 +26,65 @@ namespace IntelliTrader.Web
                 .WithName("HealthCheck")
                 .WithDescription("Liveness probe returning 200 OK whenever the web host is running");
 
+            // GET /health/live - Kubernetes-style liveness probe.
+            // Returns 200 whenever the web host is running. This is a
+            // pure process-aliveness signal: if Kestrel can answer, the
+            // container is alive and the kubelet should not kill it.
+            endpoints.MapGet("/health/live", () => Results.Ok(new
+                {
+                    status = "alive",
+                    timestamp = DateTimeOffset.UtcNow
+                }))
+                .AllowAnonymous()
+                .WithName("LivenessProbe")
+                .WithDescription("Kubernetes liveness probe — 200 OK while the process is running");
+
+            // GET /health/ready - Kubernetes-style readiness probe.
+            // Returns 200 only when the bot is fully initialized AND
+            // actively trading. Returns 503 when:
+            //   * CoreService has not finished Start() yet, or
+            //   * trading has been suspended (manual or by health rules), or
+            //   * any IHealthCheck registered on IHealthCheckService is failing.
+            // The payload always includes the per-component breakdown so
+            // operators can see exactly which check flipped the probe.
+            endpoints.MapGet("/health/ready", (
+                ICoreService coreService,
+                ITradingService tradingService,
+                IHealthCheckService healthCheckService) =>
+                {
+                    var checks = healthCheckService.GetHealthChecks()
+                        .OrderBy(c => c.Name)
+                        .ToList();
+
+                    var failingChecks = checks.Where(c => c.Failed).ToList();
+                    var isRunning = coreService.Running;
+                    var isSuspended = tradingService.IsTradingSuspended;
+                    var isReady = isRunning && !isSuspended && failingChecks.Count == 0;
+
+                    var payload = new
+                    {
+                        status = isReady ? "ready" : "not_ready",
+                        timestamp = DateTimeOffset.UtcNow,
+                        coreRunning = isRunning,
+                        tradingSuspended = isSuspended,
+                        failingCheckCount = failingChecks.Count,
+                        checks = checks.Select(c => new
+                        {
+                            name = c.Name,
+                            failed = c.Failed,
+                            message = c.Message,
+                            lastUpdated = c.LastUpdated
+                        })
+                    };
+
+                    return isReady
+                        ? Results.Ok(payload)
+                        : Results.Json(payload, statusCode: StatusCodes.Status503ServiceUnavailable);
+                })
+                .AllowAnonymous()
+                .WithName("ReadinessProbe")
+                .WithDescription("Kubernetes readiness probe — 200 when bot is ready, 503 otherwise");
+
             var apiGroup = endpoints.MapGroup("/api")
                 .RequireAuthorization();
 

@@ -8,35 +8,36 @@ using System.Threading;
 
 namespace IntelliTrader.Signals.Base
 {
+    // DI cycle notes:
+    //  * coreService and tradingService were previously injected here
+    //    but neither is referenced inside the class. They have been
+    //    removed entirely to break the
+    //      CoreService -> TradingService -> SignalsService -> CoreService
+    //    and
+    //      TradingService -> SignalsService -> TradingService
+    //    cycles. Existing test fixtures (SignalsServiceTests) have been
+    //    updated to match the new signature.
     public class SignalsService(
-        ICoreService coreService,
         ILoggingService loggingService,
         IHealthCheckService healthCheckService,
-        ITradingService tradingService,
         IRulesService rulesService,
         Func<string, string, IConfigurationSection, ISignalReceiver> signalReceiverFactory,
         IConfigProvider configProvider) : ConfigrableServiceBase<SignalsConfig>(configProvider), ISignalsService
     {
         private readonly bool _dependenciesValidated = ValidateDependencies(
-            coreService,
             loggingService,
             healthCheckService,
-            tradingService,
             rulesService,
             signalReceiverFactory);
 
         private static bool ValidateDependencies(
-            ICoreService coreService,
             ILoggingService loggingService,
             IHealthCheckService healthCheckService,
-            ITradingService tradingService,
             IRulesService rulesService,
             Func<string, string, IConfigurationSection, ISignalReceiver> signalReceiverFactory)
         {
-            ArgumentNullException.ThrowIfNull(coreService);
             ArgumentNullException.ThrowIfNull(loggingService);
             ArgumentNullException.ThrowIfNull(healthCheckService);
-            ArgumentNullException.ThrowIfNull(tradingService);
             ArgumentNullException.ThrowIfNull(rulesService);
             ArgumentNullException.ThrowIfNull(signalReceiverFactory);
             return true;

@@ -31,13 +31,33 @@ namespace IntelliTrader.Web
                 // Set the container for Startup to use when registering services
                 Startup.Container = container;
 
-                var contentRoot = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "IntelliTrader.Web"));
-#if RELEASE
-                if (!System.Diagnostics.Debugger.IsAttached)
+                // Resolve the ASP.NET content root.
+                //
+                // The legacy logic computed `cwd/../IntelliTrader.Web` for
+                // dev runs and `cwd/bin` for Release builds. Both
+                // assumptions break inside a published container, where
+                // the executable, views and wwwroot all live next to each
+                // other under /app — there is no parent IntelliTrader.Web
+                // folder and no `bin` subdirectory.
+                //
+                // Use AppContext.BaseDirectory (the directory of the
+                // running assembly) which is correct in every environment:
+                // dev runs from bin/Debug/..., Release publishes flat,
+                // and containers have /app as the base directory.
+                var contentRoot = AppContext.BaseDirectory;
+                if (!Directory.Exists(Path.Combine(contentRoot, "Views")) &&
+                    !Directory.Exists(Path.Combine(contentRoot, "wwwroot")))
                 {
-                    contentRoot = Path.Combine(Directory.GetCurrentDirectory(), "bin");
+                    // Legacy dev fallback: Visual Studio runs from
+                    // IntelliTrader/bin/Debug/net9.0 and the static
+                    // content lives two levels up under IntelliTrader.Web.
+                    var devFallback = Path.GetFullPath(
+                        Path.Combine(Directory.GetCurrentDirectory(), "..", "IntelliTrader.Web"));
+                    if (Directory.Exists(devFallback))
+                    {
+                        contentRoot = devFallback;
+                    }
                 }
-#endif
 
                 var webHostBuilder = new WebHostBuilder()
                     .UseContentRoot(contentRoot)

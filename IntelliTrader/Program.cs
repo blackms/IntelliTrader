@@ -52,8 +52,41 @@ namespace IntelliTrader
         {
             var coreService = Container.Resolve<ICoreService>();
             coreService.Start();
-            Console.ReadLine();
+
+            if (IsHeadless())
+            {
+                // Container / detached / pipe-launched mode: stdin is
+                // not a TTY, so the legacy Console.ReadLine() returned
+                // immediately on EOF and the process exited right after
+                // startup. Block until SIGINT (Ctrl+C) or SIGTERM
+                // (`docker stop`) instead so the bot keeps running.
+                var shutdown = new System.Threading.ManualResetEventSlim(false);
+                Console.CancelKeyPress += (_, e) =>
+                {
+                    e.Cancel = true;
+                    shutdown.Set();
+                };
+                AppDomain.CurrentDomain.ProcessExit += (_, _) => shutdown.Set();
+                shutdown.Wait();
+            }
+            else
+            {
+                Console.ReadLine();
+            }
+
             coreService.Stop();
+        }
+
+        private static bool IsHeadless()
+        {
+            if (Console.IsInputRedirected)
+            {
+                return true;
+            }
+
+            var envOverride = Environment.GetEnvironmentVariable("INTELLITRADER_HEADLESS");
+            return string.Equals(envOverride, "true", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(envOverride, "1", StringComparison.Ordinal);
         }
 
         private static void PrintWelcomeMessage()

@@ -8,9 +8,14 @@ using Telegram.Bot.Types.Enums;
 
 namespace IntelliTrader.Core
 {
+    // ICoreService is injected as Lazy<T> on purpose: CoreService depends
+    // on INotificationService, so a direct injection would create a cycle
+    // at container build time. The lazy wrapper defers resolution until
+    // NotifyAsync runs, by which point both services are constructed.
+    // Autofac supports Lazy<T> natively (no extra registration needed).
     internal class NotificationService(
         ILoggingService loggingService,
-        ICoreService coreService,
+        Lazy<ICoreService> coreService,
         IConfigProvider configProvider) : ConfigrableServiceBase<NotificationConfig>(configProvider), INotificationService
     {
         public override string ServiceName => Constants.ServiceNames.NotificationService;
@@ -62,7 +67,7 @@ namespace IntelliTrader.Core
                 {
                     try
                     {
-                        var instanceName = coreService.Config.InstanceName;
+                        var instanceName = coreService.Value.Config.InstanceName;
                         await telegramBotClient.SendTextMessageAsync(
                             chatId: telegramChatId,
                             text: $"({instanceName}) {message}",

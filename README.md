@@ -445,6 +445,47 @@ dotnet run --project IntelliTrader -- \
 #    Set "VirtualTrading": false
 ```
 
+### Running with Docker
+
+A multi-stage `Dockerfile` is provided for production-grade containerized deployments. The final image is based on `mcr.microsoft.com/dotnet/aspnet:9.0-alpine`, runs as a non-root user, and stays under 200 MB.
+
+```bash
+# Build the image
+docker build -t intellitrader:latest .
+
+# Run with named volumes for config, data, and logs
+docker run -d \
+  --name intellitrader \
+  -p 7000:7000 \
+  -v intellitrader-config:/app/config \
+  -v intellitrader-data:/app/data \
+  -v intellitrader-log:/app/log \
+  intellitrader:latest
+```
+
+**Volumes**
+
+| Path | Purpose |
+|---|---|
+| `/app/config` | Trading rules, exchange, signals, and web configuration (overrides the baked-in baseline) |
+| `/app/data` | Persisted runtime state (positions, snapshots) |
+| `/app/log` | Serilog output |
+
+**Live trading inside Docker** — bind-mount an encrypted `keys.bin` at runtime instead of baking it into the image:
+
+```bash
+docker run -d \
+  --name intellitrader \
+  -p 7000:7000 \
+  -v $PWD/keys.bin:/app/keys.bin:ro \
+  -v intellitrader-config:/app/config \
+  -v intellitrader-data:/app/data \
+  -v intellitrader-log:/app/log \
+  intellitrader:latest
+```
+
+**Healthcheck** — the container exposes a Docker `HEALTHCHECK` that polls `GET /api/health` every 30 seconds. The endpoint is anonymous and returns `200 OK` whenever the web host is running, so `docker inspect` / orchestrators can reliably detect liveness.
+
 <br />
 
 ## 🔌 API Overview

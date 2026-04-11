@@ -1,0 +1,57 @@
+# Build output
+**/bin/
+**/obj/
+**/out/
+**/publish/
+**/artifacts/
+**/TestResults/
+
+# IDE / editors
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userprefs
+*.DotSettings.user
+
+# Git / CI
+.git/
+.gitattributes
+.gitignore
+.github/
+.claude/
+.claude-flow/
+
+# Tests (not needed in runtime image)
+tests/
+
+# Documentation / examples
+*.md
+!README.md
+docs/
+LICENSE*
+
+# Secrets / local artifacts that must never be baked into the image
+**/keys.bin
+**/*.pfx
+**/*.key
+**/*.pem
+**/appsettings.*.json
+!IntelliTrader/config/*.json
+
+# Runtime data that should live in volumes
+IntelliTrader/data/
+IntelliTrader/log/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# WhatsappAgent (unrelated Python project in the same repo)
+WhatsappAgent/
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore

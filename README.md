@@ -486,6 +486,41 @@ docker run -d \
 
 **Healthcheck** — the container exposes a Docker `HEALTHCHECK` that polls `GET /api/health` every 30 seconds. The endpoint is anonymous and returns `200 OK` whenever the web host is running, so `docker inspect` / orchestrators can reliably detect liveness.
 
+### Running with docker compose
+
+A `docker-compose.yml` is provided alongside a `docker-compose.override.yml` for local development. Compose merges them automatically.
+
+```bash
+# 1. Copy the sample env file and tweak host port / image tag if needed
+cp .env.example .env
+
+# 2. Build (first run only) and start in the background
+docker compose up -d
+
+# 3. Tail logs
+docker compose logs -f
+
+# 4. Stop and remove containers (volumes persist)
+docker compose down
+```
+
+**Production-like vs development**
+
+| | `docker-compose.yml` (base) | `+ docker-compose.override.yml` (default) |
+|---|---|---|
+| `ASPNETCORE_ENVIRONMENT` | `Production` | `Development` |
+| Config bind mount | read-only | read-write |
+| Log directory | named volume `intellitrader-log` | bind to `./IntelliTrader/log` |
+| Healthcheck | every 30s | every 10s |
+
+To run with the production-like base only (skipping the dev override):
+
+```bash
+docker compose -f docker-compose.yml up -d
+```
+
+**Live trading inside compose** — drop an encrypted `keys.bin` next to `docker-compose.yml` and uncomment the corresponding bind mount in the file. The same encryption command shown above for plain Docker applies.
+
 <br />
 
 ## 🔌 API Overview

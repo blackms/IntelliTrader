@@ -1,0 +1,29 @@
+# Local development overrides for docker-compose.yml.
+#
+# Compose merges this file on top of docker-compose.yml automatically
+# when you run `docker compose up`. To skip the overrides (e.g. to
+# reproduce production locally) use:
+#
+#   docker compose -f docker-compose.yml up
+#
+# What this file changes versus the production-like base:
+#   * ASPNETCORE_ENVIRONMENT=Development (enables developer exception page)
+#   * Tighter healthcheck cadence so failures are visible sooner
+#   * Config bind mount switched to read-write so editing JSON files
+#     on the host can hot-reload settings inside the container
+#   * Log directory bind-mounted to ./IntelliTrader/log so tailing logs
+#     from your editor / IDE just works
+
+services:
+  intellitrader:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Logging__LogLevel__Default: Debug
+    volumes:
+      - ./IntelliTrader/config:/app/config:rw
+      - ./IntelliTrader/log:/app/log:rw
+    healthcheck:
+      interval: 10s
+      timeout: 3s
+      start_period: 30s
+      retries: 3

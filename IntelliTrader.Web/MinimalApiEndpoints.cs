@@ -18,6 +18,14 @@ namespace IntelliTrader.Web
         /// </summary>
         public static IEndpointRouteBuilder MapMinimalApiEndpoints(this IEndpointRouteBuilder endpoints)
         {
+            // GET /api/health - Anonymous liveness probe used by Docker
+            // HEALTHCHECK and Kubernetes probes. Must stay outside of the
+            // authenticated /api group so it can be reached without a session.
+            endpoints.MapGet("/api/health", () => Results.Ok(new { status = "ok" }))
+                .AllowAnonymous()
+                .WithName("HealthCheck")
+                .WithDescription("Liveness probe returning 200 OK whenever the web host is running");
+
             var apiGroup = endpoints.MapGroup("/api")
                 .RequireAuthorization();
 

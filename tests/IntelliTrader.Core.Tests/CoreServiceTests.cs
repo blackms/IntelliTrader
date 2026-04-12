@@ -15,6 +15,9 @@ public class CoreServiceTests
     private readonly Mock<ITradingService> _tradingServiceMock;
     private readonly Mock<IWebService> _webServiceMock;
     private readonly Mock<IBacktestingService> _backtestingServiceMock;
+    private readonly Mock<IApplicationContext> _applicationContextMock;
+    private readonly Mock<IConfigProvider> _configProviderMock;
+    private readonly Mock<ISecretRotationService> _secretRotationServiceMock;
     private readonly ICoreService _sut;
 
     public CoreServiceTests()
@@ -25,6 +28,9 @@ public class CoreServiceTests
         _tradingServiceMock = new Mock<ITradingService>();
         _webServiceMock = new Mock<IWebService>();
         _backtestingServiceMock = new Mock<IBacktestingService>();
+        _applicationContextMock = new Mock<IApplicationContext>();
+        _configProviderMock = new Mock<IConfigProvider>();
+        _secretRotationServiceMock = new Mock<ISecretRotationService>();
 
         SetupDefaultMocks();
 
@@ -78,7 +84,10 @@ public class CoreServiceTests
             _healthCheckServiceMock.Object,
             _tradingServiceMock.Object,
             _webServiceMock.Object,
-            _backtestingServiceMock.Object
+            _backtestingServiceMock.Object,
+            _applicationContextMock.Object,
+            _configProviderMock.Object,
+            new Lazy<ISecretRotationService>(() => _secretRotationServiceMock.Object)
         });
 
         return (ICoreService)instance;

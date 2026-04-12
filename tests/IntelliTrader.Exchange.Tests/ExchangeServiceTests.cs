@@ -24,7 +24,7 @@ public class TestableExchangeService : ExchangeService
         IHealthCheckService healthCheckService,
         ICoreService coreService,
         Func<IOrder, IOrderDetails>? placeOrderHandler = null)
-        : base(loggingService, healthCheckService, coreService)
+        : base(loggingService, healthCheckService, coreService, new Mock<IConfigProvider>().Object)
     {
         _placeOrderHandler = placeOrderHandler;
     }
@@ -65,14 +65,14 @@ public class TestableExchangeService : ExchangeService
     {
         VirtualTradingEnabled = virtualTrading;
         _isStarted = true;
-        loggingService.Info("TestableExchangeService started");
+        LoggingService.Info("TestableExchangeService started");
     }
 
     public override void Stop()
     {
         _isStarted = false;
         _tickers.Clear();
-        loggingService.Info("TestableExchangeService stopped");
+        LoggingService.Info("TestableExchangeService stopped");
     }
 
     public override Task<IEnumerable<ITicker>> GetTickers(string market)

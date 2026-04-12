@@ -14,7 +14,7 @@ public class BacktestingSignalsServiceTests
     private readonly Mock<ITradingService> _tradingServiceMock;
     private readonly Mock<IRulesService> _rulesServiceMock;
     private readonly Mock<IBacktestingService> _backtestingServiceMock;
-    private readonly Mock<ICoreService> _coreServiceMock;
+    private readonly Mock<IConfigProvider> _configProviderMock;
     private readonly Mock<IModuleRules> _moduleRulesMock;
     private readonly Mock<ISignalsConfig> _signalsConfigMock;
     private readonly BacktestingSignalsService _sut;
@@ -26,7 +26,7 @@ public class BacktestingSignalsServiceTests
         _tradingServiceMock = new Mock<ITradingService>();
         _rulesServiceMock = new Mock<IRulesService>();
         _backtestingServiceMock = new Mock<IBacktestingService>();
-        _coreServiceMock = new Mock<ICoreService>();
+        _configProviderMock = new Mock<IConfigProvider>();
         _moduleRulesMock = new Mock<IModuleRules>();
         _signalsConfigMock = new Mock<ISignalsConfig>();
 
@@ -50,7 +50,7 @@ public class BacktestingSignalsServiceTests
             _tradingServiceMock.Object,
             _rulesServiceMock.Object,
             _backtestingServiceMock.Object,
-            _coreServiceMock.Object);
+            _configProviderMock.Object);
     }
 
     #region Constructor Tests
@@ -65,7 +65,7 @@ public class BacktestingSignalsServiceTests
             _tradingServiceMock.Object,
             _rulesServiceMock.Object,
             _backtestingServiceMock.Object,
-            _coreServiceMock.Object);
+            _configProviderMock.Object);
 
         action.Should().Throw<ArgumentNullException>()
             .WithParameterName("loggingService");
@@ -81,7 +81,7 @@ public class BacktestingSignalsServiceTests
             _tradingServiceMock.Object,
             _rulesServiceMock.Object,
             _backtestingServiceMock.Object,
-            _coreServiceMock.Object);
+            _configProviderMock.Object);
 
         action.Should().Throw<ArgumentNullException>()
             .WithParameterName("healthCheckService");
@@ -97,7 +97,7 @@ public class BacktestingSignalsServiceTests
             null!,
             _rulesServiceMock.Object,
             _backtestingServiceMock.Object,
-            _coreServiceMock.Object);
+            _configProviderMock.Object);
 
         action.Should().Throw<ArgumentNullException>()
             .WithParameterName("tradingService");
@@ -113,7 +113,7 @@ public class BacktestingSignalsServiceTests
             _tradingServiceMock.Object,
             null!,
             _backtestingServiceMock.Object,
-            _coreServiceMock.Object);
+            _configProviderMock.Object);
 
         action.Should().Throw<ArgumentNullException>()
             .WithParameterName("rulesService");
@@ -129,14 +129,14 @@ public class BacktestingSignalsServiceTests
             _tradingServiceMock.Object,
             _rulesServiceMock.Object,
             null!,
-            _coreServiceMock.Object);
+            _configProviderMock.Object);
 
         action.Should().Throw<ArgumentNullException>()
             .WithParameterName("backtestingService");
     }
 
     [Fact]
-    public void Constructor_WithNullCoreService_ThrowsArgumentNullException()
+    public void Constructor_WithNullConfigProvider_ThrowsArgumentNullException()
     {
         // Act & Assert
         var action = () => new BacktestingSignalsService(
@@ -148,7 +148,7 @@ public class BacktestingSignalsServiceTests
             null!);
 
         action.Should().Throw<ArgumentNullException>()
-            .WithParameterName("coreService");
+            .WithParameterName("configProvider");
     }
 
     [Fact]
@@ -909,7 +909,7 @@ public class BacktestingSignalsServiceEdgeCaseTests
     private readonly Mock<ITradingService> _tradingServiceMock;
     private readonly Mock<IRulesService> _rulesServiceMock;
     private readonly Mock<IBacktestingService> _backtestingServiceMock;
-    private readonly Mock<ICoreService> _coreServiceMock;
+    private readonly Mock<IConfigProvider> _configProviderMock;
     private readonly Mock<IModuleRules> _moduleRulesMock;
     private readonly BacktestingSignalsService _sut;
 
@@ -920,7 +920,7 @@ public class BacktestingSignalsServiceEdgeCaseTests
         _tradingServiceMock = new Mock<ITradingService>();
         _rulesServiceMock = new Mock<IRulesService>();
         _backtestingServiceMock = new Mock<IBacktestingService>();
-        _coreServiceMock = new Mock<ICoreService>();
+        _configProviderMock = new Mock<IConfigProvider>();
         _moduleRulesMock = new Mock<IModuleRules>();
 
         _moduleRulesMock.Setup(x => x.GetConfiguration<SignalRulesConfig>())
@@ -934,7 +934,7 @@ public class BacktestingSignalsServiceEdgeCaseTests
             _tradingServiceMock.Object,
             _rulesServiceMock.Object,
             _backtestingServiceMock.Object,
-            _coreServiceMock.Object);
+            _configProviderMock.Object);
     }
 
     [Fact]

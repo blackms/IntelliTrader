@@ -52,6 +52,12 @@ namespace IntelliTrader.Web
             services.AddSingleton(_ => Container.Resolve<IHealthCheckService>());
             services.AddSingleton(_ => Container.Resolve<IAuditService>());
             services.AddSingleton(_ => Container.Resolve<IEnumerable<IConfigurableService>>());
+            services.AddSingleton(_ => Container.Resolve<IConfigProvider>());
+            services.AddSingleton(_ =>
+            {
+                Container.TryResolve<IPortfolioRiskManager>(out var manager);
+                return manager;
+            });
 
             // Register password service for secure password hashing (BCrypt)
             services.AddSingleton<IPasswordService, PasswordService>();

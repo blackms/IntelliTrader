@@ -103,23 +103,44 @@ namespace IntelliTrader.Web
                 .RequireRateLimiting("status");
 
             // GET /api/status - Get current trading status
+            // Viewer role sees a reduced payload (no Balance or LogEntries) to limit financial data exposure.
             apiGroup.MapGet("/status", (
+                HttpContext httpContext,
                 ITradingService tradingService,
                 ISignalsService signalsService,
                 IHealthCheckService healthCheckService,
                 ILoggingService loggingService) =>
             {
-                var status = new
+                bool isViewer = httpContext.User.IsInRole(UserRoles.Viewer);
+
+                object status;
+                if (isViewer)
                 {
-                    Balance = tradingService.Account.GetBalance(),
-                    GlobalRating = signalsService.GetGlobalRating()?.ToString("0.000") ?? "N/A",
-                    TrailingBuys = tradingService.GetTrailingBuys(),
-                    TrailingSells = tradingService.GetTrailingSells(),
-                    TrailingSignals = signalsService.GetTrailingSignals(),
-                    TradingSuspended = tradingService.IsTradingSuspended,
-                    HealthChecks = healthCheckService.GetHealthChecks().OrderBy(c => c.Name),
-                    LogEntries = loggingService.GetLogEntries().Reverse().Take(5)
-                };
+                    status = new
+                    {
+                        GlobalRating = signalsService.GetGlobalRating()?.ToString("0.000") ?? "N/A",
+                        TrailingBuys = tradingService.GetTrailingBuys(),
+                        TrailingSells = tradingService.GetTrailingSells(),
+                        TrailingSignals = signalsService.GetTrailingSignals(),
+                        TradingSuspended = tradingService.IsTradingSuspended,
+                        HealthChecks = healthCheckService.GetHealthChecks().OrderBy(c => c.Name)
+                    };
+                }
+                else
+                {
+                    status = new
+                    {
+                        Balance = tradingService.Account.GetBalance(),
+                        GlobalRating = signalsService.GetGlobalRating()?.ToString("0.000") ?? "N/A",
+                        TrailingBuys = tradingService.GetTrailingBuys(),
+                        TrailingSells = tradingService.GetTrailingSells(),
+                        TrailingSignals = signalsService.GetTrailingSignals(),
+                        TradingSuspended = tradingService.IsTradingSuspended,
+                        HealthChecks = healthCheckService.GetHealthChecks().OrderBy(c => c.Name),
+                        LogEntries = loggingService.GetLogEntries().Reverse().Take(5)
+                    };
+                }
+
                 return Results.Json(status);
             })
             .WithName("GetStatus")
@@ -129,14 +150,41 @@ namespace IntelliTrader.Web
             .Produces(StatusCodes.Status401Unauthorized);
 
             // POST /api/trading-pairs - Get all trading pairs with their details
+            // Viewer role sees a reduced payload (no Cost, CurrentCost, BoughtPrice) to limit financial data exposure.
             apiGroup.MapPost("/trading-pairs", (
+                HttpContext httpContext,
                 ITradingService tradingService,
                 ISignalsService signalsService,
                 ICoreService coreService) =>
             {
+                bool isViewer = httpContext.User.IsInRole(UserRoles.Viewer);
+
                 var tradingPairs = from tradingPair in tradingService.Account.GetTradingPairs()
                                    let pairConfig = tradingService.GetPairConfig(tradingPair.Pair)
-                                   select new
+                                   select isViewer
+                                   ? (object)new
+                                   {
+                                       Name = tradingPair.Pair,
+                                       DCA = tradingPair.DCALevel,
+                                       TradingViewName = $"{tradingService.Config.Exchange.ToUpperInvariant()}:{tradingPair.Pair}",
+                                       Margin = tradingPair.CurrentMargin.ToString("0.00"),
+                                       Target = pairConfig.SellMargin.ToString("0.00"),
+                                       CurrentPrice = tradingPair.CurrentPrice.ToString("0.00000000"),
+                                       Amount = tradingPair.TotalAmount.ToString("0.########"),
+                                       OrderDates = tradingPair.OrderDates.Select(d => d.ToOffset(System.TimeSpan.FromHours(coreService.Config.TimezoneOffset)).ToString("yyyy-MM-dd HH:mm:ss")),
+                                       OrderIds = tradingPair.OrderIds,
+                                       Age = tradingPair.CurrentAge.ToString("0.00"),
+                                       CurrentRating = tradingPair.Metadata.CurrentRating?.ToString("0.000") ?? "N/A",
+                                       BoughtRating = tradingPair.Metadata.BoughtRating?.ToString("0.000") ?? "N/A",
+                                       SignalRule = tradingPair.Metadata.SignalRule ?? "N/A",
+                                       SwapPair = tradingPair.Metadata.SwapPair,
+                                       TradingRules = pairConfig.Rules,
+                                       IsTrailingSell = tradingService.GetTrailingSells().Contains(tradingPair.Pair),
+                                       IsTrailingBuy = tradingService.GetTrailingBuys().Contains(tradingPair.Pair),
+                                       LastBuyMargin = tradingPair.Metadata.LastBuyMargin?.ToString("0.00") ?? "N/A",
+                                       Config = pairConfig
+                                   }
+                                   : (object)new
                                    {
                                        Name = tradingPair.Pair,
                                        DCA = tradingPair.DCALevel,

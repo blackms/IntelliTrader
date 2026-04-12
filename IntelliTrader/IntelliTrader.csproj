@@ -19,8 +19,6 @@
     <ProjectReference Include="..\IntelliTrader.Exchange.Base\IntelliTrader.Exchange.Base.csproj" />
     <ProjectReference Include="..\IntelliTrader.Exchange.Binance\IntelliTrader.Exchange.Binance.csproj" />
     <ProjectReference Include="..\IntelliTrader.Infrastructure\IntelliTrader.Infrastructure.csproj" />
-    <ProjectReference Include="..\IntelliTrader.Integration.Base\IntelliTrader.Integration.Base.csproj" />
-    <ProjectReference Include="..\IntelliTrader.Integration.ProfitTrailer\IntelliTrader.Integration.ProfitTrailer.csproj" />
     <ProjectReference Include="..\IntelliTrader.Rules\IntelliTrader.Rules.csproj" />
     <ProjectReference Include="..\IntelliTrader.Signals.Base\IntelliTrader.Signals.Base.csproj" />
     <ProjectReference Include="..\IntelliTrader.Signals.TradingView\IntelliTrader.Signals.TradingView.csproj" />
@@ -36,9 +34,6 @@
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </None>
     <None Update="config\exchange.json">
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-    </None>
-    <None Update="config\integration.json">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </None>
     <None Update="config\logging.json">

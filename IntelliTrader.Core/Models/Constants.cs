@@ -13,7 +13,6 @@ namespace IntelliTrader.Core
             public const string LoggingService = "Logging";
             public const string TradingService = "Trading";
             public const string ExchangeService = "Exchange";
-            public const string IntegrationService = "Integration";
             public const string SignalsService = "Signals";
             public const string RulesService = "Rules";
             public const string NotificationService = "Notification";

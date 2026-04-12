@@ -3,6 +3,8 @@ using MessagePack;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+
+#pragma warning disable CS0612 // Type or member is obsolete
 using System.IO;
 using System.Linq;
 

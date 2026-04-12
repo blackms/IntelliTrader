@@ -3,6 +3,8 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.IO;
+
+#pragma warning disable CS0612 // Type or member is obsolete
 using System.Threading;
 
 namespace IntelliTrader.Backtesting

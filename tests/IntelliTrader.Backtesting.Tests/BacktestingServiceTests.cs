@@ -3,6 +3,8 @@ using Moq;
 using Xunit;
 using IntelliTrader.Core;
 using IntelliTrader.Backtesting;
+
+#pragma warning disable CS0612 // Type or member is obsolete
 using IntelliTrader.Exchange.Base;
 using IntelliTrader.Signals.Base;
 using System.Collections.Concurrent;

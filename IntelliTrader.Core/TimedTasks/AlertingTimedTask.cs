@@ -1,5 +1,7 @@
 using System;
 
+#pragma warning disable CS0612 // Type or member is obsolete
+
 namespace IntelliTrader.Core
 {
     internal class AlertingTimedTask : HighResolutionTimedTask

@@ -7,7 +7,7 @@ namespace IntelliTrader.Integration.Core
 {
     internal class IntegrationService(
         ILoggingService loggingService,
-        IConfigProvider configProvider) : ConfigrableServiceBase<IntegrationConfig>(configProvider), IIntegrationService
+        IConfigProvider configProvider) : ConfigurableServiceBase<IntegrationConfig>(configProvider), IIntegrationService
     {
         public override string ServiceName => Constants.ServiceNames.IntegrationService;
 

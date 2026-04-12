@@ -19,7 +19,7 @@ namespace IntelliTrader.Backtesting
         Lazy<ICoreService> coreService,
         ISignalsService signalsService,
         Lazy<ITradingService> tradingService,
-        IConfigProvider configProvider) : ConfigrableServiceBase<BacktestingConfig>(configProvider), IBacktestingService
+        IConfigProvider configProvider) : ConfigurableServiceBase<BacktestingConfig>(configProvider), IBacktestingService
     {
         public const string SNAPSHOT_FILE_EXTENSION = "bin";
 

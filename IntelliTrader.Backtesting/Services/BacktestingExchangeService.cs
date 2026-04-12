@@ -11,7 +11,7 @@ namespace IntelliTrader.Backtesting
         ILoggingService loggingService,
         IHealthCheckService healthCheckService,
         IBacktestingService backtestingService,
-        IConfigProvider configProvider) : ConfigrableServiceBase<ExchangeConfig>(configProvider), IExchangeService
+        IConfigProvider configProvider) : ConfigurableServiceBase<ExchangeConfig>(configProvider), IExchangeService
     {
         public override string ServiceName => Constants.ServiceNames.ExchangeService;
 

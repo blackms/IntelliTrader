@@ -13,7 +13,7 @@ namespace IntelliTrader.Core
 {
     internal class CachingService(
         ILoggingService loggingService,
-        IConfigProvider configProvider) : ConfigrableServiceBase<CachingConfig>(configProvider), ICachingService
+        IConfigProvider configProvider) : ConfigurableServiceBase<CachingConfig>(configProvider), ICachingService
     {
         public override string ServiceName => Constants.ServiceNames.CachingService;
 

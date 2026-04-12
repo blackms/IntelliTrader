@@ -37,7 +37,7 @@ private IConfigurationRoot GetConfig(string configPath, Action<IConfigurationRoo
 }
 ```
 
-Service configuration callback pattern from `ConfigrableServiceBase<T>`:
+Service configuration callback pattern from `ConfigurableServiceBase<T>`:
 ```csharp
 public T GetSection<T>(string sectionName, Action<T> onChange = null) where T : class
 {

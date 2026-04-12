@@ -11,7 +11,7 @@ namespace IntelliTrader.Exchange.Base
         ILoggingService loggingService,
         IHealthCheckService healthCheckService,
         ICoreService coreService,
-        IConfigProvider configProvider) : ConfigrableServiceBase<ExchangeConfig>(configProvider), IExchangeService
+        IConfigProvider configProvider) : ConfigurableServiceBase<ExchangeConfig>(configProvider), IExchangeService
     {
         public override string ServiceName => Constants.ServiceNames.ExchangeService;
 

@@ -551,6 +551,32 @@ The chart includes Deployment, Service, ConfigMap, Secret, PVC, Ingress (optiona
 
 > **Note**: IntelliTrader is a stateful singleton — the HPA defaults to `maxReplicas: 1`. Do not scale beyond 1 without external state coordination.
 
+### Environment Variable Configuration
+
+All JSON configuration settings can be overridden via environment variables, following [12-factor app](https://12factor.net/config) principles. Environment variables **take precedence** over values in JSON config files.
+
+**Naming convention:**
+
+```
+INTELLITRADER_{Section}__{Key}
+INTELLITRADER_{Section}__{NestedObject}__{Key}
+```
+
+The prefix `INTELLITRADER_` is stripped automatically. Double underscores (`__`) map to the `:` hierarchy separator used by .NET Configuration (this is standard `Microsoft.Extensions.Configuration` behavior).
+
+**Examples:**
+
+| JSON path | Environment variable |
+|---|---|
+| `core.json` > `Core.DebugMode` | `INTELLITRADER_Core__DebugMode=false` |
+| `core.json` > `Core.InstanceName` | `INTELLITRADER_Core__InstanceName=Prod` |
+| `trading.json` > `Trading.Enabled` | `INTELLITRADER_Trading__Enabled=true` |
+| `trading.json` > `Trading.VirtualTrading` | `INTELLITRADER_Trading__VirtualTrading=false` |
+| `trading.json` > `Trading.Market` | `INTELLITRADER_Trading__Market=USDT` |
+| `exchange.json` > `Exchange.KeysPath` | `INTELLITRADER_Exchange__KeysPath=/secrets/keys.bin` |
+
+This works with `docker run -e`, `docker compose` environment blocks, Kubernetes `env` specs, and `.env` files. See `.env.example` for a full list of documented overrides.
+
 <br />
 
 ## 🔌 API Overview

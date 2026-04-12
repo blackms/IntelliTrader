@@ -4,21 +4,104 @@ using System.Text;
 
 namespace IntelliTrader.Core
 {
+    /// <summary>
+    /// Service for structured logging with support for scoped contexts, correlation tracking, and sampled output.
+    /// </summary>
     public interface ILoggingService : IConfigurableService
     {
+        /// <summary>
+        /// Logs a debug-level message with an optional exception.
+        /// </summary>
+        /// <param name="message">The log message template.</param>
+        /// <param name="exception">Optional exception to include.</param>
         void Debug(string message, Exception exception = null);
+
+        /// <summary>
+        /// Logs a debug-level message with structured property values.
+        /// </summary>
+        /// <param name="message">The log message template.</param>
+        /// <param name="propertyValues">Structured property values.</param>
         void Debug(string message, params object[] propertyValues);
+
+        /// <summary>
+        /// Logs an error-level message with an optional exception.
+        /// </summary>
+        /// <param name="message">The log message template.</param>
+        /// <param name="exception">Optional exception to include.</param>
         void Error(string message, Exception exception = null);
+
+        /// <summary>
+        /// Logs an error-level message with structured property values.
+        /// </summary>
+        /// <param name="message">The log message template.</param>
+        /// <param name="propertyValues">Structured property values.</param>
         void Error(string message, params object[] propertyValues);
+
+        /// <summary>
+        /// Logs a fatal-level message with an optional exception.
+        /// </summary>
+        /// <param name="message">The log message template.</param>
+        /// <param name="exception">Optional exception to include.</param>
         void Fatal(string message, Exception exception = null);
+
+        /// <summary>
+        /// Logs a fatal-level message with structured property values.
+        /// </summary>
+        /// <param name="message">The log message template.</param>
+        /// <param name="propertyValues">Structured property values.</param>
         void Fatal(string message, params object[] propertyValues);
+
+        /// <summary>
+        /// Logs an info-level message with an optional exception.
+        /// </summary>
+        /// <param name="message">The log message template.</param>
+        /// <param name="exception">Optional exception to include.</param>
         void Info(string message, Exception exception = null);
+
+        /// <summary>
+        /// Logs an info-level message with structured property values.
+        /// </summary>
+        /// <param name="message">The log message template.</param>
+        /// <param name="propertyValues">Structured property values.</param>
         void Info(string message, params object[] propertyValues);
+
+        /// <summary>
+        /// Logs a verbose-level message with an optional exception.
+        /// </summary>
+        /// <param name="message">The log message template.</param>
+        /// <param name="exception">Optional exception to include.</param>
         void Verbose(string message, Exception exception = null);
+
+        /// <summary>
+        /// Logs a verbose-level message with structured property values.
+        /// </summary>
+        /// <param name="message">The log message template.</param>
+        /// <param name="propertyValues">Structured property values.</param>
         void Verbose(string message, params object[] propertyValues);
+
+        /// <summary>
+        /// Logs a warning-level message with an optional exception.
+        /// </summary>
+        /// <param name="message">The log message template.</param>
+        /// <param name="exception">Optional exception to include.</param>
         void Warning(string message, Exception exception = null);
+
+        /// <summary>
+        /// Logs a warning-level message with structured property values.
+        /// </summary>
+        /// <param name="message">The log message template.</param>
+        /// <param name="propertyValues">Structured property values.</param>
         void Warning(string message, params object[] propertyValues);
+
+        /// <summary>
+        /// Deletes all log files.
+        /// </summary>
         void DeleteAllLogs();
+
+        /// <summary>
+        /// Gets recent log entries as an array of strings.
+        /// </summary>
+        /// <returns>Array of log entry strings.</returns>
         string[] GetLogEntries();
 
         /// <summary>

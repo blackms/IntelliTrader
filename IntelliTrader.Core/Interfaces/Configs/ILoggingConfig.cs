@@ -4,8 +4,14 @@ using System.Text;
 
 namespace IntelliTrader.Core
 {
+    /// <summary>
+    /// Configuration for the logging subsystem including structured JSON output.
+    /// </summary>
     public interface ILoggingConfig
     {
+        /// <summary>
+        /// Whether logging is enabled.
+        /// </summary>
         bool Enabled { get; }
 
         /// <summary>

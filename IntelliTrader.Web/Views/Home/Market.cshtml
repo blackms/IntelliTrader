@@ -4,6 +4,8 @@
     ViewData["Instance"] = Model.InstanceName;
 }
 
+@Html.AntiForgeryToken()
+
 @section AddToHead{
     <link rel="stylesheet" type="text/css" href="@Url.Content("~/Static/Styles/Vendor/bootstrap-multiselect.min.css")">
     <link rel="stylesheet" type="text/css" href="@Url.Content("~/Static/Styles/Views/market.css")">

@@ -10,5 +10,6 @@ namespace IntelliTrader.Web
         public bool Enabled { get; set; }
         public bool DebugMode { get; set; }
         public int Port { get; set; }
+        public string BindAddress { get; set; }
     }
 }

@@ -153,9 +153,9 @@ namespace IntelliTrader.Web.Controllers
             var principal = new ClaimsPrincipal(identity);
             await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, new AuthenticationProperties { IsPersistent = persistent });
 
-            if (Request.Query.TryGetValue("ReturnUrl", out StringValues url))
+            if (Request.Query.TryGetValue("ReturnUrl", out StringValues url) && Url.IsLocalUrl(url))
             {
-                return RedirectToAction(url);
+                return LocalRedirect(url);
             }
             else
             {
@@ -626,6 +626,8 @@ namespace IntelliTrader.Web.Controllers
             return Ok();
         }
 
+        [HttpPost]
+        [ValidateAntiForgeryToken]
         [Authorize(Policy = AuthPolicies.AdminOnly)]
         public IActionResult RefreshAccount()
         {
@@ -633,6 +635,8 @@ namespace IntelliTrader.Web.Controllers
             return new OkResult();
         }
 
+        [HttpPost]
+        [ValidateAntiForgeryToken]
         [Authorize(Policy = AuthPolicies.AdminOnly)]
         public IActionResult RestartServices()
         {

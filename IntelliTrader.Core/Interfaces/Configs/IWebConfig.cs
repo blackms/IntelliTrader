@@ -23,5 +23,6 @@ namespace IntelliTrader.Core
         /// The TCP port the web dashboard listens on.
         /// </summary>
         int Port { get; }
+        string BindAddress { get; }
     }
 }

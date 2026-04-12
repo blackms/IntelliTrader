@@ -12,10 +12,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\IntelliTrader.Application\IntelliTrader.Application.csproj" />
     <ProjectReference Include="..\IntelliTrader.Backtesting\IntelliTrader.Backtesting.csproj" />
     <ProjectReference Include="..\IntelliTrader.Core\IntelliTrader.Core.csproj" />
+    <ProjectReference Include="..\IntelliTrader.Domain\IntelliTrader.Domain.csproj" />
     <ProjectReference Include="..\IntelliTrader.Exchange.Base\IntelliTrader.Exchange.Base.csproj" />
     <ProjectReference Include="..\IntelliTrader.Exchange.Binance\IntelliTrader.Exchange.Binance.csproj" />
+    <ProjectReference Include="..\IntelliTrader.Infrastructure\IntelliTrader.Infrastructure.csproj" />
     <ProjectReference Include="..\IntelliTrader.Integration.Base\IntelliTrader.Integration.Base.csproj" />
     <ProjectReference Include="..\IntelliTrader.Integration.ProfitTrailer\IntelliTrader.Integration.ProfitTrailer.csproj" />
     <ProjectReference Include="..\IntelliTrader.Rules\IntelliTrader.Rules.csproj" />

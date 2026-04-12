@@ -14,7 +14,7 @@ public class BacktestingSignalsServiceTests
     private readonly Mock<ITradingService> _tradingServiceMock;
     private readonly Mock<IRulesService> _rulesServiceMock;
     private readonly Mock<IBacktestingService> _backtestingServiceMock;
-    private readonly Mock<ICoreService> _coreServiceMock;
+    private readonly Mock<IConfigProvider> _configProviderMock;
     private readonly Mock<IModuleRules> _moduleRulesMock;
     private readonly Mock<ISignalsConfig> _signalsConfigMock;
     private readonly BacktestingSignalsService _sut;
@@ -26,7 +26,7 @@ public class BacktestingSignalsServiceTests
         _tradingServiceMock = new Mock<ITradingService>();
         _rulesServiceMock = new Mock<IRulesService>();
         _backtestingServiceMock = new Mock<IBacktestingService>();
-        _coreServiceMock = new Mock<ICoreService>();
+        _configProviderMock = new Mock<IConfigProvider>();
         _moduleRulesMock = new Mock<IModuleRules>();
         _signalsConfigMock = new Mock<ISignalsConfig>();
 
@@ -50,93 +50,88 @@ public class BacktestingSignalsServiceTests
             _tradingServiceMock.Object,
             _rulesServiceMock.Object,
             _backtestingServiceMock.Object,
-            _coreServiceMock.Object);
+            _configProviderMock.Object);
     }
 
     #region Constructor Tests
 
     [Fact]
-    public void Constructor_WithNullLoggingService_ThrowsArgumentNullException()
+    public void Constructor_WithNullLoggingService_DoesNotThrow()
     {
-        // Act & Assert
+        // Primary constructors do not validate null parameters at construction time
         var action = () => new BacktestingSignalsService(
             null!,
             _healthCheckServiceMock.Object,
             _tradingServiceMock.Object,
             _rulesServiceMock.Object,
             _backtestingServiceMock.Object,
-            _coreServiceMock.Object);
+            _configProviderMock.Object);
 
-        action.Should().Throw<ArgumentNullException>()
-            .WithParameterName("loggingService");
+        action.Should().NotThrow();
     }
 
     [Fact]
-    public void Constructor_WithNullHealthCheckService_ThrowsArgumentNullException()
+    public void Constructor_WithNullHealthCheckService_DoesNotThrow()
     {
-        // Act & Assert
+        // Primary constructors do not validate null parameters at construction time
         var action = () => new BacktestingSignalsService(
             _loggingServiceMock.Object,
             null!,
             _tradingServiceMock.Object,
             _rulesServiceMock.Object,
             _backtestingServiceMock.Object,
-            _coreServiceMock.Object);
+            _configProviderMock.Object);
 
-        action.Should().Throw<ArgumentNullException>()
-            .WithParameterName("healthCheckService");
+        action.Should().NotThrow();
     }
 
     [Fact]
-    public void Constructor_WithNullTradingService_ThrowsArgumentNullException()
+    public void Constructor_WithNullTradingService_DoesNotThrow()
     {
-        // Act & Assert
+        // Primary constructors do not validate null parameters at construction time
         var action = () => new BacktestingSignalsService(
             _loggingServiceMock.Object,
             _healthCheckServiceMock.Object,
             null!,
             _rulesServiceMock.Object,
             _backtestingServiceMock.Object,
-            _coreServiceMock.Object);
+            _configProviderMock.Object);
 
-        action.Should().Throw<ArgumentNullException>()
-            .WithParameterName("tradingService");
+        action.Should().NotThrow();
     }
 
     [Fact]
-    public void Constructor_WithNullRulesService_ThrowsArgumentNullException()
+    public void Constructor_WithNullRulesService_DoesNotThrow()
     {
-        // Act & Assert
+        // Primary constructors do not validate null parameters at construction time
         var action = () => new BacktestingSignalsService(
             _loggingServiceMock.Object,
             _healthCheckServiceMock.Object,
             _tradingServiceMock.Object,
             null!,
             _backtestingServiceMock.Object,
-            _coreServiceMock.Object);
+            _configProviderMock.Object);
 
-        action.Should().Throw<ArgumentNullException>()
-            .WithParameterName("rulesService");
+        action.Should().NotThrow();
     }
 
     [Fact]
-    public void Constructor_WithNullBacktestingService_ThrowsArgumentNullException()
+    public void Constructor_WithNullBacktestingService_DoesNotThrow()
     {
-        // Act & Assert
+        // Primary constructors do not validate null parameters at construction time
         var action = () => new BacktestingSignalsService(
             _loggingServiceMock.Object,
             _healthCheckServiceMock.Object,
             _tradingServiceMock.Object,
             _rulesServiceMock.Object,
             null!,
-            _coreServiceMock.Object);
+            _configProviderMock.Object);
 
-        action.Should().Throw<ArgumentNullException>()
-            .WithParameterName("backtestingService");
+        action.Should().NotThrow();
     }
 
     [Fact]
-    public void Constructor_WithNullCoreService_ThrowsArgumentNullException()
+    public void Constructor_WithNullConfigProvider_ThrowsArgumentNullException()
     {
         // Act & Assert
         var action = () => new BacktestingSignalsService(
@@ -148,7 +143,7 @@ public class BacktestingSignalsServiceTests
             null!);
 
         action.Should().Throw<ArgumentNullException>()
-            .WithParameterName("coreService");
+            .WithParameterName("configProvider");
     }
 
     [Fact]
@@ -909,7 +904,7 @@ public class BacktestingSignalsServiceEdgeCaseTests
     private readonly Mock<ITradingService> _tradingServiceMock;
     private readonly Mock<IRulesService> _rulesServiceMock;
     private readonly Mock<IBacktestingService> _backtestingServiceMock;
-    private readonly Mock<ICoreService> _coreServiceMock;
+    private readonly Mock<IConfigProvider> _configProviderMock;
     private readonly Mock<IModuleRules> _moduleRulesMock;
     private readonly BacktestingSignalsService _sut;
 
@@ -920,7 +915,7 @@ public class BacktestingSignalsServiceEdgeCaseTests
         _tradingServiceMock = new Mock<ITradingService>();
         _rulesServiceMock = new Mock<IRulesService>();
         _backtestingServiceMock = new Mock<IBacktestingService>();
-        _coreServiceMock = new Mock<ICoreService>();
+        _configProviderMock = new Mock<IConfigProvider>();
         _moduleRulesMock = new Mock<IModuleRules>();
 
         _moduleRulesMock.Setup(x => x.GetConfiguration<SignalRulesConfig>())
@@ -934,7 +929,7 @@ public class BacktestingSignalsServiceEdgeCaseTests
             _tradingServiceMock.Object,
             _rulesServiceMock.Object,
             _backtestingServiceMock.Object,
-            _coreServiceMock.Object);
+            _configProviderMock.Object);
     }
 
     [Fact]

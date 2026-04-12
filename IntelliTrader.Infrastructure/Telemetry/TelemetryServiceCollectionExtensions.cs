@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using OpenTelemetry.Exporter;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -84,17 +85,22 @@ public static class TelemetryServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Adds OpenTelemetry with OTLP exporter for production use.
-    /// Requires OTEL_EXPORTER_OTLP_ENDPOINT environment variable to be set.
+    /// Adds OpenTelemetry with OTLP exporter for production use with Jaeger/Tempo/Grafana backends.
+    /// Requires OTEL_EXPORTER_OTLP_ENDPOINT environment variable or explicit endpoint.
+    /// Default endpoint: http://localhost:4317 (gRPC).
     /// </summary>
     /// <param name="services">The service collection.</param>
-    /// <param name="otlpEndpoint">The OTLP endpoint URL. If null, uses OTEL_EXPORTER_OTLP_ENDPOINT env var.</param>
+    /// <param name="otlpEndpoint">The OTLP endpoint URL. If null, uses OTEL_EXPORTER_OTLP_ENDPOINT env var or defaults to localhost:4317.</param>
+    /// <param name="useHttpProtobuf">If true, uses HTTP/Protobuf (port 4318) instead of gRPC (port 4317).</param>
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddIntelliTraderTelemetryWithOtlp(
         this IServiceCollection services,
-        string? otlpEndpoint = null)
+        string? otlpEndpoint = null,
+        bool useHttpProtobuf = false)
     {
-        var endpoint = otlpEndpoint ?? Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+        var endpoint = otlpEndpoint
+            ?? Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")
+            ?? (useHttpProtobuf ? "http://localhost:4318" : "http://localhost:4317");
 
         services.AddOpenTelemetry()
             .ConfigureResource(resource => resource
@@ -119,10 +125,14 @@ public static class TelemetryServiceCollectionExtensions
                                    !path.StartsWith("/static", StringComparison.OrdinalIgnoreCase);
                         };
                     })
-                    .AddHttpClientInstrumentation();
-
-                // OTLP exporter can be added when OpenTelemetry.Exporter.OpenTelemetryProtocol package is included
-                // For now, we'll use console exporter in dev and expect OTLP to be configured externally
+                    .AddHttpClientInstrumentation()
+                    .AddOtlpExporter(options =>
+                    {
+                        options.Endpoint = new Uri(endpoint);
+                        options.Protocol = useHttpProtobuf
+                            ? OtlpExportProtocol.HttpProtobuf
+                            : OtlpExportProtocol.Grpc;
+                    });
             })
             .WithMetrics(metrics =>
             {
@@ -131,7 +141,14 @@ public static class TelemetryServiceCollectionExtensions
                     .AddAspNetCoreInstrumentation()
                     .AddRuntimeInstrumentation()
                     .AddHttpClientInstrumentation()
-                    .AddPrometheusExporter();
+                    .AddPrometheusExporter()
+                    .AddOtlpExporter(options =>
+                    {
+                        options.Endpoint = new Uri(endpoint);
+                        options.Protocol = useHttpProtobuf
+                            ? OtlpExportProtocol.HttpProtobuf
+                            : OtlpExportProtocol.Grpc;
+                    });
             });
 
         return services;

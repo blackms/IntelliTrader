@@ -18,6 +18,7 @@ public class CoreServiceTests
     private readonly Mock<IAlertingService> _alertingServiceMock;
     private readonly Mock<IApplicationContext> _applicationContextMock;
     private readonly Mock<IConfigProvider> _configProviderMock;
+    private readonly Mock<ISecretRotationService> _secretRotationServiceMock;
     private readonly ICoreService _sut;
 
     public CoreServiceTests()
@@ -32,6 +33,7 @@ public class CoreServiceTests
         _applicationContextMock = new Mock<IApplicationContext>();
         _applicationContextMock.Setup(x => x.Speed).Returns(1.0);
         _configProviderMock = new Mock<IConfigProvider>();
+        _secretRotationServiceMock = new Mock<ISecretRotationService>();
 
         SetupDefaultMocks();
 
@@ -88,7 +90,8 @@ public class CoreServiceTests
             _backtestingServiceMock.Object,
             _alertingServiceMock.Object,
             _applicationContextMock.Object,
-            _configProviderMock.Object
+            _configProviderMock.Object,
+            new Lazy<ISecretRotationService>(() => _secretRotationServiceMock.Object)
         });
 
         return (ICoreService)instance;

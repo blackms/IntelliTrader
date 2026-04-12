@@ -18,7 +18,8 @@ namespace IntelliTrader.Core
         IBacktestingService backtestingService,
         IAlertingService alertingService,
         IApplicationContext applicationContext,
-        IConfigProvider configProvider) : ConfigurableServiceBase<CoreConfig>(configProvider), ICoreService
+        IConfigProvider configProvider,
+        Lazy<ISecretRotationService> secretRotationService) : ConfigurableServiceBase<CoreConfig>(configProvider), ICoreService
     {
         private readonly IApplicationContext _applicationContext = applicationContext ?? throw new ArgumentNullException(nameof(applicationContext));
         public override string ServiceName => Constants.ServiceNames.CoreService;
@@ -76,6 +77,15 @@ namespace IntelliTrader.Core
             }
             alertingService.Start();
 
+            try
+            {
+                secretRotationService.Value.Start();
+            }
+            catch (Exception ex)
+            {
+                loggingService.Error("Failed to start secret rotation service", ex);
+            }
+
             // Use Task.Run with Task.Delay instead of ThreadPool with Thread.Sleep
             // to avoid blocking a thread pool thread during the delay
             _ = Task.Run(async () =>
@@ -115,6 +125,15 @@ namespace IntelliTrader.Core
                 backtestingService.Stop();
             }
             alertingService.Stop();
+
+            try
+            {
+                secretRotationService.Value.Stop();
+            }
+            catch (Exception ex)
+            {
+                loggingService.Error("Failed to stop secret rotation service", ex);
+            }
 
             StopAllTasks();
             RemoveAllTasks();

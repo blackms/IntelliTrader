@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="IntelliTrader.Trading.Tests" />
+    <InternalsVisibleTo Include="IntelliTrader.Performance.Tests" />
   </ItemGroup>
 
   <ItemGroup>

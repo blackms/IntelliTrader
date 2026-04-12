@@ -126,13 +126,19 @@ namespace IntelliTrader.Web
                 RequestPath = "/Static"
             });
 
-            // Serve OpenAPI spec and Swagger UI (before auth so it's publicly accessible)
-            app.UseSwagger();
-            app.UseSwaggerUI(c =>
+            // Serve OpenAPI spec and Swagger UI (before auth so it's publicly accessible).
+            // Only enabled in Development or when explicitly opted-in via config to avoid
+            // leaking API surface details in production.
+            var enableSwagger = env.IsDevelopment() || Configuration.GetValue<bool>("Swagger:Enabled");
+            if (enableSwagger)
             {
-                c.SwaggerEndpoint("/swagger/v1/swagger.json", "IntelliTrader API v1");
-                c.RoutePrefix = "swagger";
-            });
+                app.UseSwagger();
+                app.UseSwaggerUI(c =>
+                {
+                    c.SwaggerEndpoint("/swagger/v1/swagger.json", "IntelliTrader API v1");
+                    c.RoutePrefix = "swagger";
+                });
+            }
 
             app.UseRouting();
 

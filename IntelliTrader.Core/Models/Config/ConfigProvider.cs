@@ -204,7 +204,7 @@ namespace IntelliTrader.Core
             var configBuilder = new ConfigurationBuilder()
                  .SetBasePath(fullConfigPath)
                  .AddJsonFile(configPath, optional: false, reloadOnChange: true)
-                 .AddEnvironmentVariables();
+                 .AddEnvironmentVariables(prefix: "INTELLITRADER_");
 
             var configRoot = configBuilder.Build();
             ChangeToken.OnChange(configRoot.GetReloadToken, () => onChange(configRoot));

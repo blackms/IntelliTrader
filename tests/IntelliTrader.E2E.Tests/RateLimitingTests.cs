@@ -55,8 +55,8 @@ namespace IntelliTrader.E2E.Tests
             {
                 var response = await _client.GetAsync("/health/ready");
                 var statusCode = (int)response.StatusCode;
-                statusCode.Should().BeOneOf(200, 503,
-                    $"readiness probe should never be rate limited (request {{{i + 1}}})");
+                statusCode.Should().BeOneOf(new[] { 200, 503 },
+                    because: $"readiness probe should never be rate limited (request {i + 1})");
             }
         }
 

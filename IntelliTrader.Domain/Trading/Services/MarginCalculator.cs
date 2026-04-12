@@ -148,6 +148,19 @@ public sealed class MarginCalculator
     {
         ArgumentNullException.ThrowIfNull(position);
 
+        if (position.TotalQuantity.IsZero)
+        {
+            var zeroMoney = Money.Zero(position.Currency);
+            return new FeeImpactAnalysis(
+                BuyFees: position.TotalFees,
+                EstimatedSellFees: zeroMoney,
+                TotalFees: position.TotalFees,
+                BreakEvenPriceWithoutFees: Price.Zero,
+                BreakEvenPriceWithFees: Price.Zero,
+                FeeImpactOnBreakEven: Price.Zero,
+                FeePercentageOfCost: 0m);
+        }
+
         var buyFees = position.TotalFees;
         var estimatedSellFees = Money.Create(
             position.TotalCost.Amount * (sellFeePercentage / 100m),

@@ -418,7 +418,8 @@ namespace IntelliTrader.Trading
                 {
                     IPairConfig pairConfig = GetPairConfig(tradingPair.Pair);
                     return pairConfig.SellEnabled && pairConfig.SwapEnabled && pairConfig.SwapSignalRules != null && pairConfig.SwapSignalRules.Contains(options.Metadata.SignalRule) &&
-                           pairConfig.SwapTimeout < (DateTimeOffset.Now - tradingPair.OrderDates.Max()).TotalSeconds;
+                           tradingPair.OrderDates != null && tradingPair.OrderDates.Any() &&
+                       pairConfig.SwapTimeout < (DateTimeOffset.Now - tradingPair.OrderDates.Max()).TotalSeconds;
                 });
 
                 if (swappedPair != null)
@@ -524,8 +525,35 @@ namespace IntelliTrader.Trading
                 var newTradingPair = Account.GetTradingPair(options.NewPair) as TradingPair;
                 if (newTradingPair == null)
                 {
-                    loggingService.Info($"Unable to swap {options.OldPair} for {options.NewPair}. Reason: failed to buy {options.NewPair}");
-                    _ = notificationService.NotifyAsync($"Unable to swap {options.OldPair} for {options.NewPair}: Failed to buy {options.NewPair}");
+                    loggingService.Error($"SWAP INCOMPLETE: Sold {options.OldPair} but failed to buy {options.NewPair}. Funds may be in limbo! Attempting to re-buy old pair as compensation.");
+                    _ = notificationService.NotifyAsync($"SWAP INCOMPLETE: Sold {options.OldPair} but failed to buy {options.NewPair}. Attempting compensation re-buy of {options.OldPair}.");
+
+                    // Compensation: attempt to re-buy the old pair with the sell proceeds
+                    try
+                    {
+                        var compensationBuyOptions = new BuyOptions(options.OldPair)
+                        {
+                            ManualOrder = true,
+                            MaxCost = sellOrderDetails.AverageCost,
+                            Metadata = options.Metadata
+                        };
+                        IOrderDetails compensationOrder = PlaceBuyOrder(compensationBuyOptions);
+                        if (Account.HasTradingPair(options.OldPair))
+                        {
+                            loggingService.Warning($"Swap compensation successful: re-bought {options.OldPair}");
+                            _ = notificationService.NotifyAsync($"Swap compensation successful: re-bought {options.OldPair}");
+                        }
+                        else
+                        {
+                            loggingService.Error($"SWAP COMPENSATION FAILED: Could not re-buy {options.OldPair}. Manual intervention required! Sell proceeds: {sellOrderDetails.AverageCost:0.00000000}");
+                            _ = notificationService.NotifyAsync($"CRITICAL: Swap compensation failed for {options.OldPair}. Manual intervention required!");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        loggingService.Error($"SWAP COMPENSATION EXCEPTION for {options.OldPair}: {ex.Message}. Manual intervention required!");
+                        _ = notificationService.NotifyAsync($"CRITICAL: Swap compensation exception for {options.OldPair}. Manual intervention required!");
+                    }
                     return;
                 }
 
@@ -544,6 +572,7 @@ namespace IntelliTrader.Trading
             {
                 IPairConfig pairConfig = GetPairConfig(tradingPair.Pair);
                 return pairConfig.SellEnabled && pairConfig.SwapEnabled && pairConfig.SwapSignalRules != null && pairConfig.SwapSignalRules.Contains(options.Metadata.SignalRule) &&
+                       tradingPair.OrderDates != null && tradingPair.OrderDates.Any() &&
                        pairConfig.SwapTimeout < (DateTimeOffset.Now - tradingPair.OrderDates.Max()).TotalSeconds;
             });
 
@@ -644,8 +673,35 @@ namespace IntelliTrader.Trading
             var newTradingPair = Account.GetTradingPair(options.NewPair) as TradingPair;
             if (newTradingPair == null)
             {
-                loggingService.Info($"Unable to swap {options.OldPair} for {options.NewPair}. Reason: failed to buy {options.NewPair}");
-                _ = notificationService.NotifyAsync($"Unable to swap {options.OldPair} for {options.NewPair}: Failed to buy {options.NewPair}");
+                loggingService.Error($"SWAP INCOMPLETE: Sold {options.OldPair} but failed to buy {options.NewPair}. Funds may be in limbo! Attempting to re-buy old pair as compensation.");
+                _ = notificationService.NotifyAsync($"SWAP INCOMPLETE: Sold {options.OldPair} but failed to buy {options.NewPair}. Attempting compensation re-buy of {options.OldPair}.");
+
+                // Compensation: attempt to re-buy the old pair with the sell proceeds
+                try
+                {
+                    var compensationBuyOptions = new BuyOptions(options.OldPair)
+                    {
+                        ManualOrder = true,
+                        MaxCost = sellOrderDetails.AverageCost,
+                        Metadata = options.Metadata
+                    };
+                    IOrderDetails compensationOrder = await PlaceBuyOrderAsync(compensationBuyOptions, cancellationToken).ConfigureAwait(false);
+                    if (Account.HasTradingPair(options.OldPair))
+                    {
+                        loggingService.Warning($"Swap compensation successful: re-bought {options.OldPair}");
+                        _ = notificationService.NotifyAsync($"Swap compensation successful: re-bought {options.OldPair}");
+                    }
+                    else
+                    {
+                        loggingService.Error($"SWAP COMPENSATION FAILED: Could not re-buy {options.OldPair}. Manual intervention required! Sell proceeds: {sellOrderDetails.AverageCost:0.00000000}");
+                        _ = notificationService.NotifyAsync($"CRITICAL: Swap compensation failed for {options.OldPair}. Manual intervention required!");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    loggingService.Error($"SWAP COMPENSATION EXCEPTION for {options.OldPair}: {ex.Message}. Manual intervention required!");
+                    _ = notificationService.NotifyAsync($"CRITICAL: Swap compensation exception for {options.OldPair}. Manual intervention required!");
+                }
                 return;
             }
 
@@ -819,10 +875,15 @@ namespace IntelliTrader.Trading
                 message = $"Cancel sell request for {options.Pair}. Reason: pair does not exist";
                 return false;
             }
-            else if ((DateTimeOffset.Now - Account.GetTradingPair(options.Pair).OrderDates.Max()).TotalMilliseconds < (MIN_INTERVAL_BETWEEN_BUY_AND_SELL / _applicationContext.Speed))
+            else
             {
-                message = $"Cancel sell request for {options.Pair}. Reason: pair just bought";
-                return false;
+                var orderDates = Account.GetTradingPair(options.Pair).OrderDates;
+                if (orderDates != null && orderDates.Any() &&
+                    (DateTimeOffset.Now - orderDates.Max()).TotalMilliseconds < (MIN_INTERVAL_BETWEEN_BUY_AND_SELL / _applicationContext.Speed))
+                {
+                    message = $"Cancel sell request for {options.Pair}. Reason: pair just bought";
+                    return false;
+                }
             }
             message = null;
             return true;

@@ -144,25 +144,14 @@ namespace IntelliTrader.Exchange.Binance.Resilience
         private ResiliencePipeline CreateOrderPipeline()
         {
             return new ResiliencePipelineBuilder()
-                // 1. Timeout - shorter for orders (markets move fast)
-                .AddTimeout(new TimeoutStrategyOptions
-                {
-                    Timeout = TimeSpan.FromSeconds(_config.OrderTimeoutSeconds),
-                    OnTimeout = args =>
-                    {
-                        _loggingService.Warning($"[Resilience] Order operation timed out after {args.Timeout.TotalSeconds}s - CHECK ORDER STATUS MANUALLY!");
-                        return default;
-                    }
-                })
-
-                // 2. Concurrency limiter - strict limit on concurrent orders
+                // 1. Concurrency limiter - strict limit on concurrent orders
                 .AddConcurrencyLimiter(new ConcurrencyLimiterOptions
                 {
                     PermitLimit = _config.MaxConcurrentOrders,
                     QueueLimit = _config.OrderQueueLimit
                 })
 
-                // 3. Circuit breaker - more sensitive for orders
+                // 2. Circuit breaker - more sensitive for orders
                 .AddCircuitBreaker(new CircuitBreakerStrategyOptions
                 {
                     FailureRatio = _config.OrderCircuitBreakerFailureRatio,
@@ -171,7 +160,6 @@ namespace IntelliTrader.Exchange.Binance.Resilience
                     BreakDuration = TimeSpan.FromSeconds(_config.OrderCircuitBreakerBreakDurationSeconds),
                     ShouldHandle = new PredicateBuilder()
                         .Handle<HttpRequestException>()
-                        .Handle<TaskCanceledException>()
                         .Handle<TimeoutRejectedException>(),
                     OnOpened = args =>
                     {
@@ -190,20 +178,35 @@ namespace IntelliTrader.Exchange.Binance.Resilience
                     }
                 })
 
-                // 4. Retry - VERY CONSERVATIVE for orders to prevent duplicates
+                // 3. Retry - VERY CONSERVATIVE for orders to prevent duplicates
+                // CRITICAL: Only retry on true connection errors where we know the request
+                // never reached the server. Do NOT retry on TaskCanceledException/timeout
+                // because the server may have executed the order but the response was slow.
                 .AddRetry(new RetryStrategyOptions
                 {
                     MaxRetryAttempts = _config.OrderMaxRetryAttempts, // Should be 1
                     BackoffType = DelayBackoffType.Exponential,
                     Delay = TimeSpan.FromMilliseconds(_config.OrderInitialDelayMs),
                     UseJitter = true,
-                    // ONLY retry on connection errors, NOT on any response
+                    // ONLY retry on connection errors, NOT on timeout or any response
                     ShouldHandle = new PredicateBuilder()
-                        .Handle<HttpRequestException>(ex => IsConnectionError(ex))
-                        .Handle<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested),
+                        .Handle<HttpRequestException>(ex => IsConnectionError(ex)),
                     OnRetry = args =>
                     {
                         _loggingService.Warning($"[Resilience] RETRYING ORDER (attempt {args.AttemptNumber + 1}/{_config.OrderMaxRetryAttempts}) - VERIFY ORDER STATUS BEFORE RETRY! Reason: {args.Outcome.Exception?.Message ?? "Unknown"}");
+                        return default;
+                    }
+                })
+
+                // 4. Timeout - INSIDE retry so each attempt gets its own timeout.
+                // If a timeout fires, it will NOT trigger a retry (TaskCanceledException
+                // is excluded from retry ShouldHandle), preventing duplicate orders.
+                .AddTimeout(new TimeoutStrategyOptions
+                {
+                    Timeout = TimeSpan.FromSeconds(_config.OrderTimeoutSeconds),
+                    OnTimeout = args =>
+                    {
+                        _loggingService.Warning($"[Resilience] Order operation timed out after {args.Timeout.TotalSeconds}s - CHECK ORDER STATUS MANUALLY!");
                         return default;
                     }
                 })

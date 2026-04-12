@@ -112,10 +112,15 @@ namespace IntelliTrader.Trading
                 message = $"Cancel sell request for {options.Pair}. Reason: pair does not exist";
                 return false;
             }
-            else if ((DateTimeOffset.Now - Account.GetTradingPair(options.Pair).OrderDates.Max()).TotalMilliseconds < (MIN_INTERVAL_BETWEEN_BUY_AND_SELL / _applicationContext.Speed))
+            else
             {
-                message = $"Cancel sell request for {options.Pair}. Reason: pair just bought";
-                return false;
+                var orderDates = Account.GetTradingPair(options.Pair).OrderDates;
+                if (orderDates != null && orderDates.Any() &&
+                    (DateTimeOffset.Now - orderDates.Max()).TotalMilliseconds < (MIN_INTERVAL_BETWEEN_BUY_AND_SELL / _applicationContext.Speed))
+                {
+                    message = $"Cancel sell request for {options.Pair}. Reason: pair just bought";
+                    return false;
+                }
             }
             message = null;
             return true;

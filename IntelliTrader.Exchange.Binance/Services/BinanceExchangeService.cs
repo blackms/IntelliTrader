@@ -284,7 +284,7 @@ namespace IntelliTrader.Exchange.Binance
             }
             else
             {
-                return Task.FromResult(0m);
+                throw new InvalidOperationException($"No ticker data available for pair '{pair}'. The pair may not exist or ticker data has not been loaded yet.");
             }
         }
 

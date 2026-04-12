@@ -63,23 +63,22 @@ namespace IntelliTrader.Trading
             }
 
             // Use Wilder's smoothing method (exponential moving average)
-            // First ATR = Simple average of first 'period' True Ranges
+            // First ATR = Simple average of first N (effectivePeriod) True Ranges
             // Subsequent ATR = ((Prior ATR * (period - 1)) + Current TR) / period
 
-            var recentTrueRanges = trueRanges.Skip(trueRanges.Count - effectivePeriod).ToList();
-
-            if (recentTrueRanges.Count <= effectivePeriod)
+            if (trueRanges.Count <= effectivePeriod)
             {
                 // Not enough data for Wilder's smoothing, use simple average
-                return recentTrueRanges.Average();
+                return trueRanges.Average();
             }
 
-            // Calculate using Wilder's smoothing
-            decimal atr = recentTrueRanges.Take(effectivePeriod).Average();
+            // Calculate initial ATR as simple average of first effectivePeriod values
+            decimal atr = trueRanges.Take(effectivePeriod).Average();
 
-            for (int i = effectivePeriod; i < recentTrueRanges.Count; i++)
+            // Apply Wilder's smoothing for remaining values
+            for (int i = effectivePeriod; i < trueRanges.Count; i++)
             {
-                atr = ((atr * (effectivePeriod - 1)) + recentTrueRanges[i]) / effectivePeriod;
+                atr = ((atr * (effectivePeriod - 1)) + trueRanges[i]) / effectivePeriod;
             }
 
             _loggingService.Debug($"ATR calculated: {atr:0.00000000} (period: {effectivePeriod}, candles: {candleList.Count})");

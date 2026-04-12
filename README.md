@@ -9,7 +9,8 @@
 [![Tests](https://img.shields.io/badge/Tests-1,010_Passing-00C853?style=for-the-badge&logo=checkmarx&logoColor=white)](https://github.com/blackms/IntelliTrader)
 [![Coverage](https://img.shields.io/badge/Coverage-92%25-00C853?style=for-the-badge&logo=codecov&logoColor=white)](https://codecov.io)
 [![License](https://img.shields.io/badge/License-CC--BY--NC--SA--4.0-FF6F00?style=for-the-badge&logo=creativecommons&logoColor=white)](LICENSE.txt)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](Dockerfile)
+[![Release](https://img.shields.io/github/v/release/blackms/IntelliTrader?style=for-the-badge&logo=github&color=00C853)](https://github.com/blackms/IntelliTrader/releases/latest)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://ghcr.io/blackms/intellitrader)
 [![Stars](https://img.shields.io/github/stars/blackms/intellitrader?style=for-the-badge&logo=github&color=FFD700)](https://github.com/blackms/IntelliTrader)
 [![CodeFactor](https://img.shields.io/badge/Code_Quality-A+-00C853?style=for-the-badge&logo=codefactor&logoColor=white)](https://www.codefactor.io)
 

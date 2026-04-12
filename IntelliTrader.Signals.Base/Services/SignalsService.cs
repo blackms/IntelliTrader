@@ -22,7 +22,7 @@ namespace IntelliTrader.Signals.Base
         IHealthCheckService healthCheckService,
         IRulesService rulesService,
         Func<string, string, IConfigurationSection, ISignalReceiver> signalReceiverFactory,
-        IConfigProvider configProvider) : ConfigrableServiceBase<SignalsConfig>(configProvider), ISignalsService
+        IConfigProvider configProvider) : ConfigurableServiceBase<SignalsConfig>(configProvider), ISignalsService
     {
         private readonly bool _dependenciesValidated = ValidateDependencies(
             loggingService,

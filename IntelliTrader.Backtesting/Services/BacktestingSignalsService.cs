@@ -17,7 +17,7 @@ namespace IntelliTrader.Backtesting
         ITradingService tradingService,
         IRulesService rulesService,
         IBacktestingService backtestingService,
-        IConfigProvider configProvider) : ConfigrableServiceBase<SignalsConfig>(configProvider), ISignalsService
+        IConfigProvider configProvider) : ConfigurableServiceBase<SignalsConfig>(configProvider), ISignalsService
     {
         public override string ServiceName => Constants.ServiceNames.SignalsService;
 

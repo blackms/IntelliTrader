@@ -11,7 +11,7 @@ using System.Text;
 
 namespace IntelliTrader.Core
 {
-    internal class LoggingService : ConfigrableServiceBase<LoggingConfig>, ILoggingService
+    internal class LoggingService : ConfigurableServiceBase<LoggingConfig>, ILoggingService
     {
         private int LOG_ENTRIES_MAX_LENGTH = 50000;
 

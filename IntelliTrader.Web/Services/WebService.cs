@@ -12,7 +12,7 @@ namespace IntelliTrader.Web
     internal class WebService(
         ILoggingService loggingService,
         ILifetimeScope container,
-        IConfigProvider configProvider) : ConfigrableServiceBase<WebConfig>(configProvider), IWebService
+        IConfigProvider configProvider) : ConfigurableServiceBase<WebConfig>(configProvider), IWebService
     {
         public override string ServiceName => Constants.ServiceNames.WebService;
 

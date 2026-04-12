@@ -185,19 +185,22 @@ namespace IntelliTrader.Trading
 
             decimal currentEquity = GetCurrentEquity();
 
-            if (_peakEquity <= 0)
+            lock (_syncRoot)
             {
-                _peakEquity = currentEquity;
-                return 0m;
-            }
+                if (_peakEquity <= 0)
+                {
+                    _peakEquity = currentEquity;
+                    return 0m;
+                }
 
-            if (currentEquity >= _peakEquity)
-            {
-                _peakEquity = currentEquity;
-                return 0m;
-            }
+                if (currentEquity >= _peakEquity)
+                {
+                    _peakEquity = currentEquity;
+                    return 0m;
+                }
 
-            return ((_peakEquity - currentEquity) / _peakEquity) * 100m;
+                return ((_peakEquity - currentEquity) / _peakEquity) * 100m;
+            }
         }
 
         /// <inheritdoc />
@@ -279,9 +282,12 @@ namespace IntelliTrader.Trading
                 return;
             }
 
-            if (currentEquity > _peakEquity)
+            lock (_syncRoot)
             {
-                _peakEquity = currentEquity;
+                if (currentEquity > _peakEquity)
+                {
+                    _peakEquity = currentEquity;
+                }
             }
         }
 

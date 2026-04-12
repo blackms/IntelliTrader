@@ -59,22 +59,22 @@ namespace IntelliTrader.Core
 
         public void UpdateHealthCheck(string name, string message = null, bool failed = false)
         {
-            if (!healthChecks.TryGetValue(name, out HealthCheck existingHealthCheck))
-            {
-                healthChecks.TryAdd(name, new HealthCheck
+            healthChecks.AddOrUpdate(
+                name,
+                _ => new HealthCheck
                 {
                     Name = name,
                     Message = message,
                     LastUpdated = DateTimeOffset.Now,
                     Failed = failed
+                },
+                (_, existing) =>
+                {
+                    existing.Message = message;
+                    existing.LastUpdated = DateTimeOffset.Now;
+                    existing.Failed = failed;
+                    return existing;
                 });
-            }
-            else
-            {
-                healthChecks[name].Message = message;
-                healthChecks[name].LastUpdated = DateTimeOffset.Now;
-                healthChecks[name].Failed = failed;
-            }
         }
 
         public void RemoveHealthCheck(string name)

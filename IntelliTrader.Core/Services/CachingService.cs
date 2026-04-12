@@ -21,26 +21,27 @@ namespace IntelliTrader.Core
 
         ICachingConfig ICachingService.Config => Config;
 
-        private readonly ConcurrentDictionary<string, CachedObject> cachedObjects = new ConcurrentDictionary<string, CachedObject>();
+        private readonly ConcurrentDictionary<string, Lazy<CachedObject>> cachedObjects = new ConcurrentDictionary<string, Lazy<CachedObject>>();
 
         // Shared cache
         private readonly JsonSerializerOptions serializerOptions = new JsonSerializerOptions();
         private DateTimeOffset lastSharedCacheCleanup = DateTimeOffset.Now;
         private DirectoryInfo? sharedCacheDirectoryInfo;
         private readonly int processId = Process.GetCurrentProcess().Id;
+        private readonly object sharedCacheLock = new object();
 
         public T? GetOrRefresh<T>(string objectName, Func<T> refresh)
         {
-            lock (cachedObjects)
-            {
-                T? value = default;
+            T? value = default;
 
-                if (Config.Enabled)
+            if (Config.Enabled)
+            {
+                var maxAge = Config.MaxAge.FirstOrDefault(m => m.Key == objectName).Value;
+                if (maxAge > 0)
                 {
-                    var maxAge = Config.MaxAge.FirstOrDefault(m => m.Key == objectName).Value;
-                    if (maxAge > 0)
+                    if (Config.Shared)
                     {
-                        if (Config.Shared)
+                        lock (sharedCacheLock)
                         {
                             if (sharedCacheDirectoryInfo == null)
                             {
@@ -85,42 +86,50 @@ namespace IntelliTrader.Core
                                 ThreadPool.QueueUserWorkItem((state) => CleanupSharedCache());
                             }
                         }
-                        else
-                        {
-                            if (cachedObjects.TryGetValue(objectName, out CachedObject? obj) && (DateTimeOffset.Now - obj.LastUpdated).TotalSeconds <= maxAge)
-                            {
-                                value = (T?)obj.Value;
-                            }
-                            else
-                            {
-                                value = refresh();
-
-                                cachedObjects[objectName] = new CachedObject
-                                {
-                                    LastUpdated = DateTimeOffset.Now,
-                                    Value = value
-                                };
-
-                            }
-                        }
                     }
                     else
                     {
-                        value = refresh();
+                        var lazyObj = cachedObjects.GetOrAdd(objectName, _ => new Lazy<CachedObject>(() => new CachedObject
+                        {
+                            LastUpdated = DateTimeOffset.Now,
+                            Value = refresh()
+                        }));
+
+                        var obj = lazyObj.Value;
+
+                        if ((DateTimeOffset.Now - obj.LastUpdated).TotalSeconds <= maxAge)
+                        {
+                            value = (T?)obj.Value;
+                        }
+                        else
+                        {
+                            // Entry expired, replace it atomically
+                            var newLazy = new Lazy<CachedObject>(() => new CachedObject
+                            {
+                                LastUpdated = DateTimeOffset.Now,
+                                Value = refresh()
+                            });
+                            cachedObjects[objectName] = newLazy;
+                            value = (T?)newLazy.Value.Value;
+                        }
                     }
                 }
                 else
                 {
                     value = refresh();
                 }
-
-                return value;
             }
+            else
+            {
+                value = refresh();
+            }
+
+            return value;
         }
 
         private void CleanupSharedCache()
         {
-            lock (cachedObjects)
+            lock (sharedCacheLock)
             {
                 if ((DateTimeOffset.Now - lastSharedCacheCleanup).TotalSeconds > Config.SharedCacheCleanupInterval)
                 {

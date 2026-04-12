@@ -12,6 +12,7 @@ public sealed class Portfolio : AggregateRoot<PortfolioId>
 {
     private readonly Dictionary<TradingPair, PositionId> _activePositions = new();
     private readonly Dictionary<PositionId, Money> _positionCosts = new();
+    private readonly object _positionLock = new();
 
     /// <summary>
     /// The name of this portfolio.
@@ -140,37 +141,40 @@ public sealed class Portfolio : AggregateRoot<PortfolioId>
         ArgumentNullException.ThrowIfNull(cost);
         EnsureSameCurrency(cost);
 
-        if (HasPositionFor(pair))
-            throw new InvalidOperationException($"Position already exists for {pair}");
-
-        if (IsAtMaxPositions)
+        lock (_positionLock)
         {
-            AddDomainEvent(new MaxPositionsReached(Id, MaxPositions, ActivePositionCount));
-            throw new InvalidOperationException($"Maximum positions ({MaxPositions}) reached");
+            if (HasPositionFor(pair))
+                throw new InvalidOperationException($"Position already exists for {pair}");
+
+            if (IsAtMaxPositions)
+            {
+                AddDomainEvent(new MaxPositionsReached(Id, MaxPositions, ActivePositionCount));
+                throw new InvalidOperationException($"Maximum positions ({MaxPositions}) reached");
+            }
+
+            if (!CanAfford(cost))
+                throw new InvalidOperationException($"Insufficient funds. Available: {Balance.Available}, Required: {cost}");
+
+            var previousBalance = Balance;
+            Balance = Balance.Reserve(cost);
+            _activePositions[pair] = positionId;
+            _positionCosts[positionId] = cost;
+
+            AddDomainEvent(new PositionAddedToPortfolio(
+                Id,
+                positionId,
+                pair,
+                cost,
+                ActivePositionCount));
+
+            AddDomainEvent(new PortfolioBalanceChanged(
+                Id,
+                previousBalance.Total,
+                Balance.Total,
+                previousBalance.Available,
+                Balance.Available,
+                $"Position opened for {pair}"));
         }
-
-        if (!CanAfford(cost))
-            throw new InvalidOperationException($"Insufficient funds. Available: {Balance.Available}, Required: {cost}");
-
-        var previousBalance = Balance;
-        Balance = Balance.Reserve(cost);
-        _activePositions[pair] = positionId;
-        _positionCosts[positionId] = cost;
-
-        AddDomainEvent(new PositionAddedToPortfolio(
-            Id,
-            positionId,
-            pair,
-            cost,
-            ActivePositionCount));
-
-        AddDomainEvent(new PortfolioBalanceChanged(
-            Id,
-            previousBalance.Total,
-            Balance.Total,
-            previousBalance.Available,
-            Balance.Available,
-            $"Position opened for {pair}"));
     }
 
     /// <summary>
@@ -183,26 +187,29 @@ public sealed class Portfolio : AggregateRoot<PortfolioId>
         ArgumentNullException.ThrowIfNull(additionalCost);
         EnsureSameCurrency(additionalCost);
 
-        if (!HasPositionFor(pair))
-            throw new InvalidOperationException($"No position exists for {pair}");
+        lock (_positionLock)
+        {
+            if (!HasPositionFor(pair))
+                throw new InvalidOperationException($"No position exists for {pair}");
 
-        if (_activePositions[pair] != positionId)
-            throw new InvalidOperationException($"Position ID mismatch for {pair}");
+            if (_activePositions[pair] != positionId)
+                throw new InvalidOperationException($"Position ID mismatch for {pair}");
 
-        if (!CanAfford(additionalCost))
-            throw new InvalidOperationException($"Insufficient funds. Available: {Balance.Available}, Required: {additionalCost}");
+            if (!CanAfford(additionalCost))
+                throw new InvalidOperationException($"Insufficient funds. Available: {Balance.Available}, Required: {additionalCost}");
 
-        var previousBalance = Balance;
-        Balance = Balance.Reserve(additionalCost);
-        _positionCosts[positionId] = _positionCosts[positionId] + additionalCost;
+            var previousBalance = Balance;
+            Balance = Balance.Reserve(additionalCost);
+            _positionCosts[positionId] = _positionCosts[positionId] + additionalCost;
 
-        AddDomainEvent(new PortfolioBalanceChanged(
-            Id,
-            previousBalance.Total,
-            Balance.Total,
-            previousBalance.Available,
-            Balance.Available,
-            $"DCA executed for {pair}"));
+            AddDomainEvent(new PortfolioBalanceChanged(
+                Id,
+                previousBalance.Total,
+                Balance.Total,
+                previousBalance.Available,
+                Balance.Available,
+                $"DCA executed for {pair}"));
+        }
     }
 
     /// <summary>
@@ -215,39 +222,42 @@ public sealed class Portfolio : AggregateRoot<PortfolioId>
         ArgumentNullException.ThrowIfNull(proceeds);
         EnsureSameCurrency(proceeds);
 
-        if (!HasPositionFor(pair))
-            throw new InvalidOperationException($"No position exists for {pair}");
+        lock (_positionLock)
+        {
+            if (!HasPositionFor(pair))
+                throw new InvalidOperationException($"No position exists for {pair}");
 
-        if (_activePositions[pair] != positionId)
-            throw new InvalidOperationException($"Position ID mismatch for {pair}");
+            if (_activePositions[pair] != positionId)
+                throw new InvalidOperationException($"Position ID mismatch for {pair}");
 
-        var cost = _positionCosts[positionId];
-        var pnl = proceeds - cost;
+            var cost = _positionCosts[positionId];
+            var pnl = proceeds - cost;
 
-        var previousBalance = Balance;
+            var previousBalance = Balance;
 
-        // Release the reserved cost and record PnL
-        Balance = Balance.Release(cost);
-        Balance = Balance.RecordPnL(pnl);
+            // Release the reserved cost and record PnL
+            Balance = Balance.Release(cost);
+            Balance = Balance.RecordPnL(pnl);
 
-        _activePositions.Remove(pair);
-        _positionCosts.Remove(positionId);
+            _activePositions.Remove(pair);
+            _positionCosts.Remove(positionId);
 
-        AddDomainEvent(new PositionRemovedFromPortfolio(
-            Id,
-            positionId,
-            pair,
-            proceeds,
-            pnl,
-            ActivePositionCount));
+            AddDomainEvent(new PositionRemovedFromPortfolio(
+                Id,
+                positionId,
+                pair,
+                proceeds,
+                pnl,
+                ActivePositionCount));
 
-        AddDomainEvent(new PortfolioBalanceChanged(
-            Id,
-            previousBalance.Total,
-            Balance.Total,
-            previousBalance.Available,
-            Balance.Available,
-            $"Position closed for {pair}, PnL: {pnl}"));
+            AddDomainEvent(new PortfolioBalanceChanged(
+                Id,
+                previousBalance.Total,
+                Balance.Total,
+                previousBalance.Available,
+                Balance.Available,
+                $"Position closed for {pair}, PnL: {pnl}"));
+        }
     }
 
     /// <summary>
@@ -297,9 +307,12 @@ public sealed class Portfolio : AggregateRoot<PortfolioId>
     /// </summary>
     public Money GetTotalInvestedCost()
     {
-        return _positionCosts.Values.Aggregate(
-            Money.Zero(Market),
-            (sum, cost) => sum + cost);
+        lock (_positionLock)
+        {
+            return _positionCosts.Values.Aggregate(
+                Money.Zero(Market),
+                (sum, cost) => sum + cost);
+        }
     }
 
     /// <summary>
@@ -315,7 +328,10 @@ public sealed class Portfolio : AggregateRoot<PortfolioId>
     /// </summary>
     public IReadOnlyCollection<TradingPair> GetActivePairs()
     {
-        return _activePositions.Keys.ToList().AsReadOnly();
+        lock (_positionLock)
+        {
+            return _activePositions.Keys.ToList().AsReadOnly();
+        }
     }
 
     /// <summary>

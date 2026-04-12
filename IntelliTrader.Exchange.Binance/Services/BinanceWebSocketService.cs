@@ -37,8 +37,9 @@ namespace IntelliTrader.Exchange.Binance
         private readonly IHealthCheckService _healthCheckService;
         private readonly HttpClient _httpClient;
         private readonly ConcurrentDictionary<string, Ticker> _tickers;
-        private readonly HashSet<string> _subscribedPairs;
+        private readonly ConcurrentDictionary<string, byte> _subscribedPairs;
         private readonly SemaphoreSlim _connectionLock;
+        private bool _reconnecting;
         private readonly object _stateLock = new();
 
         private ClientWebSocket? _webSocket;
@@ -100,7 +101,7 @@ namespace IntelliTrader.Exchange.Binance
             };
 
             _tickers = new ConcurrentDictionary<string, Ticker>();
-            _subscribedPairs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            _subscribedPairs = new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
             _connectionLock = new SemaphoreSlim(1, 1);
             _lastUpdateTime = DateTimeOffset.MinValue;
         }
@@ -251,7 +252,7 @@ namespace IntelliTrader.Exchange.Binance
 
             foreach (var pair in pairsList)
             {
-                _subscribedPairs.Add(pair.ToUpperInvariant());
+                _subscribedPairs.TryAdd(pair.ToUpperInvariant(), 0);
             }
 
             if (!IsConnected || _webSocket == null)
@@ -280,7 +281,7 @@ namespace IntelliTrader.Exchange.Binance
 
             foreach (var pair in pairsList)
             {
-                _subscribedPairs.Remove(pair.ToUpperInvariant());
+                _subscribedPairs.TryRemove(pair.ToUpperInvariant(), out _);
             }
 
             if (!IsConnected || _webSocket == null)
@@ -314,9 +315,10 @@ namespace IntelliTrader.Exchange.Binance
                 await ConnectInternalAsync(cancellationToken).ConfigureAwait(false);
 
                 // Resubscribe to any previously subscribed pairs
-                if (_subscribedPairs.Count > 0)
+                var pairs = _subscribedPairs.Keys.ToList();
+                if (pairs.Count > 0)
                 {
-                    await SubscribeToTickersAsync(_subscribedPairs, cancellationToken).ConfigureAwait(false);
+                    await SubscribeToTickersAsync(pairs, cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
@@ -607,31 +609,47 @@ namespace IntelliTrader.Exchange.Binance
         {
             if (_disposed) return;
 
+            lock (_stateLock)
+            {
+                if (_reconnecting) return;
+                _reconnecting = true;
+            }
+
             _loggingService.Warning("WebSocket connection lost, attempting reconnect...");
 
             // Ensure we don't hold the connection lock during reconnect
             _ = Task.Run(async () =>
             {
-                while (_reconnectAttempts < MaxReconnectAttempts && !_disposed)
+                try
                 {
-                    _reconnectAttempts++;
-                    _loggingService.Info($"Reconnection attempt {_reconnectAttempts}/{MaxReconnectAttempts}");
+                    while (_reconnectAttempts < MaxReconnectAttempts && !_disposed)
+                    {
+                        _reconnectAttempts++;
+                        _loggingService.Info($"Reconnection attempt {_reconnectAttempts}/{MaxReconnectAttempts}");
 
-                    try
-                    {
-                        await ReconnectAsync(CancellationToken.None).ConfigureAwait(false);
-                        _loggingService.Info("WebSocket reconnected successfully");
-                        return;
+                        try
+                        {
+                            await ReconnectAsync(CancellationToken.None).ConfigureAwait(false);
+                            _loggingService.Info("WebSocket reconnected successfully");
+                            return;
+                        }
+                        catch (Exception ex)
+                        {
+                            _loggingService.Warning($"Reconnection attempt failed: {ex.Message}");
+                            await Task.Delay(TimeSpan.FromSeconds(ReconnectDelaySeconds * _reconnectAttempts)).ConfigureAwait(false);
+                        }
                     }
-                    catch (Exception ex)
+
+                    // Max reconnect attempts reached, switch to REST fallback
+                    await HandleReconnectFailureAsync(CancellationToken.None).ConfigureAwait(false);
+                }
+                finally
+                {
+                    lock (_stateLock)
                     {
-                        _loggingService.Warning($"Reconnection attempt failed: {ex.Message}");
-                        await Task.Delay(TimeSpan.FromSeconds(ReconnectDelaySeconds * _reconnectAttempts)).ConfigureAwait(false);
+                        _reconnecting = false;
                     }
                 }
-
-                // Max reconnect attempts reached, switch to REST fallback
-                await HandleReconnectFailureAsync(CancellationToken.None).ConfigureAwait(false);
             });
         }
 

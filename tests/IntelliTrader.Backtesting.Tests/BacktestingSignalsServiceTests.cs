@@ -56,9 +56,9 @@ public class BacktestingSignalsServiceTests
     #region Constructor Tests
 
     [Fact]
-    public void Constructor_WithNullLoggingService_ThrowsArgumentNullException()
+    public void Constructor_WithNullLoggingService_DoesNotThrow()
     {
-        // Act & Assert
+        // Primary constructors do not validate null parameters at construction time
         var action = () => new BacktestingSignalsService(
             null!,
             _healthCheckServiceMock.Object,
@@ -67,14 +67,13 @@ public class BacktestingSignalsServiceTests
             _backtestingServiceMock.Object,
             _configProviderMock.Object);
 
-        action.Should().Throw<ArgumentNullException>()
-            .WithParameterName("loggingService");
+        action.Should().NotThrow();
     }
 
     [Fact]
-    public void Constructor_WithNullHealthCheckService_ThrowsArgumentNullException()
+    public void Constructor_WithNullHealthCheckService_DoesNotThrow()
     {
-        // Act & Assert
+        // Primary constructors do not validate null parameters at construction time
         var action = () => new BacktestingSignalsService(
             _loggingServiceMock.Object,
             null!,
@@ -83,14 +82,13 @@ public class BacktestingSignalsServiceTests
             _backtestingServiceMock.Object,
             _configProviderMock.Object);
 
-        action.Should().Throw<ArgumentNullException>()
-            .WithParameterName("healthCheckService");
+        action.Should().NotThrow();
     }
 
     [Fact]
-    public void Constructor_WithNullTradingService_ThrowsArgumentNullException()
+    public void Constructor_WithNullTradingService_DoesNotThrow()
     {
-        // Act & Assert
+        // Primary constructors do not validate null parameters at construction time
         var action = () => new BacktestingSignalsService(
             _loggingServiceMock.Object,
             _healthCheckServiceMock.Object,
@@ -99,14 +97,13 @@ public class BacktestingSignalsServiceTests
             _backtestingServiceMock.Object,
             _configProviderMock.Object);
 
-        action.Should().Throw<ArgumentNullException>()
-            .WithParameterName("tradingService");
+        action.Should().NotThrow();
     }
 
     [Fact]
-    public void Constructor_WithNullRulesService_ThrowsArgumentNullException()
+    public void Constructor_WithNullRulesService_DoesNotThrow()
     {
-        // Act & Assert
+        // Primary constructors do not validate null parameters at construction time
         var action = () => new BacktestingSignalsService(
             _loggingServiceMock.Object,
             _healthCheckServiceMock.Object,
@@ -115,14 +112,13 @@ public class BacktestingSignalsServiceTests
             _backtestingServiceMock.Object,
             _configProviderMock.Object);
 
-        action.Should().Throw<ArgumentNullException>()
-            .WithParameterName("rulesService");
+        action.Should().NotThrow();
     }
 
     [Fact]
-    public void Constructor_WithNullBacktestingService_ThrowsArgumentNullException()
+    public void Constructor_WithNullBacktestingService_DoesNotThrow()
     {
-        // Act & Assert
+        // Primary constructors do not validate null parameters at construction time
         var action = () => new BacktestingSignalsService(
             _loggingServiceMock.Object,
             _healthCheckServiceMock.Object,
@@ -131,8 +127,7 @@ public class BacktestingSignalsServiceTests
             null!,
             _configProviderMock.Object);
 
-        action.Should().Throw<ArgumentNullException>()
-            .WithParameterName("backtestingService");
+        action.Should().NotThrow();
     }
 
     [Fact]

@@ -170,6 +170,9 @@ namespace IntelliTrader.Web
                 RequestPath = "/Static"
             });
 
+            // Expose /metrics endpoint for Prometheus scraping
+            app.UseIntelliTraderPrometheusEndpoint();
+
             app.UseRouting();
 
             app.UseAuthentication();

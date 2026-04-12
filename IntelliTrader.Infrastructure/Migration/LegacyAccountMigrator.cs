@@ -53,7 +53,7 @@ public sealed class LegacyAccountMigrator
         try
         {
             // Load legacy data
-            var json = await File.ReadAllTextAsync(legacyFilePath, cancellationToken);
+            var json = await File.ReadAllTextAsync(legacyFilePath, cancellationToken).ConfigureAwait(false);
             var legacyData = JsonSerializer.Deserialize<LegacyTradingAccountData>(json, _jsonOptions);
 
             if (legacyData == null)
@@ -97,7 +97,7 @@ public sealed class LegacyAccountMigrator
             // Save all migrated positions
             if (positions.Count > 0)
             {
-                await _positionRepository.SaveManyAsync(positions, cancellationToken);
+                await _positionRepository.SaveManyAsync(positions, cancellationToken).ConfigureAwait(false);
             }
 
             result.Success = result.FailedPositions == 0;

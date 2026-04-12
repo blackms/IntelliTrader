@@ -202,7 +202,7 @@ namespace IntelliTrader.Exchange.Binance
         {
             if (_webSocketService != null)
             {
-                await _webSocketService.ReconnectAsync();
+                await _webSocketService.ReconnectAsync().ConfigureAwait(false);
             }
         }
 
@@ -235,9 +235,9 @@ namespace IntelliTrader.Exchange.Binance
             // Use ReadPipeline for idempotent read operations
             return await _resiliencePipelines.ReadPipeline.ExecuteAsync(async cancellationToken =>
             {
-                var results = await _binanceApi.GetAmountsAvailableToTradeAsync();
+                var results = await _binanceApi.GetAmountsAvailableToTradeAsync().ConfigureAwait(false);
                 return results;
-            });
+            }).ConfigureAwait(false);
         }
 
         public override async Task<IEnumerable<IOrderDetails>> GetMyTrades(string pair)
@@ -251,7 +251,7 @@ namespace IntelliTrader.Exchange.Binance
             return await _resiliencePipelines.ReadPipeline.ExecuteAsync(async cancellationToken =>
             {
                 var myTrades = new List<OrderDetails>();
-                var results = await _binanceApi.GetMyTradesAsync(pair);
+                var results = await _binanceApi.GetMyTradesAsync(pair).ConfigureAwait(false);
 
                 foreach (var result in results)
                 {
@@ -273,7 +273,7 @@ namespace IntelliTrader.Exchange.Binance
                 }
 
                 return (IEnumerable<IOrderDetails>)myTrades;
-            });
+            }).ConfigureAwait(false);
         }
 
         public override Task<decimal> GetLastPrice(string pair)
@@ -309,7 +309,7 @@ namespace IntelliTrader.Exchange.Binance
                     Amount = order.Amount,
                     Price = order.Price,
                     MarketSymbol = order.Pair
-                });
+                }).ConfigureAwait(false);
 
                 return (IOrderDetails)new OrderDetails
                 {
@@ -326,7 +326,7 @@ namespace IntelliTrader.Exchange.Binance
                     Fees = result.Fees ?? 0m,
                     FeesCurrency = result.FeesCurrency
                 };
-            });
+            }).ConfigureAwait(false);
         }
 
         /// <inheritdoc />

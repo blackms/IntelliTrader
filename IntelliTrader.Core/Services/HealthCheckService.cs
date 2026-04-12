@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace IntelliTrader.Core
 {
@@ -19,28 +20,39 @@ namespace IntelliTrader.Core
     {
         private readonly IApplicationContext _applicationContext = applicationContext ?? throw new ArgumentNullException(nameof(applicationContext));
         private readonly ConcurrentDictionary<string, HealthCheck> healthChecks = new ConcurrentDictionary<string, HealthCheck>();
-        private HealthCheckTimedTask healthCheckTimedTask;
+        private HealthCheckBackgroundService _backgroundService;
+        private CancellationTokenSource _cts;
 
         public void Start()
         {
-            loggingService.Info($"Start Health Check service...");
+            loggingService.Info("Start Health Check service...");
 
-            var core = coreService.Value;
-            healthCheckTimedTask = new HealthCheckTimedTask(loggingService, notificationService, this, core, tradingService.Value);
-            healthCheckTimedTask.RunInterval = (float)(core.Config.HealthCheckInterval * 1000 / _applicationContext.Speed);
-            healthCheckTimedTask.StartDelay = Constants.TimedTasks.StandardDelay / _applicationContext.Speed;
-            core.AddTask(nameof(HealthCheckTimedTask), healthCheckTimedTask);
+            _cts = new CancellationTokenSource();
+            _backgroundService = new HealthCheckBackgroundService(
+                loggingService,
+                notificationService,
+                this,
+                coreService,
+                tradingService,
+                _applicationContext);
+            _backgroundService.StartAsync(_cts.Token);
 
             loggingService.Info("Health Check service started");
         }
 
         public void Stop()
         {
-            loggingService.Info($"Stop Health Check service...");
+            loggingService.Info("Stop Health Check service...");
 
-            var core = coreService.Value;
-            core.StopTask(nameof(HealthCheckTimedTask));
-            core.RemoveTask(nameof(HealthCheckTimedTask));
+            if (_cts != null)
+            {
+                _cts.Cancel();
+                _backgroundService?.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
+                _cts.Dispose();
+                _cts = null;
+                _backgroundService?.Dispose();
+                _backgroundService = null;
+            }
 
             loggingService.Info("Health Check service stopped");
         }

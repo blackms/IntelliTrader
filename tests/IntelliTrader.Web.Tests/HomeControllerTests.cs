@@ -8,6 +8,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Authentication;
 using System.Security.Claims;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace IntelliTrader.Web.Tests;
 
@@ -331,101 +333,101 @@ public class HomeControllerTests
     #region Trading Action Tests
 
     [Fact]
-    public void Buy_WithValidModel_ReturnsOkAndCallsTradingService()
+    public async Task Buy_WithValidModel_ReturnsOkAndCallsTradingService()
     {
         // Arrange
         var model = new BuyInputModel { Pair = "BTCUSDT", Amount = 0.01m };
 
         // Act
-        var result = _sut.Buy(model);
+        var result = await _sut.Buy(model);
 
         // Assert
         result.Should().BeOfType<OkResult>();
-        _tradingServiceMock.Verify(x => x.Buy(It.Is<BuyOptions>(o =>
+        _tradingServiceMock.Verify(x => x.BuyAsync(It.Is<BuyOptions>(o =>
             o.Pair == "BTCUSDT" &&
             o.Amount == 0.01m &&
             o.ManualOrder == true &&
-            o.IgnoreExisting == true)), Times.Once);
+            o.IgnoreExisting == true), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public void Buy_WithInvalidModel_ReturnsBadRequest()
+    public async Task Buy_WithInvalidModel_ReturnsBadRequest()
     {
         // Arrange
         var model = new BuyInputModel { Pair = "", Amount = 0 };
         _sut.ModelState.AddModelError("Pair", "Trading pair is required");
 
         // Act
-        var result = _sut.Buy(model);
+        var result = await _sut.Buy(model);
 
         // Assert
         result.Should().BeOfType<BadRequestObjectResult>();
     }
 
     [Fact]
-    public void Sell_WithValidModel_ReturnsOkAndCallsTradingService()
+    public async Task Sell_WithValidModel_ReturnsOkAndCallsTradingService()
     {
         // Arrange
         var model = new SellInputModel { Pair = "BTCUSDT", Amount = 0.01m };
 
         // Act
-        var result = _sut.Sell(model);
+        var result = await _sut.Sell(model);
 
         // Assert
         result.Should().BeOfType<OkResult>();
-        _tradingServiceMock.Verify(x => x.Sell(It.Is<SellOptions>(o =>
+        _tradingServiceMock.Verify(x => x.SellAsync(It.Is<SellOptions>(o =>
             o.Pair == "BTCUSDT" &&
             o.Amount == 0.01m &&
-            o.ManualOrder == true)), Times.Once);
+            o.ManualOrder == true), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public void Sell_WithInvalidModel_ReturnsBadRequest()
+    public async Task Sell_WithInvalidModel_ReturnsBadRequest()
     {
         // Arrange
         var model = new SellInputModel { Pair = "invalid", Amount = -1 };
         _sut.ModelState.AddModelError("Amount", "Invalid amount");
 
         // Act
-        var result = _sut.Sell(model);
+        var result = await _sut.Sell(model);
 
         // Assert
         result.Should().BeOfType<BadRequestObjectResult>();
     }
 
     [Fact]
-    public void Swap_WithValidModel_ReturnsOkAndCallsTradingService()
+    public async Task Swap_WithValidModel_ReturnsOkAndCallsTradingService()
     {
         // Arrange
         var model = new SwapInputModel { Pair = "BTCUSDT", Swap = "ETHUSDT" };
 
         // Act
-        var result = _sut.Swap(model);
+        var result = await _sut.Swap(model);
 
         // Assert
         result.Should().BeOfType<OkResult>();
-        _tradingServiceMock.Verify(x => x.Swap(It.Is<SwapOptions>(o =>
+        _tradingServiceMock.Verify(x => x.SwapAsync(It.Is<SwapOptions>(o =>
             o.OldPair == "BTCUSDT" &&
             o.NewPair == "ETHUSDT" &&
-            o.ManualOrder == true)), Times.Once);
+            o.ManualOrder == true), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public void Swap_WithInvalidModel_ReturnsBadRequest()
+    public async Task Swap_WithInvalidModel_ReturnsBadRequest()
     {
         // Arrange
         var model = new SwapInputModel { Pair = "", Swap = "" };
         _sut.ModelState.AddModelError("Pair", "Source trading pair is required");
 
         // Act
-        var result = _sut.Swap(model);
+        var result = await _sut.Swap(model);
 
         // Assert
         result.Should().BeOfType<BadRequestObjectResult>();
     }
 
     [Fact]
-    public void BuyDefault_WithValidModel_ReturnsOkAndCallsTradingService()
+    public async Task BuyDefault_WithValidModel_ReturnsOkAndCallsTradingService()
     {
         // Arrange
         var model = new BuyDefaultInputModel { Pair = "BTCUSDT" };
@@ -434,14 +436,14 @@ public class HomeControllerTests
         _tradingServiceMock.Setup(x => x.GetPairConfig("BTCUSDT")).Returns(pairConfigMock.Object);
 
         // Act
-        var result = _sut.BuyDefault(model);
+        var result = await _sut.BuyDefault(model);
 
         // Assert
         result.Should().BeOfType<OkResult>();
-        _tradingServiceMock.Verify(x => x.Buy(It.Is<BuyOptions>(o =>
+        _tradingServiceMock.Verify(x => x.BuyAsync(It.Is<BuyOptions>(o =>
             o.Pair == "BTCUSDT" &&
             o.MaxCost == 100m &&
-            o.ManualOrder == true)), Times.Once);
+            o.ManualOrder == true), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     #endregion

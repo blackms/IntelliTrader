@@ -99,8 +99,8 @@ public class OrderExecutionService : TimedBackgroundService
     {
         try
         {
-            await ProcessTradingPairsAsync(stoppingToken);
-            await ProcessTrailingBuysAsync(stoppingToken);
+            await ProcessTradingPairsAsync(stoppingToken).ConfigureAwait(false);
+            await ProcessTrailingBuysAsync(stoppingToken).ConfigureAwait(false);
 
             // Update telemetry gauges
             UpdateTelemetryGauges();
@@ -120,21 +120,21 @@ public class OrderExecutionService : TimedBackgroundService
 
     private async Task ProcessTradingPairsAsync(CancellationToken cancellationToken)
     {
-        var positions = await _positionRepository.GetAllActiveAsync(cancellationToken);
+        var positions = await _positionRepository.GetAllActiveAsync(cancellationToken).ConfigureAwait(false);
 
         // Update open positions gauge
         TradingTelemetry.SetOpenPositionsCount(positions.Count);
 
         foreach (var position in positions)
         {
-            await ProcessPositionAsync(position, cancellationToken);
+            await ProcessPositionAsync(position, cancellationToken).ConfigureAwait(false);
         }
     }
 
     private async Task ProcessPositionAsync(Position position, CancellationToken cancellationToken)
     {
         // Get current price
-        var priceResult = await _exchangePort.GetCurrentPriceAsync(position.Pair, cancellationToken);
+        var priceResult = await _exchangePort.GetCurrentPriceAsync(position.Pair, cancellationToken).ConfigureAwait(false);
         if (priceResult.IsFailure)
         {
             _logger.LogWarning("Failed to get price for {Pair}", position.Pair.Symbol);
@@ -154,14 +154,14 @@ public class OrderExecutionService : TimedBackgroundService
         // Check if we're trailing this position
         if (_trailingManager.HasSellTrailing(position.Pair))
         {
-            await ProcessSellTrailingAsync(position, currentPrice, currentMargin.Percentage, cancellationToken);
+            await ProcessSellTrailingAsync(position, currentPrice, currentMargin.Percentage, cancellationToken).ConfigureAwait(false);
         }
         else if (pairConfig?.SellEnabled == true)
         {
             // Check sell conditions
             if (currentMargin.Percentage >= (pairConfig.SellMargin))
             {
-                await InitiateSellAsync(position, currentPrice, pairConfig, cancellationToken);
+                await InitiateSellAsync(position, currentPrice, pairConfig, cancellationToken).ConfigureAwait(false);
             }
             else if (pairConfig.SellStopLossEnabled &&
                      currentMargin.Percentage <= pairConfig.SellStopLossMargin &&
@@ -177,7 +177,7 @@ public class OrderExecutionService : TimedBackgroundService
                 // Record stop loss trigger in telemetry
                 TradingTelemetry.RecordStopLossTriggered(position.Pair.Symbol, currentMargin.Percentage);
 
-                await PlaceSellOrderAsync(position, currentPrice, cancellationToken);
+                await PlaceSellOrderAsync(position, currentPrice, cancellationToken).ConfigureAwait(false);
             }
             else if (pairConfig.DCAEnabled && pairConfig.NextDCAMargin.HasValue &&
                      currentMargin.Percentage <= pairConfig.NextDCAMargin.Value &&
@@ -190,7 +190,7 @@ public class OrderExecutionService : TimedBackgroundService
                         "DCA triggered for {Pair}. Margin: {Margin:F2}%, Level: {Level}",
                         position.Pair.Symbol, currentMargin.Percentage, pairConfig.CurrentDCALevel + 1);
                 }
-                await InitiateDCABuyAsync(position, currentPrice, pairConfig, cancellationToken);
+                await InitiateDCABuyAsync(position, currentPrice, pairConfig, cancellationToken).ConfigureAwait(false);
             }
         }
     }
@@ -229,7 +229,7 @@ public class OrderExecutionService : TimedBackgroundService
                 // Record trailing trigger telemetry
                 TradingTelemetry.RecordTrailingTriggered(position.Pair.Symbol, "sell");
 
-                await PlaceSellOrderAsync(position, currentPrice, cancellationToken);
+                await PlaceSellOrderAsync(position, currentPrice, cancellationToken).ConfigureAwait(false);
                 break;
 
             case TrailingCheckResult.Cancelled:
@@ -258,7 +258,7 @@ public class OrderExecutionService : TimedBackgroundService
         {
             using var activity = TradingTelemetry.StartTrailingProcessingActivity(state.Pair.Symbol, "buy");
 
-            var priceResult = await _exchangePort.GetCurrentPriceAsync(state.Pair, cancellationToken);
+            var priceResult = await _exchangePort.GetCurrentPriceAsync(state.Pair, cancellationToken).ConfigureAwait(false);
             if (priceResult.IsFailure)
             {
                 continue;
@@ -291,7 +291,7 @@ public class OrderExecutionService : TimedBackgroundService
                     // Record trailing trigger telemetry
                     TradingTelemetry.RecordTrailingTriggered(state.Pair.Symbol, "buy");
 
-                    await PlaceBuyOrderAsync(state.Pair, currentPrice, state.Cost.Amount, cancellationToken);
+                    await PlaceBuyOrderAsync(state.Pair, currentPrice, state.Cost.Amount, cancellationToken).ConfigureAwait(false);
                     break;
 
                 case TrailingCheckResult.Cancelled:
@@ -341,7 +341,7 @@ public class OrderExecutionService : TimedBackgroundService
         }
         else
         {
-            await PlaceSellOrderAsync(position, currentPrice, cancellationToken);
+            await PlaceSellOrderAsync(position, currentPrice, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -378,7 +378,7 @@ public class OrderExecutionService : TimedBackgroundService
         }
         else
         {
-            await PlaceBuyOrderAsync(position.Pair, currentPrice, dcaCost, cancellationToken);
+            await PlaceBuyOrderAsync(position.Pair, currentPrice, dcaCost, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -405,7 +405,7 @@ public class OrderExecutionService : TimedBackgroundService
             // Virtual sell
             var sellFees = Money.Create(position.TotalQuantity.Value * currentPrice.Value * 0.001m, _options.QuoteCurrency);
             position.Close(OrderId.From(DateTime.UtcNow.Ticks.ToString()), currentPrice, sellFees);
-            await _positionRepository.SaveAsync(position, cancellationToken);
+            await _positionRepository.SaveAsync(position, cancellationToken).ConfigureAwait(false);
 
             var eventArgs = new OrderExecutedEventArgs
             {
@@ -445,7 +445,7 @@ public class OrderExecutionService : TimedBackgroundService
         {
             // Real sell order
             var result = await _exchangePort.PlaceMarketSellAsync(
-                position.Pair, position.TotalQuantity, cancellationToken);
+                position.Pair, position.TotalQuantity, cancellationToken).ConfigureAwait(false);
 
             var latencyMs = Stopwatch.GetElapsedTime(orderStart).TotalMilliseconds;
 
@@ -453,7 +453,7 @@ public class OrderExecutionService : TimedBackgroundService
             {
                 var order = result.Value;
                 position.Close(OrderId.From(order.OrderId), order.AveragePrice, order.Fees);
-                await _positionRepository.SaveAsync(position, cancellationToken);
+                await _positionRepository.SaveAsync(position, cancellationToken).ConfigureAwait(false);
 
                 var eventArgs = new OrderExecutedEventArgs
                 {
@@ -536,7 +536,7 @@ public class OrderExecutionService : TimedBackgroundService
             pair.Symbol, currentPrice.Value, quantity.Value);
 
         // Check if this is a DCA order
-        var existingPosition = await _positionRepository.GetByPairAsync(pair, cancellationToken);
+        var existingPosition = await _positionRepository.GetByPairAsync(pair, cancellationToken).ConfigureAwait(false);
         var isDCA = existingPosition != null;
 
         if (isDCA)
@@ -558,7 +558,7 @@ public class OrderExecutionService : TimedBackgroundService
                     currentPrice,
                     quantity,
                     buyFees);
-                await _positionRepository.SaveAsync(existingPosition, cancellationToken);
+                await _positionRepository.SaveAsync(existingPosition, cancellationToken).ConfigureAwait(false);
 
                 // Record DCA telemetry
                 TradingTelemetry.RecordDCAOrder(pair.Symbol, existingPosition.DCALevel, isVirtual: true);
@@ -572,7 +572,7 @@ public class OrderExecutionService : TimedBackgroundService
                     currentPrice,
                     quantity,
                     buyFees);
-                await _positionRepository.SaveAsync(newPosition, cancellationToken);
+                await _positionRepository.SaveAsync(newPosition, cancellationToken).ConfigureAwait(false);
             }
 
             var eventArgs = new OrderExecutedEventArgs
@@ -610,7 +610,7 @@ public class OrderExecutionService : TimedBackgroundService
         {
             // Real buy order - use Money for cost
             var cost = Money.Create(maxCost, _options.QuoteCurrency);
-            var result = await _exchangePort.PlaceMarketBuyAsync(pair, cost, cancellationToken);
+            var result = await _exchangePort.PlaceMarketBuyAsync(pair, cost, cancellationToken).ConfigureAwait(false);
 
             var latencyMs = Stopwatch.GetElapsedTime(orderStart).TotalMilliseconds;
 
@@ -625,7 +625,7 @@ public class OrderExecutionService : TimedBackgroundService
                         order.AveragePrice,
                         order.FilledQuantity,
                         order.Fees);
-                    await _positionRepository.SaveAsync(existingPosition, cancellationToken);
+                    await _positionRepository.SaveAsync(existingPosition, cancellationToken).ConfigureAwait(false);
 
                     // Record DCA telemetry
                     TradingTelemetry.RecordDCAOrder(pair.Symbol, existingPosition.DCALevel, isVirtual: false);
@@ -638,7 +638,7 @@ public class OrderExecutionService : TimedBackgroundService
                         order.AveragePrice,
                         order.FilledQuantity,
                         order.Fees);
-                    await _positionRepository.SaveAsync(newPosition, cancellationToken);
+                    await _positionRepository.SaveAsync(newPosition, cancellationToken).ConfigureAwait(false);
                 }
 
                 var eventArgs = new OrderExecutedEventArgs

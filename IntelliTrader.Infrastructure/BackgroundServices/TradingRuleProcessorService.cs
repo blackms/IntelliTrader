@@ -139,7 +139,7 @@ public class TradingRuleProcessorService : TimedBackgroundService
     {
         try
         {
-            await ProcessRulesAsync(stoppingToken);
+            await ProcessRulesAsync(stoppingToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -150,7 +150,7 @@ public class TradingRuleProcessorService : TimedBackgroundService
     private async Task ProcessRulesAsync(CancellationToken cancellationToken)
     {
         // Get all active positions
-        var positions = await _positionRepository.GetAllActiveAsync(cancellationToken);
+        var positions = await _positionRepository.GetAllActiveAsync(cancellationToken).ConfigureAwait(false);
         var positionsByPair = positions.ToDictionary(p => p.Pair);
 
         // Start rule processing activity for tracing
@@ -162,7 +162,7 @@ public class TradingRuleProcessorService : TimedBackgroundService
 
         foreach (var position in positions)
         {
-            var priceResult = await _exchangePort.GetCurrentPriceAsync(position.Pair, cancellationToken);
+            var priceResult = await _exchangePort.GetCurrentPriceAsync(position.Pair, cancellationToken).ConfigureAwait(false);
             if (priceResult.IsFailure)
             {
                 _logger.LogWarning("Failed to get price for {Pair}: {Error}",
@@ -177,7 +177,7 @@ public class TradingRuleProcessorService : TimedBackgroundService
             totalPortfolioValue += position.TotalQuantity.Value * currentPrice.Value;
 
             // Get aggregated signal for the pair
-            var signalResult = await _signalProvider.GetAggregatedSignalAsync(position.Pair, cancellationToken);
+            var signalResult = await _signalProvider.GetAggregatedSignalAsync(position.Pair, cancellationToken).ConfigureAwait(false);
 
             // Create pair configuration based on position state and signals
             var config = CreatePairConfig(position.Pair, position, currentMargin.Percentage, signalResult.IsSuccess ? signalResult.Value : null);

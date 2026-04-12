@@ -41,7 +41,7 @@ public sealed class BinanceExchangeAdapter : IExchangePort
         try
         {
             // Get current price to calculate amount
-            var currentPrice = await _legacyExchange.GetLastPrice(pair.Symbol);
+            var currentPrice = await _legacyExchange.GetLastPrice(pair.Symbol).ConfigureAwait(false);
             if (currentPrice <= 0)
             {
                 return Result<ExchangeOrderResult>.Failure(
@@ -60,7 +60,7 @@ public sealed class BinanceExchangeAdapter : IExchangePort
                 Price = currentPrice
             };
 
-            var result = await _legacyExchange.PlaceOrder(legacyOrder);
+            var result = await _legacyExchange.PlaceOrder(legacyOrder).ConfigureAwait(false);
             return ConvertToExchangeOrderResult(result, pair);
         }
         catch (Exception ex)
@@ -81,7 +81,7 @@ public sealed class BinanceExchangeAdapter : IExchangePort
 
         try
         {
-            var currentPrice = await _legacyExchange.GetLastPrice(pair.Symbol);
+            var currentPrice = await _legacyExchange.GetLastPrice(pair.Symbol).ConfigureAwait(false);
             if (currentPrice <= 0)
             {
                 return Result<ExchangeOrderResult>.Failure(
@@ -98,7 +98,7 @@ public sealed class BinanceExchangeAdapter : IExchangePort
                 Price = currentPrice
             };
 
-            var result = await _legacyExchange.PlaceOrder(legacyOrder);
+            var result = await _legacyExchange.PlaceOrder(legacyOrder).ConfigureAwait(false);
             return ConvertToExchangeOrderResult(result, pair);
         }
         catch (Exception ex)
@@ -131,7 +131,7 @@ public sealed class BinanceExchangeAdapter : IExchangePort
                 Price = price.Value
             };
 
-            var result = await _legacyExchange.PlaceOrder(legacyOrder);
+            var result = await _legacyExchange.PlaceOrder(legacyOrder).ConfigureAwait(false);
             return ConvertToExchangeOrderResult(result, pair);
         }
         catch (Exception ex)
@@ -164,7 +164,7 @@ public sealed class BinanceExchangeAdapter : IExchangePort
                 Price = price.Value
             };
 
-            var result = await _legacyExchange.PlaceOrder(legacyOrder);
+            var result = await _legacyExchange.PlaceOrder(legacyOrder).ConfigureAwait(false);
             return ConvertToExchangeOrderResult(result, pair);
         }
         catch (Exception ex)
@@ -183,7 +183,7 @@ public sealed class BinanceExchangeAdapter : IExchangePort
 
         try
         {
-            var price = await _legacyExchange.GetLastPrice(pair.Symbol);
+            var price = await _legacyExchange.GetLastPrice(pair.Symbol).ConfigureAwait(false);
             if (price <= 0)
             {
                 return Result<Price>.Failure(
@@ -208,7 +208,7 @@ public sealed class BinanceExchangeAdapter : IExchangePort
 
         try
         {
-            var tickers = await _legacyExchange.GetTickers(_quoteCurrency);
+            var tickers = await _legacyExchange.GetTickers(_quoteCurrency).ConfigureAwait(false);
             var tickerDict = tickers.ToDictionary(t => t.Pair, t => t.LastPrice);
 
             var result = new Dictionary<TradingPair, Price>();
@@ -238,7 +238,7 @@ public sealed class BinanceExchangeAdapter : IExchangePort
 
         try
         {
-            var amounts = await _legacyExchange.GetAvailableAmounts();
+            var amounts = await _legacyExchange.GetAvailableAmounts().ConfigureAwait(false);
 
             if (!amounts.TryGetValue(currency, out var available))
             {
@@ -274,7 +274,7 @@ public sealed class BinanceExchangeAdapter : IExchangePort
     {
         try
         {
-            var amounts = await _legacyExchange.GetAvailableAmounts();
+            var amounts = await _legacyExchange.GetAvailableAmounts().ConfigureAwait(false);
 
             var balances = amounts
                 .Where(kvp => kvp.Value > 0)
@@ -307,7 +307,7 @@ public sealed class BinanceExchangeAdapter : IExchangePort
 
         try
         {
-            var trades = await _legacyExchange.GetMyTrades(pair.Symbol);
+            var trades = await _legacyExchange.GetMyTrades(pair.Symbol).ConfigureAwait(false);
             var trade = trades.FirstOrDefault(t => t.OrderId == orderId);
 
             if (trade == null)
@@ -383,7 +383,7 @@ public sealed class BinanceExchangeAdapter : IExchangePort
         try
         {
             // Try to get tickers as a connectivity test
-            var tickers = await _legacyExchange.GetTickers(_quoteCurrency);
+            var tickers = await _legacyExchange.GetTickers(_quoteCurrency).ConfigureAwait(false);
             return Result<bool>.Success(tickers.Any());
         }
         catch (Exception ex)

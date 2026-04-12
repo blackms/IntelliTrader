@@ -130,7 +130,7 @@ public class SignalRuleProcessorService : TimedBackgroundService
     {
         try
         {
-            await ProcessSignalRulesAsync(stoppingToken);
+            await ProcessSignalRulesAsync(stoppingToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -141,7 +141,7 @@ public class SignalRuleProcessorService : TimedBackgroundService
     private async Task ProcessSignalRulesAsync(CancellationToken cancellationToken)
     {
         // Check if we can open new positions
-        var activeCount = await _positionRepository.GetActiveCountAsync(cancellationToken);
+        var activeCount = await _positionRepository.GetActiveCountAsync(cancellationToken).ConfigureAwait(false);
         if (activeCount >= _options.MaxConcurrentPositions)
         {
             _logger.LogDebug("Maximum concurrent positions reached ({Count}), skipping signal processing",
@@ -150,7 +150,7 @@ public class SignalRuleProcessorService : TimedBackgroundService
         }
 
         // Get all active positions to exclude their pairs
-        var activePositions = await _positionRepository.GetAllActiveAsync(cancellationToken);
+        var activePositions = await _positionRepository.GetAllActiveAsync(cancellationToken).ConfigureAwait(false);
         var excludedPairs = activePositions.Select(p => p.Pair.Symbol).ToHashSet();
 
         // Also exclude pairs currently in trailing
@@ -178,14 +178,14 @@ public class SignalRuleProcessorService : TimedBackgroundService
         CancellationToken cancellationToken = default)
     {
         // Check if pair is excluded
-        var activePositions = await _positionRepository.GetAllActiveAsync(cancellationToken);
+        var activePositions = await _positionRepository.GetAllActiveAsync(cancellationToken).ConfigureAwait(false);
         if (activePositions.Any(p => p.Pair.Symbol == pair.Symbol))
         {
             return false;
         }
 
         // Get aggregated signal
-        var signalResult = await _signalProvider.GetAggregatedSignalAsync(pair, cancellationToken);
+        var signalResult = await _signalProvider.GetAggregatedSignalAsync(pair, cancellationToken).ConfigureAwait(false);
         if (signalResult.IsFailure)
         {
             _logger.LogDebug("No signal available for {Pair}", pair.Symbol);

@@ -109,7 +109,7 @@ namespace IntelliTrader.Exchange.Binance
         /// <inheritdoc />
         public async Task ConnectAsync(CancellationToken cancellationToken = default)
         {
-            await _connectionLock.WaitAsync(cancellationToken);
+            await _connectionLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 if (IsConnected)
@@ -118,7 +118,7 @@ namespace IntelliTrader.Exchange.Binance
                     return;
                 }
 
-                await ConnectInternalAsync(cancellationToken);
+                await ConnectInternalAsync(cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -140,7 +140,7 @@ namespace IntelliTrader.Exchange.Binance
 
                 // Connect to combined stream endpoint for multiple subscriptions
                 var uri = new Uri($"{CombinedStreamUrl}?streams=!ticker@arr");
-                await _webSocket.ConnectAsync(uri, cancellationToken);
+                await _webSocket.ConnectAsync(uri, cancellationToken).ConfigureAwait(false);
 
                 if (_webSocket.State != WebSocketState.Open)
                 {
@@ -164,7 +164,7 @@ namespace IntelliTrader.Exchange.Binance
             {
                 _loggingService.Error("Failed to connect to Binance WebSocket", ex);
                 ConnectionState = WebSocketConnectionState.Disconnected;
-                await StartRestFallbackAsync(cancellationToken);
+                await StartRestFallbackAsync(cancellationToken).ConfigureAwait(false);
                 throw;
             }
         }
@@ -172,10 +172,10 @@ namespace IntelliTrader.Exchange.Binance
         /// <inheritdoc />
         public async Task DisconnectAsync(CancellationToken cancellationToken = default)
         {
-            await _connectionLock.WaitAsync(cancellationToken);
+            await _connectionLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                await DisconnectInternalAsync(cancellationToken);
+                await DisconnectInternalAsync(cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -198,7 +198,7 @@ namespace IntelliTrader.Exchange.Binance
             _pingCts?.Cancel();
 
             // Stop REST polling if active
-            await StopRestFallbackAsync();
+            await StopRestFallbackAsync().ConfigureAwait(false);
 
             // Close WebSocket gracefully
             if (_webSocket != null && _webSocket.State == WebSocketState.Open)
@@ -207,7 +207,7 @@ namespace IntelliTrader.Exchange.Binance
                 {
                     using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(Constants.Timeouts.SocketDisconnectTimeoutSeconds));
                     using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
-                    await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Client disconnect", linkedCts.Token);
+                    await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Client disconnect", linkedCts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -224,7 +224,7 @@ namespace IntelliTrader.Exchange.Binance
 
                 if (tasks.Count > 0)
                 {
-                    await Task.WhenAny(Task.WhenAll(tasks), Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
+                    await Task.WhenAny(Task.WhenAll(tasks), Task.Delay(TimeSpan.FromSeconds(5), cancellationToken)).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
@@ -269,7 +269,7 @@ namespace IntelliTrader.Exchange.Binance
                 Id = Interlocked.Increment(ref _subscriptionRequestId)
             };
 
-            await SendMessageAsync(request, cancellationToken);
+            await SendMessageAsync(request, cancellationToken).ConfigureAwait(false);
             _loggingService.Debug($"Subscribed to ticker streams: {string.Join(", ", streams)}");
         }
 
@@ -297,34 +297,34 @@ namespace IntelliTrader.Exchange.Binance
                 Id = Interlocked.Increment(ref _subscriptionRequestId)
             };
 
-            await SendMessageAsync(request, cancellationToken);
+            await SendMessageAsync(request, cancellationToken).ConfigureAwait(false);
             _loggingService.Debug($"Unsubscribed from ticker streams: {string.Join(", ", streams)}");
         }
 
         /// <inheritdoc />
         public async Task ReconnectAsync(CancellationToken cancellationToken = default)
         {
-            await _connectionLock.WaitAsync(cancellationToken);
+            await _connectionLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 ConnectionState = WebSocketConnectionState.Reconnecting;
                 _loggingService.Info("Reconnecting to Binance WebSocket...");
 
-                await DisconnectInternalAsync(cancellationToken);
-                await Task.Delay(TimeSpan.FromSeconds(ReconnectDelaySeconds), cancellationToken);
-                await ConnectInternalAsync(cancellationToken);
+                await DisconnectInternalAsync(cancellationToken).ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromSeconds(ReconnectDelaySeconds), cancellationToken).ConfigureAwait(false);
+                await ConnectInternalAsync(cancellationToken).ConfigureAwait(false);
 
                 // Resubscribe to any previously subscribed pairs
                 var pairs = _subscribedPairs.Keys.ToList();
                 if (pairs.Count > 0)
                 {
-                    await SubscribeToTickersAsync(pairs, cancellationToken);
+                    await SubscribeToTickersAsync(pairs, cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
             {
                 _loggingService.Error("Failed to reconnect to Binance WebSocket", ex);
-                await HandleReconnectFailureAsync(cancellationToken);
+                await HandleReconnectFailureAsync(cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -339,10 +339,10 @@ namespace IntelliTrader.Exchange.Binance
             {
                 _loggingService.Debug("Fetching tickers via REST API...");
 
-                var response = await _httpClient.GetAsync("/ticker/24hr", cancellationToken);
+                var response = await _httpClient.GetAsync("/ticker/24hr", cancellationToken).ConfigureAwait(false);
                 response.EnsureSuccessStatusCode();
 
-                var content = await response.Content.ReadAsStringAsync(cancellationToken);
+                var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
                 var restTickers = JsonSerializer.Deserialize<List<BinanceRestTicker>>(content);
 
                 if (restTickers == null)
@@ -400,7 +400,7 @@ namespace IntelliTrader.Exchange.Binance
                     try
                     {
                         var segment = new ArraySegment<byte>(buffer);
-                        var result = await _webSocket.ReceiveAsync(segment, cancellationToken);
+                        var result = await _webSocket.ReceiveAsync(segment, cancellationToken).ConfigureAwait(false);
 
                         if (result.MessageType == WebSocketMessageType.Close)
                         {
@@ -571,14 +571,14 @@ namespace IntelliTrader.Exchange.Binance
             {
                 try
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(PingIntervalSeconds), cancellationToken);
+                    await Task.Delay(TimeSpan.FromSeconds(PingIntervalSeconds), cancellationToken).ConfigureAwait(false);
 
                     if (_webSocket?.State == WebSocketState.Open)
                     {
                         // Send a pong frame (Binance expects client to respond to server ping)
                         // Also send a ping to verify connection is alive
                         var pingMessage = Encoding.UTF8.GetBytes("ping");
-                        await _webSocket.SendAsync(new ArraySegment<byte>(pingMessage), WebSocketMessageType.Text, true, cancellationToken);
+                        await _webSocket.SendAsync(new ArraySegment<byte>(pingMessage), WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
                         _loggingService.Debug("WebSocket ping sent");
                     }
                 }
@@ -602,7 +602,7 @@ namespace IntelliTrader.Exchange.Binance
 
             var json = JsonSerializer.Serialize(message);
             var bytes = Encoding.UTF8.GetBytes(json);
-            await _webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken);
+            await _webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
         }
 
         private async Task HandleConnectionLostAsync()
@@ -629,19 +629,19 @@ namespace IntelliTrader.Exchange.Binance
 
                         try
                         {
-                            await ReconnectAsync(CancellationToken.None);
+                            await ReconnectAsync(CancellationToken.None).ConfigureAwait(false);
                             _loggingService.Info("WebSocket reconnected successfully");
                             return;
                         }
                         catch (Exception ex)
                         {
                             _loggingService.Warning($"Reconnection attempt failed: {ex.Message}");
-                            await Task.Delay(TimeSpan.FromSeconds(ReconnectDelaySeconds * _reconnectAttempts));
+                            await Task.Delay(TimeSpan.FromSeconds(ReconnectDelaySeconds * _reconnectAttempts)).ConfigureAwait(false);
                         }
                     }
 
                     // Max reconnect attempts reached, switch to REST fallback
-                    await HandleReconnectFailureAsync(CancellationToken.None);
+                    await HandleReconnectFailureAsync(CancellationToken.None).ConfigureAwait(false);
                 }
                 finally
                 {
@@ -656,7 +656,7 @@ namespace IntelliTrader.Exchange.Binance
         private async Task HandleReconnectFailureAsync(CancellationToken cancellationToken)
         {
             _loggingService.Warning("Max reconnection attempts reached, switching to REST fallback");
-            await StartRestFallbackAsync(cancellationToken);
+            await StartRestFallbackAsync(cancellationToken).ConfigureAwait(false);
         }
 
         private async Task StartRestFallbackAsync(CancellationToken cancellationToken)
@@ -672,9 +672,9 @@ namespace IntelliTrader.Exchange.Binance
             // Try to reconnect WebSocket in background
             _ = Task.Run(async () =>
             {
-                await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
+                await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
                 _reconnectAttempts = 0;
-                await HandleConnectionLostAsync();
+                await HandleConnectionLostAsync().ConfigureAwait(false);
             }, cancellationToken);
         }
 
@@ -685,7 +685,7 @@ namespace IntelliTrader.Exchange.Binance
                 // REST polling will stop on its own when state changes
                 try
                 {
-                    await Task.WhenAny(_restPollingTask, Task.Delay(TimeSpan.FromSeconds(5)));
+                    await Task.WhenAny(_restPollingTask, Task.Delay(TimeSpan.FromSeconds(5))).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -701,9 +701,9 @@ namespace IntelliTrader.Exchange.Binance
             {
                 try
                 {
-                    var tickers = await FetchTickersViaRestAsync(cancellationToken);
+                    var tickers = await FetchTickersViaRestAsync(cancellationToken).ConfigureAwait(false);
                     TickersUpdated?.Invoke(tickers);
-                    await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+                    await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -712,7 +712,7 @@ namespace IntelliTrader.Exchange.Binance
                 catch (Exception ex)
                 {
                     _loggingService.Warning($"REST polling error: {ex.Message}");
-                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
                 }
             }
         }

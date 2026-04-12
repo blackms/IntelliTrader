@@ -7,6 +7,8 @@ using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 
+#pragma warning disable CS0612 // Type or member is obsolete
+
 namespace IntelliTrader.Core
 {
     internal class CoreService(
@@ -90,7 +92,7 @@ namespace IntelliTrader.Core
             // to avoid blocking a thread pool thread during the delay
             _ = Task.Run(async () =>
             {
-                await Task.Delay(Constants.Timeouts.StartupDelayMs);
+                await Task.Delay(Constants.Timeouts.StartupDelayMs).ConfigureAwait(false);
                 StartAllTasks();
             });
 

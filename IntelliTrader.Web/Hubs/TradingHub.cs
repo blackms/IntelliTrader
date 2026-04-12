@@ -220,7 +220,7 @@ namespace IntelliTrader.Web.Hubs
         {
             try
             {
-                var currentPrice = _tradingService.GetCurrentPrice(pair);
+                var currentPrice = await _tradingService.GetCurrentPriceAsync(pair).ConfigureAwait(false);
                 if (currentPrice > 0)
                 {
                     await Clients.Caller.SendAsync("PriceUpdate", new

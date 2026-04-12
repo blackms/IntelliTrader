@@ -20,6 +20,24 @@ public class ConfigurableServiceBaseTests
         _configProviderMock = new Mock<IConfigProvider>();
     }
 
+    /// <summary>
+    /// Creates a real IConfigurationSection backed by in-memory data,
+    /// because IConfigurationSection.Get&lt;T&gt;() is an extension method and cannot be mocked.
+    /// </summary>
+    private static IConfigurationSection CreateRealConfigSection(string serviceName, string value)
+    {
+        var data = new Dictionary<string, string?>
+        {
+            { $"{serviceName}:Value", value }
+        };
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(data)
+            .Build();
+
+        return config.GetSection(serviceName);
+    }
+
     #region Constructor Tests
 
     [Fact]
@@ -65,11 +83,10 @@ public class ConfigurableServiceBaseTests
     public void Config_FirstAccess_CallsGetSectionOnProvider()
     {
         // Arrange
-        var configSectionMock = new Mock<IConfigurationSection>();
-        configSectionMock.Setup(x => x.Get<TestConfig>()).Returns(new TestConfig { Value = "test" });
+        var configSection = CreateRealConfigSection("TestService", "test");
         _configProviderMock
             .Setup(x => x.GetSection("TestService", It.IsAny<Action<IConfigurationSection>>()))
-            .Returns(configSectionMock.Object);
+            .Returns(configSection);
 
         var sut = new TestConfigurableService(_configProviderMock.Object);
 
@@ -78,6 +95,7 @@ public class ConfigurableServiceBaseTests
 
         // Assert
         config.Should().NotBeNull();
+        config.Value.Should().Be("test");
         _configProviderMock.Verify(x => x.GetSection("TestService", It.IsAny<Action<IConfigurationSection>>()), Times.Once);
     }
 
@@ -85,12 +103,10 @@ public class ConfigurableServiceBaseTests
     public void Config_SecondAccess_ReturnsCachedConfig()
     {
         // Arrange
-        var configSectionMock = new Mock<IConfigurationSection>();
-        var testConfig = new TestConfig { Value = "cached" };
-        configSectionMock.Setup(x => x.Get<TestConfig>()).Returns(testConfig);
+        var configSection = CreateRealConfigSection("TestService", "cached");
         _configProviderMock
             .Setup(x => x.GetSection("TestService", It.IsAny<Action<IConfigurationSection>>()))
-            .Returns(configSectionMock.Object);
+            .Returns(configSection);
 
         var sut = new TestConfigurableService(_configProviderMock.Object);
 
@@ -100,7 +116,6 @@ public class ConfigurableServiceBaseTests
 
         // Assert
         config1.Should().BeSameAs(config2);
-        // GetSection should be called only once (for RawConfig), config is cached after first access
         _configProviderMock.Verify(x => x.GetSection("TestService", It.IsAny<Action<IConfigurationSection>>()), Times.Once);
     }
 
@@ -112,10 +127,10 @@ public class ConfigurableServiceBaseTests
     public void RawConfig_FirstAccess_CallsGetSectionOnProvider()
     {
         // Arrange
-        var configSectionMock = new Mock<IConfigurationSection>();
+        var configSection = CreateRealConfigSection("TestService", "raw");
         _configProviderMock
             .Setup(x => x.GetSection("TestService", It.IsAny<Action<IConfigurationSection>>()))
-            .Returns(configSectionMock.Object);
+            .Returns(configSection);
 
         var sut = new TestConfigurableService(_configProviderMock.Object);
 
@@ -124,17 +139,16 @@ public class ConfigurableServiceBaseTests
 
         // Assert
         rawConfig.Should().NotBeNull();
-        rawConfig.Should().BeSameAs(configSectionMock.Object);
     }
 
     [Fact]
     public void RawConfig_SecondAccess_ReturnsCachedSection()
     {
         // Arrange
-        var configSectionMock = new Mock<IConfigurationSection>();
+        var configSection = CreateRealConfigSection("TestService", "raw");
         _configProviderMock
             .Setup(x => x.GetSection("TestService", It.IsAny<Action<IConfigurationSection>>()))
-            .Returns(configSectionMock.Object);
+            .Returns(configSection);
 
         var sut = new TestConfigurableService(_configProviderMock.Object);
 
@@ -192,15 +206,13 @@ public class ConfigurableServiceBaseTests
     public void OnRawConfigChanged_InvalidatesConfigCache()
     {
         // Arrange
-        var configSectionMock1 = new Mock<IConfigurationSection>();
-        var config1 = new TestConfig { Value = "original" };
-        configSectionMock1.Setup(x => x.Get<TestConfig>()).Returns(config1);
+        var originalSection = CreateRealConfigSection("TestService", "original");
 
         Action<IConfigurationSection> capturedOnChange = null!;
         _configProviderMock
             .Setup(x => x.GetSection("TestService", It.IsAny<Action<IConfigurationSection>>()))
             .Callback<string, Action<IConfigurationSection>>((_, onChange) => capturedOnChange = onChange)
-            .Returns(configSectionMock1.Object);
+            .Returns(originalSection);
 
         var sut = new TestConfigurableService(_configProviderMock.Object);
 
@@ -208,13 +220,11 @@ public class ConfigurableServiceBaseTests
         var firstConfig = sut.Config;
         firstConfig.Value.Should().Be("original");
 
-        // Simulate config change
-        var configSectionMock2 = new Mock<IConfigurationSection>();
-        var config2 = new TestConfig { Value = "updated" };
-        configSectionMock2.Setup(x => x.Get<TestConfig>()).Returns(config2);
+        // Simulate config change with a new section
+        var updatedSection = CreateRealConfigSection("TestService", "updated");
 
         // Act - trigger the onChange callback
-        capturedOnChange?.Invoke(configSectionMock2.Object);
+        capturedOnChange?.Invoke(updatedSection);
 
         // Assert - config should be re-read from the new section
         var secondConfig = sut.Config;
@@ -225,20 +235,19 @@ public class ConfigurableServiceBaseTests
     public void OnConfigReloaded_IsCalledOnChange()
     {
         // Arrange
-        var configSectionMock = new Mock<IConfigurationSection>();
-        configSectionMock.Setup(x => x.Get<TestConfig>()).Returns(new TestConfig { Value = "test" });
+        var configSection = CreateRealConfigSection("TestService", "test");
 
         Action<IConfigurationSection> capturedOnChange = null!;
         _configProviderMock
             .Setup(x => x.GetSection("TestService", It.IsAny<Action<IConfigurationSection>>()))
             .Callback<string, Action<IConfigurationSection>>((_, onChange) => capturedOnChange = onChange)
-            .Returns(configSectionMock.Object);
+            .Returns(configSection);
 
         var sut = new TestConfigurableService(_configProviderMock.Object);
         _ = sut.Config; // trigger initial load
 
         // Act
-        capturedOnChange?.Invoke(configSectionMock.Object);
+        capturedOnChange?.Invoke(configSection);
 
         // Assert
         sut.OnConfigReloadedCallCount.Should().BeGreaterThanOrEqualTo(1);

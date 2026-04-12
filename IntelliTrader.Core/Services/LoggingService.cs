@@ -266,6 +266,7 @@ namespace IntelliTrader.Core
         {
             lock (syncRoot)
             {
+                logger?.Dispose();
                 logger = CreateLogger();
             }
         }

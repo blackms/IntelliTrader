@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace IntelliTrader.Trading
 {
-    internal abstract class TradingAccountBase : ITradingAccount
+    internal abstract class TradingAccountBase : ITradingAccount, IDisposable
     {
         private readonly object _syncRoot = new object();
         public object SyncRoot => _syncRoot;
@@ -272,12 +272,27 @@ namespace IntelliTrader.Trading
             }
         }
 
-        public virtual void Dispose()
+        private bool disposed;
+
+        public void Dispose()
         {
-            lock (SyncRoot)
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!disposed)
             {
-                Save();
-                tradingPairs.Clear();
+                if (disposing)
+                {
+                    lock (SyncRoot)
+                    {
+                        Save();
+                        tradingPairs.Clear();
+                    }
+                }
+                disposed = true;
             }
         }
     }

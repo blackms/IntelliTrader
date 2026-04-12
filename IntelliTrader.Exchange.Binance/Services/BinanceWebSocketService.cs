@@ -21,7 +21,7 @@ namespace IntelliTrader.Exchange.Binance
     /// Implements connection lifecycle management, automatic reconnection, ping/pong handling,
     /// and REST API fallback when WebSocket is unavailable.
     /// </summary>
-    internal class BinanceWebSocketService : IBinanceWebSocketService
+    internal class BinanceWebSocketService : IBinanceWebSocketService, IAsyncDisposable
     {
         // Use constants from Core for configuration values
         private static readonly string WebSocketBaseUrl = Constants.WebSocket.BinanceStreamUrl;
@@ -704,7 +704,17 @@ namespace IntelliTrader.Exchange.Binance
             if (_disposed) return;
             _disposed = true;
 
-            _ = DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+            DisconnectAsync(CancellationToken.None).GetAwaiter().GetResult();
+            _httpClient.Dispose();
+            _connectionLock.Dispose();
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (_disposed) return;
+            _disposed = true;
+
+            await DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
             _httpClient.Dispose();
             _connectionLock.Dispose();
         }

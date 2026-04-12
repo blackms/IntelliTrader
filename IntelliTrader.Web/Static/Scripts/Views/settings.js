@@ -27,7 +27,8 @@ $(function () {
 
 function refreshAccount() {
     if (confirm("Refresh Account?")) {
-        $.get("/RefreshAccount", function (data) {
+        var token = $('input[name="__RequestVerificationToken"]').val();
+        $.post("/RefreshAccount", { __RequestVerificationToken: token }, function (data) {
 
         }).fail(function (data) {
             alert("Unable to refresh account");
@@ -37,7 +38,8 @@ function refreshAccount() {
 
 function restartServices() {
     if (confirm("Restart Services?")) {
-        $.get("/RestartServices", function (data) {
+        var token = $('input[name="__RequestVerificationToken"]').val();
+        $.post("/RestartServices", { __RequestVerificationToken: token }, function (data) {
 
         }).fail(function (data) {
             //alert("Unable to restart services");

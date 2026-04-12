@@ -9,5 +9,6 @@ namespace IntelliTrader.Core
         bool Enabled { get; }
         bool DebugMode { get; }
         int Port { get; }
+        string BindAddress { get; }
     }
 }

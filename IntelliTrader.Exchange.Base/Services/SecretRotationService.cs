@@ -108,16 +108,16 @@ namespace IntelliTrader.Exchange.Base
                 if (!File.Exists(keysPath))
                 {
                     _loggingService.Error($"Keys file not found: {keysPath}");
-                    await NotifyAsync("Secret rotation FAILED: keys file not found");
+                    await NotifyAsync("Secret rotation FAILED: keys file not found").ConfigureAwait(false);
                     return false;
                 }
 
                 // Step 1: Verify new credentials by creating a temporary API client
-                var verified = await VerifyNewCredentialsAsync(keysPath);
+                var verified = await VerifyNewCredentialsAsync(keysPath).ConfigureAwait(false);
                 if (!verified)
                 {
                     _loggingService.Error("New credentials failed verification, keeping current credentials");
-                    await NotifyAsync("Secret rotation FAILED: new credentials did not pass verification. Old credentials retained.");
+                    await NotifyAsync("Secret rotation FAILED: new credentials did not pass verification. Old credentials retained.").ConfigureAwait(false);
                     return false;
                 }
 
@@ -128,29 +128,29 @@ namespace IntelliTrader.Exchange.Base
                 if (!updated)
                 {
                     _loggingService.Error("Failed to apply new credentials to exchange service");
-                    await NotifyAsync("Secret rotation FAILED: could not apply new credentials. Old credentials retained.");
+                    await NotifyAsync("Secret rotation FAILED: could not apply new credentials. Old credentials retained.").ConfigureAwait(false);
                     return false;
                 }
 
                 // Step 3: Verify the live service still works after swap
                 try
                 {
-                    await exchangeService.GetAvailableAmounts();
+                    await exchangeService.GetAvailableAmounts().ConfigureAwait(false);
                     _loggingService.Info("Credential rotation completed successfully");
-                    await NotifyAsync("Secret rotation completed successfully. New API credentials are now active.");
+                    await NotifyAsync("Secret rotation completed successfully. New API credentials are now active.").ConfigureAwait(false);
                     return true;
                 }
                 catch (Exception ex)
                 {
                     _loggingService.Error("Post-rotation verification failed, credentials may need manual intervention", ex);
-                    await NotifyAsync($"Secret rotation WARNING: credentials were applied but post-swap verification failed: {ex.Message}");
+                    await NotifyAsync($"Secret rotation WARNING: credentials were applied but post-swap verification failed: {ex.Message}").ConfigureAwait(false);
                     return false;
                 }
             }
             catch (Exception ex)
             {
                 _loggingService.Error("Unexpected error during credential rotation", ex);
-                await NotifyAsync($"Secret rotation FAILED with unexpected error: {ex.Message}");
+                await NotifyAsync($"Secret rotation FAILED with unexpected error: {ex.Message}").ConfigureAwait(false);
                 return false;
             }
             finally
@@ -172,7 +172,7 @@ namespace IntelliTrader.Exchange.Base
                 testApi.LoadAPIKeys(keysFilePath);
 
                 // Use a lightweight call to verify the credentials work
-                var amounts = await testApi.GetAmountsAvailableToTradeAsync();
+                var amounts = await testApi.GetAmountsAvailableToTradeAsync().ConfigureAwait(false);
 
                 _loggingService.Info("New credentials verified successfully");
                 return true;
@@ -204,7 +204,7 @@ namespace IntelliTrader.Exchange.Base
         {
             try
             {
-                await _notificationService.Value.NotifyAsync($"[SecretRotation] {message}");
+                await _notificationService.Value.NotifyAsync($"[SecretRotation] {message}").ConfigureAwait(false);
             }
             catch (Exception ex)
             {

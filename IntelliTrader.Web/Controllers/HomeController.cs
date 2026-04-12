@@ -549,18 +549,18 @@ namespace IntelliTrader.Web.Controllers
         [ValidateAntiForgeryToken]
         [EnableRateLimiting("trading")]
         [Authorize(Policy = AuthPolicies.TraderOrAbove)]
-        public IActionResult Sell([FromForm] SellInputModel model)
+        public async Task<IActionResult> Sell([FromForm] SellInputModel model)
         {
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
 
-            _tradingService.Sell(new SellOptions(model.Pair)
+            await _tradingService.SellAsync(new SellOptions(model.Pair)
             {
                 Amount = model.Amount,
                 ManualOrder = true
-            });
+            }).ConfigureAwait(false);
             return Ok();
         }
 
@@ -568,19 +568,19 @@ namespace IntelliTrader.Web.Controllers
         [ValidateAntiForgeryToken]
         [EnableRateLimiting("trading")]
         [Authorize(Policy = AuthPolicies.TraderOrAbove)]
-        public IActionResult Buy([FromForm] BuyInputModel model)
+        public async Task<IActionResult> Buy([FromForm] BuyInputModel model)
         {
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
 
-            _tradingService.Buy(new BuyOptions(model.Pair)
+            await _tradingService.BuyAsync(new BuyOptions(model.Pair)
             {
                 Amount = model.Amount,
                 IgnoreExisting = true,
                 ManualOrder = true
-            });
+            }).ConfigureAwait(false);
             return Ok();
         }
 
@@ -588,14 +588,14 @@ namespace IntelliTrader.Web.Controllers
         [ValidateAntiForgeryToken]
         [EnableRateLimiting("trading")]
         [Authorize(Policy = AuthPolicies.TraderOrAbove)]
-        public IActionResult BuyDefault([FromForm] BuyDefaultInputModel model)
+        public async Task<IActionResult> BuyDefault([FromForm] BuyDefaultInputModel model)
         {
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
 
-            _tradingService.Buy(new BuyOptions(model.Pair)
+            await _tradingService.BuyAsync(new BuyOptions(model.Pair)
             {
                 MaxCost = _tradingService.GetPairConfig(model.Pair).BuyMaxCost,
                 IgnoreExisting = true,
@@ -604,7 +604,7 @@ namespace IntelliTrader.Web.Controllers
                 {
                     BoughtGlobalRating = _signalsService.GetGlobalRating()
                 }
-            });
+            }).ConfigureAwait(false);
             return Ok();
         }
 
@@ -612,17 +612,17 @@ namespace IntelliTrader.Web.Controllers
         [ValidateAntiForgeryToken]
         [EnableRateLimiting("trading")]
         [Authorize(Policy = AuthPolicies.TraderOrAbove)]
-        public IActionResult Swap([FromForm] SwapInputModel model)
+        public async Task<IActionResult> Swap([FromForm] SwapInputModel model)
         {
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
 
-            _tradingService.Swap(new SwapOptions(model.Pair, model.Swap, new OrderMetadata())
+            await _tradingService.SwapAsync(new SwapOptions(model.Pair, model.Swap, new OrderMetadata())
             {
                 ManualOrder = true
-            });
+            }).ConfigureAwait(false);
             return Ok();
         }
 

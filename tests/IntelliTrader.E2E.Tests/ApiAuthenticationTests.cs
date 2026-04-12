@@ -11,6 +11,7 @@ namespace IntelliTrader.E2E.Tests
     /// End-to-end tests verifying that authenticated API endpoints
     /// reject unauthenticated requests and that rate limiting is enforced.
     /// </summary>
+    [Collection("E2E")]
     public class ApiAuthenticationTests : IClassFixture<TestWebHostFactory>
     {
         private readonly HttpClient _client;

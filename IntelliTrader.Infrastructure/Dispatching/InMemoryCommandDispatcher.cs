@@ -77,7 +77,7 @@ public sealed class InMemoryCommandDispatcher : ICommandDispatcher
                     new Error("InvocationFailed", "Handler returned null"));
             }
 
-            var result = await task;
+            var result = await task.ConfigureAwait(false);
 
             _logger.LogDebug(
                 "Command {CommandType} handled with success={IsSuccess}",
@@ -143,7 +143,7 @@ public sealed class InMemoryCommandDispatcher : ICommandDispatcher
                     new Error("InvocationFailed", "Handler returned null"));
             }
 
-            var result = await task;
+            var result = await task.ConfigureAwait(false);
 
             _logger.LogDebug(
                 "Void command {CommandType} handled with success={IsSuccess}",

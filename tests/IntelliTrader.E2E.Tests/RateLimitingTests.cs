@@ -11,6 +11,7 @@ namespace IntelliTrader.E2E.Tests
     /// Health endpoints are exempt from rate limiting (DisableRateLimiting)
     /// while authenticated API endpoints are subject to fixed-window limits.
     /// </summary>
+    [Collection("E2E")]
     public class RateLimitingTests : IDisposable
     {
         private readonly TestWebHostFactory _factory;

@@ -68,6 +68,26 @@ public class TradingPerformanceTests
             _applicationContextMock.Object,
             _configProviderMock.Object);
 
+        // Inject default trading config via reflection to avoid
+        // "Value cannot be null (Parameter 'configuration')" errors
+        var defaultConfig = new TradingConfig
+        {
+            Market = "USDT",
+            Exchange = "Binance",
+            ExcludedPairs = new List<string>(),
+            DCALevels = new List<DCALevel>(),
+            BuyType = OrderType.Market,
+            SellType = OrderType.Market,
+            BuyMaxCost = 100m,
+            MaxPairs = 0,
+            VirtualTrading = true,
+            VirtualAccountFilePath = "test-virtual-account.json",
+            VirtualAccountInitialBalance = 10000m
+        };
+        var configField = typeof(ConfigurableServiceBase<TradingConfig>)
+            .GetField("config", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        configField?.SetValue(_sut, defaultConfig);
+
         // Inject account via reflection
         var field = typeof(TradingService).GetField("<Account>k__BackingField",
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);

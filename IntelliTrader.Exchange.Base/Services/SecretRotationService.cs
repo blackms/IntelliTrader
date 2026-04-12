@@ -135,7 +135,6 @@ namespace IntelliTrader.Exchange.Base
                 // Step 3: Verify the live service still works after swap
                 try
                 {
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(_config.VerificationTimeoutSeconds));
                     await exchangeService.GetAvailableAmounts();
                     _loggingService.Info("Credential rotation completed successfully");
                     await NotifyAsync("Secret rotation completed successfully. New API credentials are now active.");
@@ -171,8 +170,6 @@ namespace IntelliTrader.Exchange.Base
 
                 var testApi = new ExchangeBinanceAPI();
                 testApi.LoadAPIKeys(keysFilePath);
-
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(_config.VerificationTimeoutSeconds));
 
                 // Use a lightweight call to verify the credentials work
                 var amounts = await testApi.GetAmountsAvailableToTradeAsync();

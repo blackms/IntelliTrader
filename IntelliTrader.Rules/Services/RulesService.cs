@@ -20,6 +20,7 @@ namespace IntelliTrader.Rules
         IRulesConfig IRulesService.Config => Config;
 
         private readonly List<Action> rulesChangeCallbacks = new List<Action>();
+        private readonly object _callbackLock = new object();
 
         public IModuleRules GetRules(string module)
         {
@@ -78,17 +79,28 @@ namespace IntelliTrader.Rules
 
         public void RegisterRulesChangeCallback(Action callback)
         {
-            rulesChangeCallbacks.Add(callback);
+            lock (_callbackLock)
+            {
+                rulesChangeCallbacks.Add(callback);
+            }
         }
 
         public void UnregisterRulesChangeCallback(Action callback)
         {
-            rulesChangeCallbacks.Remove(callback);
+            lock (_callbackLock)
+            {
+                rulesChangeCallbacks.Remove(callback);
+            }
         }
 
         protected override void OnConfigReloaded()
         {
-            foreach (var callback in rulesChangeCallbacks)
+            Action[] callbacks;
+            lock (_callbackLock)
+            {
+                callbacks = rulesChangeCallbacks.ToArray();
+            }
+            foreach (var callback in callbacks)
             {
                 callback();
             }

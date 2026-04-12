@@ -73,15 +73,25 @@ namespace IntelliTrader.Core
 
         private void OnRawConfigChanged(IConfigurationSection changedRawConfig)
         {
+            bool shouldReload;
             lock (syncRoot)
             {
                 rawConfig = changedRawConfig;
                 config = null;
+
+                if ((DateTimeOffset.Now - lastReloadDate).TotalMilliseconds > DELAY_BETWEEN_CONFIG_RELOADS_MILLISECONDS)
+                {
+                    lastReloadDate = DateTimeOffset.Now;
+                    shouldReload = true;
+                }
+                else
+                {
+                    shouldReload = false;
+                }
             }
 
-            if ((DateTimeOffset.Now - lastReloadDate).TotalMilliseconds > DELAY_BETWEEN_CONFIG_RELOADS_MILLISECONDS)
+            if (shouldReload)
             {
-                lastReloadDate = DateTimeOffset.Now;
                 PrepareConfig();
                 OnConfigReloaded();
                 LoggingService?.Info($"{ServiceName} configuration reloaded");

@@ -62,6 +62,8 @@ namespace IntelliTrader.Trading
         private readonly object _syncRoot = new object();
         public object SyncRoot => _syncRoot;
 
+        private readonly SemaphoreSlim _tradingSemaphore = new SemaphoreSlim(1, 1);
+
         public IModuleRules Rules { get; private set; }
         public TradingRulesConfig RulesConfig { get; private set; }
 
@@ -357,6 +359,19 @@ namespace IntelliTrader.Trading
         // Async trading methods (preferred for new code)
         public async Task BuyAsync(BuyOptions options, CancellationToken cancellationToken = default)
         {
+            await _tradingSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await BuyInternalAsync(options, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _tradingSemaphore.Release();
+            }
+        }
+
+        private async Task BuyInternalAsync(BuyOptions options, CancellationToken cancellationToken)
+        {
             IRule rule = signalsService.Value.Rules.Entries.FirstOrDefault(r => r.Name == options.Metadata.SignalRule);
 
             ITradingPair swappedPair = Account.GetTradingPairs().OrderBy(p => p.CurrentMargin).FirstOrDefault(tradingPair =>
@@ -369,7 +384,7 @@ namespace IntelliTrader.Trading
 
             if (swappedPair != null)
             {
-                await SwapAsync(new SwapOptions(swappedPair.Pair, options.Pair, options.Metadata), cancellationToken).ConfigureAwait(false);
+                await SwapInternalAsync(new SwapOptions(swappedPair.Pair, options.Pair, options.Metadata), cancellationToken).ConfigureAwait(false);
             }
             else if (rule?.Action != Constants.SignalRuleActions.Swap)
             {
@@ -401,6 +416,19 @@ namespace IntelliTrader.Trading
 
         public async Task SellAsync(SellOptions options, CancellationToken cancellationToken = default)
         {
+            await _tradingSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await SellInternalAsync(options, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _tradingSemaphore.Release();
+            }
+        }
+
+        private async Task SellInternalAsync(SellOptions options, CancellationToken cancellationToken)
+        {
             if (CanSell(options, out string message))
             {
                 await InitiateSellAsync(options, cancellationToken).ConfigureAwait(false);
@@ -427,6 +455,19 @@ namespace IntelliTrader.Trading
         }
 
         public async Task SwapAsync(SwapOptions options, CancellationToken cancellationToken = default)
+        {
+            await _tradingSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await SwapInternalAsync(options, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _tradingSemaphore.Release();
+            }
+        }
+
+        private async Task SwapInternalAsync(SwapOptions options, CancellationToken cancellationToken)
         {
             if (!CanSwap(options, out string message))
             {

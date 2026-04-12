@@ -1,8 +1,10 @@
 using Autofac;
 using ExchangeSharp;
 using IntelliTrader.Core;
+using IntelliTrader.Core.Security;
 using System;
 using System.Collections.Generic;
+using System.IO;
 
 namespace IntelliTrader
 {
@@ -25,6 +27,14 @@ namespace IntelliTrader
                     parsedArgs.ContainsKey("publickey") && parsedArgs.ContainsKey("privatekey"))
                 {
                     EncryptKeys(parsedArgs);
+                }
+                else if (parsedArgs.ContainsKey("encrypt-config") && parsedArgs.ContainsKey("password"))
+                {
+                    EncryptConfigFiles(parsedArgs["password"]);
+                }
+                else if (parsedArgs.ContainsKey("decrypt-config") && parsedArgs.ContainsKey("password"))
+                {
+                    DecryptConfigFiles(parsedArgs["password"]);
                 }
                 else
                 {
@@ -109,14 +119,83 @@ namespace IntelliTrader
             Console.ReadKey();
         }
 
+        private static void EncryptConfigFiles(string password)
+        {
+            var configDir = Path.Combine(Directory.GetCurrentDirectory(), "config");
+            if (!Directory.Exists(configDir))
+            {
+                Console.WriteLine($"Config directory not found: {configDir}");
+                return;
+            }
+
+            foreach (var file in Directory.GetFiles(configDir, "*.json"))
+            {
+                string content = File.ReadAllText(file);
+                if (ConfigEncryption.IsEncrypted(content))
+                {
+                    Console.WriteLine($"  Skipped (already encrypted): {Path.GetFileName(file)}");
+                    continue;
+                }
+
+                string encrypted = ConfigEncryption.Encrypt(content, password);
+                File.WriteAllText(file, encrypted);
+                Console.WriteLine($"  Encrypted: {Path.GetFileName(file)}");
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("All config files encrypted. Set INTELLITRADER_MASTER_PASSWORD to the same password at runtime.");
+        }
+
+        private static void DecryptConfigFiles(string password)
+        {
+            var configDir = Path.Combine(Directory.GetCurrentDirectory(), "config");
+            if (!Directory.Exists(configDir))
+            {
+                Console.WriteLine($"Config directory not found: {configDir}");
+                return;
+            }
+
+            foreach (var file in Directory.GetFiles(configDir, "*.json"))
+            {
+                string content = File.ReadAllText(file);
+                if (!ConfigEncryption.IsEncrypted(content))
+                {
+                    Console.WriteLine($"  Skipped (not encrypted): {Path.GetFileName(file)}");
+                    continue;
+                }
+
+                try
+                {
+                    string decrypted = ConfigEncryption.Decrypt(content, password);
+                    File.WriteAllText(file, decrypted);
+                    Console.WriteLine($"  Decrypted: {Path.GetFileName(file)}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"  FAILED to decrypt {Path.GetFileName(file)}: {ex.Message}");
+                }
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("Config files decrypted.");
+        }
+
         private static void PrintUsage()
         {
             Console.WriteLine();
-            Console.WriteLine("Usage: dotnet IntelliTrader.dll --encrypt --path=<output_path> --publickey=<public_key> --privatekey=<private_key>");
-            Console.WriteLine("The encrypted file is only valid for the current user and only on the computer it is created on.");
+            Console.WriteLine("Usage:");
             Console.WriteLine();
-            Console.WriteLine("Press any key to exit...");
-            Console.ReadKey();
+            Console.WriteLine("  Encrypt API keys:");
+            Console.WriteLine("    dotnet IntelliTrader.dll --encrypt --path=<output_path> --publickey=<key> --privatekey=<secret>");
+            Console.WriteLine();
+            Console.WriteLine("  Encrypt config files:");
+            Console.WriteLine("    dotnet IntelliTrader.dll --encrypt-config --password=<master_password>");
+            Console.WriteLine();
+            Console.WriteLine("  Decrypt config files:");
+            Console.WriteLine("    dotnet IntelliTrader.dll --decrypt-config --password=<master_password>");
+            Console.WriteLine();
+            Console.WriteLine("  At runtime, set INTELLITRADER_MASTER_PASSWORD env var to auto-decrypt encrypted configs.");
+            Console.WriteLine();
         }
 
         private static Dictionary<string, string> ParseCommandLineArgs(string[] args)

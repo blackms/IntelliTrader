@@ -21,6 +21,7 @@ namespace IntelliTrader.Core
             public const string BacktestingService = "Backtesting";
             public const string BacktestingExchangeService = "BacktestingExchange";
             public const string BacktestingSignalsService = "BacktestingSignals";
+            public const string AlertingService = "Alerting";
         }
 
         public static class Caching

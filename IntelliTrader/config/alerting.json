@@ -1,0 +1,12 @@
+{
+  "Alerting": {
+    "Enabled": true,
+    "CheckIntervalSeconds": 60,
+    "TradingSuspendedAlert": true,
+    "HealthCheckFailureThreshold": 3,
+    "SignalStalenessMinutes": 5,
+    "ConnectivityAlertEnabled": true,
+    "ConsecutiveOrderFailureThreshold": 3,
+    "HighErrorRateThreshold": 0.5
+  }
+}

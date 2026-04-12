@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -58,7 +59,8 @@ public static class TelemetryServiceCollectionExtensions
                     .AddMeter(TradingTelemetry.Meter.Name)
                     .AddAspNetCoreInstrumentation()
                     .AddRuntimeInstrumentation()
-                    .AddHttpClientInstrumentation();
+                    .AddHttpClientInstrumentation()
+                    .AddPrometheusExporter();
 
                 if (enableConsoleExporter)
                 {
@@ -67,6 +69,18 @@ public static class TelemetryServiceCollectionExtensions
             });
 
         return services;
+    }
+
+    /// <summary>
+    /// Adds the Prometheus scraping endpoint to the application pipeline.
+    /// Exposes metrics at /metrics in Prometheus exposition format.
+    /// </summary>
+    /// <param name="app">The application builder.</param>
+    /// <returns>The application builder for chaining.</returns>
+    public static IApplicationBuilder UseIntelliTraderPrometheusEndpoint(this IApplicationBuilder app)
+    {
+        app.UseOpenTelemetryPrometheusScrapingEndpoint();
+        return app;
     }
 
     /// <summary>
@@ -116,7 +130,8 @@ public static class TelemetryServiceCollectionExtensions
                     .AddMeter(TradingTelemetry.Meter.Name)
                     .AddAspNetCoreInstrumentation()
                     .AddRuntimeInstrumentation()
-                    .AddHttpClientInstrumentation();
+                    .AddHttpClientInstrumentation()
+                    .AddPrometheusExporter();
             });
 
         return services;

@@ -663,7 +663,7 @@ namespace IntelliTrader.Web.Controllers
                 {
                     logFiles = logFiles.Where(f =>
                     {
-                        var lastWrite = File.GetLastWriteTimeUtc(f);
+                        var lastWrite = System.IO.File.GetLastWriteTimeUtc(f);
                         return lastWrite >= date.Value.UtcDateTime.Date;
                     });
                 }

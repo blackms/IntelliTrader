@@ -316,7 +316,7 @@ public class SignalsServiceTests
     }
 
     [Fact]
-    public void GetAllSignals_WithNoReceivers_ReturnsNull()
+    public void GetAllSignals_WithNoReceivers_ReturnsEmpty()
     {
         // Arrange
         SetupConfig();
@@ -325,7 +325,7 @@ public class SignalsServiceTests
         var result = _sut.GetAllSignals();
 
         // Assert
-        result.Should().BeNull();
+        result.Should().BeEmpty();
     }
 
     #endregion
@@ -381,7 +381,7 @@ public class SignalsServiceTests
     }
 
     [Fact]
-    public void GetSignalsByName_WithNonExistentName_ReturnsNull()
+    public void GetSignalsByName_WithNonExistentName_ReturnsEmpty()
     {
         // Arrange
         CreateMockReceiver("Signal1", 60, new[] { CreateSignal("Signal1", "BTCUSDT", 0.8) });
@@ -393,7 +393,7 @@ public class SignalsServiceTests
         var result = _sut.GetSignalsByName("NonExistent");
 
         // Assert
-        result.Should().BeNull();
+        result.Should().BeEmpty();
     }
 
     #endregion

@@ -45,8 +45,6 @@ IntelliTrader.sln
 +-- IntelliTrader.Exchange.Binance/   # Binance implementation with Polly resilience
 +-- IntelliTrader.Web/                # ASP.NET Core dashboard, SignalR
 +-- IntelliTrader.Backtesting/        # Historical replay engine
-+-- IntelliTrader.Integration.Base/   # Integration service abstraction
-+-- IntelliTrader.Integration.ProfitTrailer/ # ProfitTrailer compatibility
 ```
 
 ---
@@ -530,24 +528,6 @@ IntelliTrader.sln
 
 ---
 
-### IntelliTrader.Integration.Base
-
-**Purpose:** External system integration abstraction
-
-#### Services
-
-| Service | Interface | Description |
-|---------|-----------|-------------|
-| `IntegrationService` | `IIntegrationService` | Third-party integration management |
-
----
-
-### IntelliTrader.Integration.ProfitTrailer
-
-**Purpose:** ProfitTrailer compatibility layer (placeholder)
-
----
-
 ## Dependency Graph
 
 ### Internal Project Dependencies
@@ -589,8 +569,6 @@ graph TB
 
     subgraph "Support Layer"
         Backtest[IntelliTrader.Backtesting]
-        IntBase[IntelliTrader.Integration.Base]
-        IntPT[IntelliTrader.Integration.ProfitTrailer]
     end
 
     %% Main executable dependencies
@@ -598,8 +576,6 @@ graph TB
     IT --> Backtest
     IT --> ExBase
     IT --> ExBinance
-    IT --> IntBase
-    IT --> IntPT
     IT --> Rules
     IT --> SigBase
     IT --> SigTV
@@ -637,9 +613,6 @@ graph TB
     Backtest --> Core
     Backtest --> ExBase
     Backtest --> SigBase
-    IntBase --> Core
-    IntPT --> Core
-    IntPT --> IntBase
 ```
 
 ### External Package Dependencies

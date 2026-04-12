@@ -1,4 +1,4 @@
-﻿{
+{
   "Paths": {
     "Core": "core.json",
     "Caching":  "caching.json",
@@ -11,6 +11,7 @@
     "Notification": "notification.json",
     "Web": "web.json",
     "Backtesting": "backtesting.json",
+    "Alerting": "alerting.json",
     "SecretRotation": "secret-rotation.json"
   }
 }

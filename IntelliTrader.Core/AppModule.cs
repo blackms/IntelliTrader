@@ -1,4 +1,4 @@
-﻿using Autofac;
+using Autofac;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -16,6 +16,7 @@ namespace IntelliTrader.Core
             builder.RegisterType<CachingService>().As<ICachingService>().As<IConfigurableService>().Named<IConfigurableService>(Constants.ServiceNames.CachingService).SingleInstance();
             builder.RegisterType<LoggingService>().As<ILoggingService>().As<IConfigurableService>().Named<IConfigurableService>(Constants.ServiceNames.LoggingService).SingleInstance();
             builder.RegisterType<NotificationService>().As<INotificationService>().As<IConfigurableService>().Named<IConfigurableService>(Constants.ServiceNames.NotificationService).SingleInstance();
+            builder.RegisterType<AlertingService>().As<IAlertingService>().As<IConfigurableService>().Named<IConfigurableService>(Constants.ServiceNames.AlertingService).SingleInstance();
 
             // Audit logging — reads config from config/audit.json (falls back to defaults if missing)
             builder.Register(_ => LoadAuditConfig()).SingleInstance();

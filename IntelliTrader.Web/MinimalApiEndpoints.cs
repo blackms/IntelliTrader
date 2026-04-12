@@ -1,4 +1,5 @@
 using IntelliTrader.Core;
+using IntelliTrader.Web.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
@@ -98,7 +99,7 @@ namespace IntelliTrader.Web
                 .Produces(StatusCodes.Status503ServiceUnavailable);
 
             var apiGroup = endpoints.MapGroup("/api")
-                .RequireAuthorization()
+                .RequireAuthorization(AuthPolicies.ViewerOrAbove)
                 .RequireRateLimiting("status");
 
             // GET /api/status - Get current trading status

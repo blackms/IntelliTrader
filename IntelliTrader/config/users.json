@@ -1,0 +1,10 @@
+{
+  "_comment": "Role-Based Access Control configuration. Roles: Admin (full access), Trader (trading operations), Viewer (read-only dashboard). Generate password hashes using POST /GeneratePasswordHash after logging in as Admin.",
+  "Users": [
+    {
+      "Username": "admin",
+      "PasswordHash": "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4/jJrZk.oB8C6.Hy",
+      "Role": "Admin"
+    }
+  ]
+}

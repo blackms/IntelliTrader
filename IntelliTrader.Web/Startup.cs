@@ -4,6 +4,7 @@ using IntelliTrader.Infrastructure.Telemetry;
 using IntelliTrader.Web.BackgroundServices;
 using IntelliTrader.Web.Hubs;
 using IntelliTrader.Web.Middleware;
+using IntelliTrader.Web.Models;
 using IntelliTrader.Web.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
@@ -18,6 +19,7 @@ using Microsoft.OpenApi.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.Json;
 using System.Threading.RateLimiting;
 
 namespace IntelliTrader.Web
@@ -70,6 +72,35 @@ namespace IntelliTrader.Web
             {
                 options.LoginPath = "/Login";
                 options.Cookie.Name = $"{nameof(IntelliTrader)}_{coreService.Config.InstanceName}";
+            });
+
+            // Load users.json for RBAC if it exists, otherwise fall back to legacy single-password mode
+            var usersConfigPath = Path.Combine(Directory.GetCurrentDirectory(), "config", "users.json");
+            UsersConfig usersConfig = null;
+            if (File.Exists(usersConfigPath))
+            {
+                try
+                {
+                    var usersJson = File.ReadAllText(usersConfigPath);
+                    usersConfig = JsonSerializer.Deserialize<UsersConfig>(usersJson, new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+                }
+                catch
+                {
+                    // If users.json is malformed, fall back to legacy mode
+                    usersConfig = null;
+                }
+            }
+            services.AddSingleton(usersConfig ?? new UsersConfig());
+
+            // Configure role-based authorization policies
+            services.AddAuthorization(options =>
+            {
+                options.AddPolicy(AuthPolicies.AdminOnly, p => p.RequireRole(UserRoles.Admin));
+                options.AddPolicy(AuthPolicies.TraderOrAbove, p => p.RequireRole(UserRoles.Admin, UserRoles.Trader));
+                options.AddPolicy(AuthPolicies.ViewerOrAbove, p => p.RequireRole(UserRoles.Admin, UserRoles.Trader, UserRoles.Viewer));
             });
 
             services.AddControllersWithViews()

@@ -16,6 +16,7 @@ namespace IntelliTrader.Core
         ITradingService tradingService,
         IWebService webService,
         IBacktestingService backtestingService,
+        IAlertingService alertingService,
         IApplicationContext applicationContext,
         IConfigProvider configProvider,
         Lazy<ISecretRotationService> secretRotationService) : ConfigurableServiceBase<CoreConfig>(configProvider), ICoreService
@@ -74,6 +75,7 @@ namespace IntelliTrader.Core
             {
                 webService.Start();
             }
+            alertingService.Start();
 
             try
             {
@@ -122,6 +124,7 @@ namespace IntelliTrader.Core
             {
                 backtestingService.Stop();
             }
+            alertingService.Stop();
 
             try
             {

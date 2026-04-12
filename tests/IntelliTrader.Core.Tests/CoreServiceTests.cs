@@ -15,6 +15,7 @@ public class CoreServiceTests
     private readonly Mock<ITradingService> _tradingServiceMock;
     private readonly Mock<IWebService> _webServiceMock;
     private readonly Mock<IBacktestingService> _backtestingServiceMock;
+    private readonly Mock<IAlertingService> _alertingServiceMock;
     private readonly Mock<IApplicationContext> _applicationContextMock;
     private readonly Mock<IConfigProvider> _configProviderMock;
     private readonly Mock<ISecretRotationService> _secretRotationServiceMock;
@@ -28,7 +29,9 @@ public class CoreServiceTests
         _tradingServiceMock = new Mock<ITradingService>();
         _webServiceMock = new Mock<IWebService>();
         _backtestingServiceMock = new Mock<IBacktestingService>();
+        _alertingServiceMock = new Mock<IAlertingService>();
         _applicationContextMock = new Mock<IApplicationContext>();
+        _applicationContextMock.Setup(x => x.Speed).Returns(1.0);
         _configProviderMock = new Mock<IConfigProvider>();
         _secretRotationServiceMock = new Mock<ISecretRotationService>();
 
@@ -85,6 +88,7 @@ public class CoreServiceTests
             _tradingServiceMock.Object,
             _webServiceMock.Object,
             _backtestingServiceMock.Object,
+            _alertingServiceMock.Object,
             _applicationContextMock.Object,
             _configProviderMock.Object,
             new Lazy<ISecretRotationService>(() => _secretRotationServiceMock.Object)
@@ -352,7 +356,6 @@ public class CoreServiceTests
     #region Service Lifecycle Start Tests
 
     // Note: The following tests require the config directory to exist and are marked as integration tests.
-    // They test the full service lifecycle which depends on the Application.ConfigProvider static class.
     // To run these tests, ensure the config directory exists at the test output location.
 
     [Fact(Skip = "Requires config directory - integration test")]

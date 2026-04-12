@@ -11,9 +11,7 @@ namespace IntelliTrader.Backtesting.Tests;
 
 /// <summary>
 /// Tests for IBacktestingService interface behavior and BacktestingService functionality.
-/// Since BacktestingService depends on static Application.ConfigProvider, these tests
-/// focus on testing the interface contract and behavior through mocks where direct
-/// instantiation is not possible.
+/// These tests focus on testing the interface contract and behavior through mocks.
 /// </summary>
 public class BacktestingServiceInterfaceTests
 {

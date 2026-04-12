@@ -90,7 +90,8 @@ public class HomeControllerTests
             _healthCheckServiceMock.Object,
             _passwordServiceMock.Object,
             _configProviderMock.Object,
-            _configurableServices);
+            _configurableServices,
+            new UsersConfig());
 
         // Setup HttpContext for controller
         var httpContext = new DefaultHttpContext();
@@ -114,7 +115,8 @@ public class HomeControllerTests
             _healthCheckServiceMock.Object,
             _passwordServiceMock.Object,
             _configProviderMock.Object,
-            _configurableServices);
+            _configurableServices,
+            new UsersConfig());
 
         // Assert
         act.Should().Throw<ArgumentNullException>().WithParameterName("coreService");
@@ -132,7 +134,8 @@ public class HomeControllerTests
             _healthCheckServiceMock.Object,
             _passwordServiceMock.Object,
             _configProviderMock.Object,
-            _configurableServices);
+            _configurableServices,
+            new UsersConfig());
 
         // Assert
         act.Should().Throw<ArgumentNullException>().WithParameterName("tradingService");
@@ -150,7 +153,8 @@ public class HomeControllerTests
             _healthCheckServiceMock.Object,
             null!,
             _configProviderMock.Object,
-            _configurableServices);
+            _configurableServices,
+            new UsersConfig());
 
         // Assert
         act.Should().Throw<ArgumentNullException>().WithParameterName("passwordService");

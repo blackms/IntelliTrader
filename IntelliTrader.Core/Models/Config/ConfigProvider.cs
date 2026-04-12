@@ -1,8 +1,10 @@
 using IntelliTrader.Core.Exceptions;
+using IntelliTrader.Core.Security;
 using IntelliTrader.Core.Validation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Primitives;
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 
 namespace IntelliTrader.Core
@@ -23,6 +25,11 @@ namespace IntelliTrader.Core
 
         // Flag to enable/disable validation (can be toggled for testing or specific scenarios)
         private bool _validationEnabled = true;
+
+        // Tracks which config files were originally encrypted so we re-encrypt on save
+        private readonly ConcurrentDictionary<string, bool> _encryptedFiles = new ConcurrentDictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+
+        private const string MasterPasswordEnvVar = "INTELLITRADER_MASTER_PASSWORD";
 
         public ConfigProvider() : this(new ConfigValidationService())
         {
@@ -91,7 +98,8 @@ namespace IntelliTrader.Core
                 }
 
                 fullConfigPath = Path.Combine(Directory.GetCurrentDirectory(), ROOT_CONFIG_DIR, configPath);
-                return File.ReadAllText(fullConfigPath);
+                string content = File.ReadAllText(fullConfigPath);
+                return DecryptIfNeeded(content, fullConfigPath);
             }
             catch (FileNotFoundException ex)
             {
@@ -130,7 +138,8 @@ namespace IntelliTrader.Core
                 }
 
                 fullConfigPath = Path.Combine(Directory.GetCurrentDirectory(), ROOT_CONFIG_DIR, configPath);
-                File.WriteAllText(fullConfigPath, definition);
+                string contentToWrite = EncryptIfNeeded(definition, fullConfigPath);
+                File.WriteAllText(fullConfigPath, contentToWrite);
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -199,16 +208,108 @@ namespace IntelliTrader.Core
 
         private IConfigurationRoot GetConfig(string configPath, Action<IConfigurationRoot> onChange)
         {
-            var fullConfigPath = Path.Combine(Directory.GetCurrentDirectory(), ROOT_CONFIG_DIR);
+            var fullConfigDir = Path.Combine(Directory.GetCurrentDirectory(), ROOT_CONFIG_DIR);
+            var fullFilePath = Path.Combine(fullConfigDir, configPath);
+
+            // Check if the file is encrypted; if so, decrypt to a temp file
+            // so the JSON configuration provider can parse it.
+            string effectivePath = configPath;
+            string effectiveBaseDir = fullConfigDir;
+
+            if (File.Exists(fullFilePath))
+            {
+                string raw = File.ReadAllText(fullFilePath);
+                if (ConfigEncryption.IsEncrypted(raw))
+                {
+                    _encryptedFiles[fullFilePath] = true;
+                    string masterPassword = Environment.GetEnvironmentVariable(MasterPasswordEnvVar);
+                    if (string.IsNullOrEmpty(masterPassword))
+                    {
+                        LogError($"Config file '{configPath}' is encrypted but {MasterPasswordEnvVar} is not set. Cannot decrypt.");
+                    }
+                    else
+                    {
+                        try
+                        {
+                            string decrypted = ConfigEncryption.Decrypt(raw, masterPassword);
+                            // Write a decrypted temporary file that the JSON provider can read.
+                            // Place it in the system temp directory so we don't pollute the config folder.
+                            string tempFile = Path.Combine(Path.GetTempPath(), $"intellitrader_cfg_{Path.GetFileName(configPath)}");
+                            File.WriteAllText(tempFile, decrypted);
+                            effectivePath = Path.GetFileName(tempFile);
+                            effectiveBaseDir = Path.GetDirectoryName(tempFile);
+                        }
+                        catch (Exception ex)
+                        {
+                            LogError($"Failed to decrypt config file '{configPath}'.", ex);
+                        }
+                    }
+                }
+            }
 
             var configBuilder = new ConfigurationBuilder()
-                 .SetBasePath(fullConfigPath)
-                 .AddJsonFile(configPath, optional: false, reloadOnChange: true)
+                 .SetBasePath(effectiveBaseDir)
+                 .AddJsonFile(effectivePath, optional: false, reloadOnChange: true)
                  .AddEnvironmentVariables(prefix: "INTELLITRADER_");
 
             var configRoot = configBuilder.Build();
             ChangeToken.OnChange(configRoot.GetReloadToken, () => onChange(configRoot));
             return configRoot;
+        }
+
+        /// <summary>
+        /// Decrypts content if it starts with the ENC: prefix.
+        /// Returns plaintext JSON on success, or the original content on failure / if not encrypted.
+        /// </summary>
+        private string DecryptIfNeeded(string content, string filePath)
+        {
+            if (!ConfigEncryption.IsEncrypted(content))
+                return content;
+
+            _encryptedFiles[filePath] = true;
+
+            string masterPassword = Environment.GetEnvironmentVariable(MasterPasswordEnvVar);
+            if (string.IsNullOrEmpty(masterPassword))
+            {
+                LogError($"Config file '{filePath}' is encrypted but {MasterPasswordEnvVar} is not set. Cannot decrypt.");
+                return null;
+            }
+
+            try
+            {
+                return ConfigEncryption.Decrypt(content, masterPassword);
+            }
+            catch (Exception ex)
+            {
+                LogError($"Failed to decrypt config file '{filePath}'.", ex);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Re-encrypts content if the file was originally loaded as encrypted.
+        /// </summary>
+        private string EncryptIfNeeded(string content, string filePath)
+        {
+            if (!_encryptedFiles.TryGetValue(filePath, out bool wasEncrypted) || !wasEncrypted)
+                return content;
+
+            string masterPassword = Environment.GetEnvironmentVariable(MasterPasswordEnvVar);
+            if (string.IsNullOrEmpty(masterPassword))
+            {
+                LogError($"Cannot re-encrypt config file '{filePath}': {MasterPasswordEnvVar} is not set. Saving as plaintext.");
+                return content;
+            }
+
+            try
+            {
+                return ConfigEncryption.Encrypt(content, masterPassword);
+            }
+            catch (Exception ex)
+            {
+                LogError($"Failed to re-encrypt config file '{filePath}'. Saving as plaintext.", ex);
+                return content;
+            }
         }
     }
 }

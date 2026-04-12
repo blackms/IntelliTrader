@@ -17,7 +17,7 @@ using System.Threading.Tasks;
 
 namespace IntelliTrader.Web.Controllers
 {
-    [Authorize]
+    [Authorize(Policy = AuthPolicies.ViewerOrAbove)]
     public class HomeController : Controller
     {
         private readonly ICoreService _coreService;
@@ -29,6 +29,7 @@ namespace IntelliTrader.Web.Controllers
         private readonly IConfigProvider _configProvider;
         private readonly IEnumerable<IConfigurableService> _configurableServices;
         private readonly IPortfolioRiskManager _portfolioRiskManager;
+        private readonly UsersConfig _usersConfig;
 
         public HomeController(
             ICoreService coreService,
@@ -39,6 +40,7 @@ namespace IntelliTrader.Web.Controllers
             IPasswordService passwordService,
             IConfigProvider configProvider,
             IEnumerable<IConfigurableService> configurableServices,
+            UsersConfig usersConfig,
             IPortfolioRiskManager portfolioRiskManager = null)
         {
             _coreService = coreService ?? throw new ArgumentNullException(nameof(coreService));
@@ -49,25 +51,33 @@ namespace IntelliTrader.Web.Controllers
             _passwordService = passwordService ?? throw new ArgumentNullException(nameof(passwordService));
             _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
             _configurableServices = configurableServices ?? throw new ArgumentNullException(nameof(configurableServices));
+            _usersConfig = usersConfig ?? throw new ArgumentNullException(nameof(usersConfig));
             _portfolioRiskManager = portfolioRiskManager; // Optional - may be null if not registered
         }
+
+        /// <summary>
+        /// Whether RBAC mode is active (users.json has users defined).
+        /// When false, falls back to legacy single-password mode from core.json.
+        /// </summary>
+        private bool IsRbacEnabled => _usersConfig.Users != null && _usersConfig.Users.Count > 0;
 
         #region Authentication
 
         [AllowAnonymous]
         public async Task<IActionResult> Login()
         {
-            if (_coreService.Config.PasswordProtected)
+            if (_coreService.Config.PasswordProtected || IsRbacEnabled)
             {
                 var model = new LoginViewModel
                 {
-                    RememberMe = true
+                    RememberMe = true,
+                    UsesRbac = IsRbacEnabled
                 };
                 return View(model);
             }
             else
             {
-                return await PerformLogin(true);
+                return await PerformLogin("user", UserRoles.Admin, true);
             }
         }
 
@@ -77,23 +87,48 @@ namespace IntelliTrader.Web.Controllers
         {
             if (ModelState.IsValid)
             {
-                var isValid = !_coreService.Config.PasswordProtected ||
-                    _passwordService.VerifyPassword(model.Password, _coreService.Config.Password);
-                if (!isValid)
+                if (IsRbacEnabled)
                 {
-                    ModelState.AddModelError("Password", "Invalid Password");
-                    return View(model);
+                    // RBAC mode: validate username + password against users.json
+                    if (string.IsNullOrWhiteSpace(model.Username))
+                    {
+                        ModelState.AddModelError("Username", "Username is required");
+                        return View(model);
+                    }
+
+                    var user = _usersConfig.Users.Find(u =>
+                        string.Equals(u.Username, model.Username, StringComparison.OrdinalIgnoreCase));
+
+                    if (user == null || !_passwordService.VerifyPassword(model.Password, user.PasswordHash))
+                    {
+                        ModelState.AddModelError("Password", "Invalid username or password");
+                        return View(model);
+                    }
+
+                    return await PerformLogin(user.Username, user.Role, model.RememberMe);
                 }
                 else
                 {
-                    // Log warning if using legacy MD5 hash - admin should migrate to BCrypt
-                    if (_passwordService.IsLegacyHash(_coreService.Config.Password))
+                    // Legacy single-password mode: validate against core.json Password
+                    var isValid = !_coreService.Config.PasswordProtected ||
+                        _passwordService.VerifyPassword(model.Password, _coreService.Config.Password);
+                    if (!isValid)
                     {
-                        _loggingService.Warning(
-                            "SECURITY WARNING: Password is using legacy MD5 hash. " +
-                            "Please generate a new BCrypt hash using /GeneratePasswordHash endpoint and update core.json");
+                        ModelState.AddModelError("Password", "Invalid Password");
+                        return View(model);
                     }
-                    return await PerformLogin(model.RememberMe);
+                    else
+                    {
+                        // Log warning if using legacy MD5 hash - admin should migrate to BCrypt
+                        if (_passwordService.IsLegacyHash(_coreService.Config.Password))
+                        {
+                            _loggingService.Warning(
+                                "SECURITY WARNING: Password is using legacy MD5 hash. " +
+                                "Please generate a new BCrypt hash using /GeneratePasswordHash endpoint and update core.json");
+                        }
+                        // Legacy mode: all authenticated users get Admin role for backward compatibility
+                        return await PerformLogin("user", UserRoles.Admin, model.RememberMe);
+                    }
                 }
             }
             else
@@ -109,12 +144,12 @@ namespace IntelliTrader.Web.Controllers
             return RedirectToAction(nameof(Login));
         }
 
-        private async Task<IActionResult> PerformLogin(bool persistent)
+        private async Task<IActionResult> PerformLogin(string username, string role, bool persistent)
         {
             var identity = new ClaimsIdentity(CookieAuthenticationDefaults.AuthenticationScheme, ClaimTypes.Name, ClaimTypes.Role);
-            var name = "user";
-            identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, name));
-            identity.AddClaim(new Claim(ClaimTypes.Name, name));
+            identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, username));
+            identity.AddClaim(new Claim(ClaimTypes.Name, username));
+            identity.AddClaim(new Claim(ClaimTypes.Role, role));
             var principal = new ClaimsPrincipal(identity);
             await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, new AuthenticationProperties { IsPersistent = persistent });
 
@@ -130,18 +165,18 @@ namespace IntelliTrader.Web.Controllers
 
         /// <summary>
         /// Generates a secure BCrypt hash for a password.
-        /// Use this endpoint to create a hash for core.json configuration.
+        /// Use this endpoint to create a hash for users.json or core.json configuration.
         ///
-        /// SECURITY NOTE: This endpoint requires authentication. Only authenticated
-        /// administrators can generate password hashes.
+        /// SECURITY NOTE: This endpoint requires Admin role.
         ///
         /// USAGE:
         /// 1. POST /GeneratePasswordHash with {"password": "your-new-password"}
-        /// 2. Copy the returned hash to core.json Password field
+        /// 2. Copy the returned hash to users.json PasswordHash field (or core.json Password for legacy mode)
         /// 3. Restart the service
         /// </summary>
         [HttpPost]
         [ValidateAntiForgeryToken]
+        [Authorize(Policy = AuthPolicies.AdminOnly)]
         public IActionResult GeneratePasswordHash([FromForm] string password)
         {
             if (string.IsNullOrEmpty(password))
@@ -168,6 +203,7 @@ namespace IntelliTrader.Web.Controllers
         /// Returns information about the current password hash type.
         /// Useful for administrators to check if migration to BCrypt is needed.
         /// </summary>
+        [Authorize(Policy = AuthPolicies.AdminOnly)]
         public IActionResult PasswordStatus()
         {
             var currentHash = _coreService.Config.Password;
@@ -282,6 +318,7 @@ namespace IntelliTrader.Web.Controllers
             return View(model);
         }
 
+        [Authorize(Policy = AuthPolicies.AdminOnly)]
         public IActionResult Settings()
         {
             var model = new SettingsViewModel()
@@ -468,6 +505,7 @@ namespace IntelliTrader.Web.Controllers
         [HttpPost]
         [ValidateAntiForgeryToken]
         [EnableRateLimiting("config")]
+        [Authorize(Policy = AuthPolicies.AdminOnly)]
         public IActionResult Settings(SettingsViewModel model)
         {
             _coreService.Config.HealthCheckEnabled = model.HealthCheckEnabled;
@@ -489,6 +527,7 @@ namespace IntelliTrader.Web.Controllers
         [HttpPost]
         [ValidateAntiForgeryToken]
         [EnableRateLimiting("config")]
+        [Authorize(Policy = AuthPolicies.AdminOnly)]
         public IActionResult SaveConfig([FromForm] ConfigUpdateModel model)
         {
             if (!ModelState.IsValid)
@@ -509,6 +548,7 @@ namespace IntelliTrader.Web.Controllers
         [HttpPost]
         [ValidateAntiForgeryToken]
         [EnableRateLimiting("trading")]
+        [Authorize(Policy = AuthPolicies.TraderOrAbove)]
         public IActionResult Sell([FromForm] SellInputModel model)
         {
             if (!ModelState.IsValid)
@@ -527,6 +567,7 @@ namespace IntelliTrader.Web.Controllers
         [HttpPost]
         [ValidateAntiForgeryToken]
         [EnableRateLimiting("trading")]
+        [Authorize(Policy = AuthPolicies.TraderOrAbove)]
         public IActionResult Buy([FromForm] BuyInputModel model)
         {
             if (!ModelState.IsValid)
@@ -546,6 +587,7 @@ namespace IntelliTrader.Web.Controllers
         [HttpPost]
         [ValidateAntiForgeryToken]
         [EnableRateLimiting("trading")]
+        [Authorize(Policy = AuthPolicies.TraderOrAbove)]
         public IActionResult BuyDefault([FromForm] BuyDefaultInputModel model)
         {
             if (!ModelState.IsValid)
@@ -569,6 +611,7 @@ namespace IntelliTrader.Web.Controllers
         [HttpPost]
         [ValidateAntiForgeryToken]
         [EnableRateLimiting("trading")]
+        [Authorize(Policy = AuthPolicies.TraderOrAbove)]
         public IActionResult Swap([FromForm] SwapInputModel model)
         {
             if (!ModelState.IsValid)
@@ -583,12 +626,14 @@ namespace IntelliTrader.Web.Controllers
             return Ok();
         }
 
+        [Authorize(Policy = AuthPolicies.AdminOnly)]
         public IActionResult RefreshAccount()
         {
             _tradingService.Account.Refresh();
             return new OkResult();
         }
 
+        [Authorize(Policy = AuthPolicies.AdminOnly)]
         public IActionResult RestartServices()
         {
             _coreService.Restart();

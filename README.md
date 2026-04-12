@@ -521,6 +521,35 @@ docker compose -f docker-compose.yml up -d
 
 **Live trading inside compose** — drop an encrypted `keys.bin` next to `docker-compose.yml` and uncomment the corresponding bind mount in the file. The same encryption command shown above for plain Docker applies.
 
+### Deploying to Kubernetes with Helm
+
+A Helm chart is provided under `deploy/helm/intellitrader/`.
+
+```bash
+# Install (virtual trading, default values)
+helm install intellitrader deploy/helm/intellitrader
+
+# Install with custom config overrides
+helm install intellitrader deploy/helm/intellitrader \
+  --set image.repository=ghcr.io/blackms/intellitrader \
+  --set image.tag=v1.0.0 \
+  --set-file config.files.trading\\.json=./my-trading.json
+
+# Check the deployment
+kubectl get pods -l app.kubernetes.io/name=intellitrader
+kubectl logs -f deployment/intellitrader
+
+# Upgrade
+helm upgrade intellitrader deploy/helm/intellitrader --reuse-values
+
+# Uninstall
+helm uninstall intellitrader
+```
+
+The chart includes Deployment, Service, ConfigMap, Secret, PVC, Ingress (optional), HPA (optional), and ServiceAccount templates. Liveness and readiness probes point at `/health/live` and `/health/ready` respectively. See `deploy/helm/intellitrader/values.yaml` for the full set of configurable parameters.
+
+> **Note**: IntelliTrader is a stateful singleton — the HPA defaults to `maxReplicas: 1`. Do not scale beyond 1 without external state coordination.
+
 <br />
 
 ## 🔌 API Overview

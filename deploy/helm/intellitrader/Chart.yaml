@@ -1,0 +1,16 @@
+apiVersion: v2
+name: intellitrader
+description: A Helm chart for deploying IntelliTrader cryptocurrency trading bot to Kubernetes
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - trading
+  - cryptocurrency
+  - binance
+maintainers:
+  - name: Alessio Rocchi
+    url: https://github.com/blackms
+home: https://github.com/blackms/IntelliTrader
+sources:
+  - https://github.com/blackms/IntelliTrader

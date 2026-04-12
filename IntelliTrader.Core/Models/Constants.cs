@@ -153,9 +153,9 @@ namespace IntelliTrader.Core
 
             /// <summary>
             /// Maximum retry attempts for order operations.
-            /// CRITICAL: Keep at 1 to prevent duplicate orders.
+            /// CRITICAL: Must be 0 — orders must not be retried to prevent duplicates.
             /// </summary>
-            public const int DefaultOrderMaxRetryAttempts = 1;
+            public const int DefaultOrderMaxRetryAttempts = 0;
 
             /// <summary>Initial delay before first retry for orders (ms)</summary>
             public const int DefaultOrderInitialDelayMs = 500;

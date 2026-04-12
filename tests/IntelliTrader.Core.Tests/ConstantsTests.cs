@@ -172,8 +172,8 @@ public class ConstantsTests
     [Fact]
     public void Resilience_OrderMaxRetryAttempts_IsMinimal()
     {
-        // Orders should have minimal retries to prevent duplicate orders
-        Constants.Resilience.DefaultOrderMaxRetryAttempts.Should().BeLessThanOrEqualTo(2);
+        // Orders must NOT be retried to prevent duplicate orders
+        Constants.Resilience.DefaultOrderMaxRetryAttempts.Should().Be(0);
     }
 
     [Fact]

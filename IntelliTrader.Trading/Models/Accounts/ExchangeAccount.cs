@@ -28,45 +28,76 @@ namespace IntelliTrader.Trading
             DateTimeOffset refreshStart = DateTimeOffset.Now;
 
             // Preload account data without locking the account
-            try
-            {
-                loggingService.Info("Load account data...");
+            // On initial refresh (startup), retry up to 3 times with 10s delay to handle
+            // transient exchange outages that would otherwise crash the bot.
+            int maxAttempts = isInitialRefresh ? 3 : 1;
+            Exception lastException = null;
 
-                foreach (var kvp in tradingService.GetAvailableAmounts())
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                try
                 {
-                    string currency = kvp.Key;
-                    string pair = currency + tradingService.Config.Market;
-                    decimal amount = kvp.Value;
-                    decimal price = tradingService.GetCurrentPrice(pair);
-                    decimal cost = amount * price;
+                    loggingService.Info(isInitialRefresh && attempt > 1
+                        ? $"Load account data (attempt {attempt}/{maxAttempts})..."
+                        : "Load account data...");
 
-                    if (currency == tradingService.Config.Market)
+                    foreach (var kvp in tradingService.GetAvailableAmounts())
                     {
-                        newBalance = amount;
-                    }
-                    else if (cost > tradingService.Config.MinCost && !tradingService.Config.ExcludedPairs.Contains(pair))
-                    {
-                        try
+                        string currency = kvp.Key;
+                        string pair = currency + tradingService.Config.Market;
+                        decimal amount = kvp.Value;
+                        decimal price = tradingService.GetCurrentPrice(pair);
+                        decimal cost = amount * price;
+
+                        if (currency == tradingService.Config.Market)
                         {
-                            IEnumerable<IOrderDetails> trades = tradingService.GetMyTrades(pair);
-                            availableTrades.Add(pair, trades);
-                            availableAmounts.Add(pair, amount);
+                            newBalance = amount;
                         }
-                        catch (Exception ex) when (ex.Message != null && ex.Message.Contains("Invalid symbol"))
+                        else if (cost > tradingService.Config.MinCost && !tradingService.Config.ExcludedPairs.Contains(pair))
                         {
-                            loggingService.Info($"Skip invalid pair: {pair}");
+                            try
+                            {
+                                IEnumerable<IOrderDetails> trades = tradingService.GetMyTrades(pair);
+                                availableTrades.Add(pair, trades);
+                                availableAmounts.Add(pair, amount);
+                            }
+                            catch (Exception ex) when (ex.Message != null && ex.Message.Contains("Invalid symbol"))
+                            {
+                                loggingService.Info($"Skip invalid pair: {pair}");
+                            }
                         }
                     }
+
+                    loggingService.Info("Account data loaded");
+                    lastException = null;
+                    break; // Success, exit retry loop
                 }
-
-                loggingService.Info("Account data loaded");
-            }
-            catch (Exception ex) when (!isInitialRefresh)
-            {
-                healthCheckService.UpdateHealthCheck(Constants.HealthChecks.AccountRefreshed, ex.Message, true);
-                loggingService.Error("Unable to load account data", ex);
-                _ = notificationService.NotifyAsync("Unable to load account data");
-                return;
+                catch (Exception ex) when (!isInitialRefresh)
+                {
+                    healthCheckService.UpdateHealthCheck(Constants.HealthChecks.AccountRefreshed, ex.Message, true);
+                    loggingService.Error("Unable to load account data", ex);
+                    _ = notificationService.NotifyAsync("Unable to load account data");
+                    return;
+                }
+                catch (Exception ex) when (isInitialRefresh && attempt < maxAttempts)
+                {
+                    lastException = ex;
+                    loggingService.Warning($"Unable to load account data on startup (attempt {attempt}/{maxAttempts}), retrying in 10s: {ex.Message}");
+                    availableAmounts.Clear();
+                    availableTrades.Clear();
+                    newBalance = 0;
+                    Thread.Sleep(10000);
+                }
+                catch (Exception ex) when (isInitialRefresh && attempt == maxAttempts)
+                {
+                    lastException = ex;
+                    loggingService.Error($"Unable to load account data after {maxAttempts} attempts. Suspending trading instead of crashing.", ex);
+                    healthCheckService.UpdateHealthCheck(Constants.HealthChecks.AccountRefreshed, ex.Message, true);
+                    _ = notificationService.NotifyAsync($"CRITICAL: Unable to load account data after {maxAttempts} attempts. Trading suspended.");
+                    tradingService.SuspendTrading();
+                    isInitialRefresh = false;
+                    return;
+                }
             }
 
             // Lock the account and reapply all trades
@@ -196,7 +227,11 @@ namespace IntelliTrader.Trading
                     string accountJson = JsonSerializer.Serialize(data, options);
                     var accountFile = new FileInfo(accountFilePath);
                     accountFile.Directory?.Create();
-                    File.WriteAllText(accountFile.FullName, accountJson);
+
+                    // Atomic write: write to temp file first, then rename
+                    var tempPath = accountFile.FullName + ".tmp";
+                    File.WriteAllText(tempPath, accountJson);
+                    File.Move(tempPath, accountFile.FullName, overwrite: true);
                 }
                 catch (Exception ex)
                 {
@@ -399,11 +434,18 @@ namespace IntelliTrader.Trading
                 var accountFile = new FileInfo(accountFilePath);
                 accountFile.Directory?.Create();
 
+                // Atomic write: write to temp file first, then rename
+                var tempPath = accountFile.FullName + ".tmp";
 #if NETCOREAPP2_1
                 // .NET Core 2.1 doesn't have WriteAllTextAsync
-                await Task.Run(() => File.WriteAllText(accountFile.FullName, accountJson), cancellationToken).ConfigureAwait(false);
+                await Task.Run(() =>
+                {
+                    File.WriteAllText(tempPath, accountJson);
+                    File.Move(tempPath, accountFile.FullName, overwrite: true);
+                }, cancellationToken).ConfigureAwait(false);
 #else
-                await File.WriteAllTextAsync(accountFile.FullName, accountJson, cancellationToken).ConfigureAwait(false);
+                await File.WriteAllTextAsync(tempPath, accountJson, cancellationToken).ConfigureAwait(false);
+                File.Move(tempPath, accountFile.FullName, overwrite: true);
 #endif
             }
             catch (Exception ex)

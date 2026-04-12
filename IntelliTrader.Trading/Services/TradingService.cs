@@ -1055,6 +1055,8 @@ namespace IntelliTrader.Trading
 
         private IOrderDetails PlaceBuyOrder(BuyOptions options)
         {
+            // Snapshot config at method entry to prevent mid-operation config changes
+            var config = Config;
             IOrderDetails orderDetails = null;
             TrailingManager.CancelTrailingBuy(options.Pair);
             TrailingManager.CancelTrailingSell(options.Pair);
@@ -1072,7 +1074,7 @@ namespace IntelliTrader.Trading
                     // Amount specified directly, calculate cost
                     effectiveMaxCost = options.Amount.Value * currentPrice;
                 }
-                else if (Config.PositionSizing?.Enabled == true && !options.ManualOrder && !options.Swap)
+                else if (config.PositionSizing?.Enabled == true && !options.ManualOrder && !options.Swap)
                 {
                     // Use position sizing for automated trades
                     decimal? calculatedSize = CalculatePositionSize(options.Pair, currentPrice);
@@ -1127,12 +1129,12 @@ namespace IntelliTrader.Trading
                         fees: orderDetails.Fees));
 
                     // Register position with portfolio risk manager
-                    if (portfolioRiskManager != null && Config.RiskManagement?.Enabled == true)
+                    if (portfolioRiskManager != null && config.RiskManagement?.Enabled == true)
                     {
-                        decimal positionRisk = Config.RiskManagement.DefaultPositionRiskPercent;
+                        decimal positionRisk = config.RiskManagement.DefaultPositionRiskPercent;
                         if (portfolioRiskManager is PortfolioRiskManager prm)
                         {
-                            positionRisk = prm.CalculatePositionRisk(orderDetails.AverageCost, Math.Abs(Config.SellStopLossMargin));
+                            positionRisk = prm.CalculatePositionRisk(orderDetails.AverageCost, Math.Abs(config.SellStopLossMargin));
                         }
                         portfolioRiskManager.RegisterPosition(options.Pair, positionRisk);
                     }
@@ -1153,6 +1155,8 @@ namespace IntelliTrader.Trading
 
         private IOrderDetails PlaceSellOrder(SellOptions options)
         {
+            // Snapshot config at method entry to prevent mid-operation config changes
+            var config = Config;
             IOrderDetails orderDetails = null;
             TrailingManager.CancelTrailingSell(options.Pair);
             TrailingManager.CancelTrailingBuy(options.Pair);
@@ -1209,7 +1213,7 @@ namespace IntelliTrader.Trading
                         fees: orderDetails.Fees));
 
                     // Update portfolio risk manager
-                    if (portfolioRiskManager != null && Config.RiskManagement?.Enabled == true)
+                    if (portfolioRiskManager != null && config.RiskManagement?.Enabled == true)
                     {
                         // Close the position in risk tracking
                         portfolioRiskManager.ClosePosition(options.Pair);
@@ -1245,6 +1249,8 @@ namespace IntelliTrader.Trading
 
         private async Task<IOrderDetails> PlaceBuyOrderAsync(BuyOptions options, CancellationToken cancellationToken = default)
         {
+            // Snapshot config at method entry to prevent mid-operation config changes
+            var config = Config;
             IOrderDetails orderDetails = null;
             TrailingManager.CancelTrailingBuy(options.Pair);
             TrailingManager.CancelTrailingSell(options.Pair);
@@ -1262,7 +1268,7 @@ namespace IntelliTrader.Trading
                     // Amount specified directly, calculate cost
                     effectiveMaxCost = options.Amount.Value * currentPrice;
                 }
-                else if (Config.PositionSizing?.Enabled == true && !options.ManualOrder && !options.Swap)
+                else if (config.PositionSizing?.Enabled == true && !options.ManualOrder && !options.Swap)
                 {
                     // Use position sizing for automated trades
                     decimal? calculatedSize = CalculatePositionSize(options.Pair, currentPrice);
@@ -1318,12 +1324,12 @@ namespace IntelliTrader.Trading
                         fees: orderDetails.Fees));
 
                     // Register position with portfolio risk manager
-                    if (portfolioRiskManager != null && Config.RiskManagement?.Enabled == true)
+                    if (portfolioRiskManager != null && config.RiskManagement?.Enabled == true)
                     {
-                        decimal positionRisk = Config.RiskManagement.DefaultPositionRiskPercent;
+                        decimal positionRisk = config.RiskManagement.DefaultPositionRiskPercent;
                         if (portfolioRiskManager is PortfolioRiskManager prm)
                         {
-                            positionRisk = prm.CalculatePositionRisk(orderDetails.AverageCost, Math.Abs(Config.SellStopLossMargin));
+                            positionRisk = prm.CalculatePositionRisk(orderDetails.AverageCost, Math.Abs(config.SellStopLossMargin));
                         }
                         portfolioRiskManager.RegisterPosition(options.Pair, positionRisk);
                     }
@@ -1344,6 +1350,8 @@ namespace IntelliTrader.Trading
 
         private async Task<IOrderDetails> PlaceSellOrderAsync(SellOptions options, CancellationToken cancellationToken = default)
         {
+            // Snapshot config at method entry to prevent mid-operation config changes
+            var config = Config;
             IOrderDetails orderDetails = null;
             TrailingManager.CancelTrailingSell(options.Pair);
             TrailingManager.CancelTrailingBuy(options.Pair);
@@ -1402,7 +1410,7 @@ namespace IntelliTrader.Trading
                         fees: orderDetails.Fees));
 
                     // Update portfolio risk manager
-                    if (portfolioRiskManager != null && Config.RiskManagement?.Enabled == true)
+                    if (portfolioRiskManager != null && config.RiskManagement?.Enabled == true)
                     {
                         // Close the position in risk tracking
                         portfolioRiskManager.ClosePosition(options.Pair);

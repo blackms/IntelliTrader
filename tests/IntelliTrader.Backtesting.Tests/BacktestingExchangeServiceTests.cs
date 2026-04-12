@@ -12,6 +12,7 @@ public class BacktestingExchangeServiceTests
     private readonly Mock<ILoggingService> _loggingServiceMock;
     private readonly Mock<IHealthCheckService> _healthCheckServiceMock;
     private readonly Mock<IBacktestingService> _backtestingServiceMock;
+    private readonly Mock<IConfigProvider> _configProviderMock;
     private readonly BacktestingExchangeService _sut;
 
     public BacktestingExchangeServiceTests()
@@ -19,6 +20,7 @@ public class BacktestingExchangeServiceTests
         _loggingServiceMock = new Mock<ILoggingService>();
         _healthCheckServiceMock = new Mock<IHealthCheckService>();
         _backtestingServiceMock = new Mock<IBacktestingService>();
+        _configProviderMock = new Mock<IConfigProvider>();
 
         // Setup default empty tickers
         _backtestingServiceMock.Setup(x => x.GetCurrentTickers())
@@ -27,7 +29,8 @@ public class BacktestingExchangeServiceTests
         _sut = new BacktestingExchangeService(
             _loggingServiceMock.Object,
             _healthCheckServiceMock.Object,
-            _backtestingServiceMock.Object);
+            _backtestingServiceMock.Object,
+            _configProviderMock.Object);
     }
 
     #region Constructor Tests
@@ -503,6 +506,7 @@ public class BacktestingExchangeServiceVirtualOrderTests
     private readonly Mock<ILoggingService> _loggingServiceMock;
     private readonly Mock<IHealthCheckService> _healthCheckServiceMock;
     private readonly Mock<IBacktestingService> _backtestingServiceMock;
+    private readonly Mock<IConfigProvider> _configProviderMock;
     private readonly BacktestingExchangeService _sut;
 
     public BacktestingExchangeServiceVirtualOrderTests()
@@ -510,11 +514,13 @@ public class BacktestingExchangeServiceVirtualOrderTests
         _loggingServiceMock = new Mock<ILoggingService>();
         _healthCheckServiceMock = new Mock<IHealthCheckService>();
         _backtestingServiceMock = new Mock<IBacktestingService>();
+        _configProviderMock = new Mock<IConfigProvider>();
 
         _sut = new BacktestingExchangeService(
             _loggingServiceMock.Object,
             _healthCheckServiceMock.Object,
-            _backtestingServiceMock.Object);
+            _backtestingServiceMock.Object,
+            _configProviderMock.Object);
     }
 
     [Fact]

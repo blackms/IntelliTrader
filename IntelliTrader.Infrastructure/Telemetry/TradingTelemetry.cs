@@ -378,6 +378,117 @@ public static class TradingTelemetry
         return activity;
     }
 
+    /// <summary>
+    /// Starts a new activity for a swap order operation (sell old pair + buy new pair).
+    /// </summary>
+    public static Activity? StartSwapOrderActivity(string oldPair, string newPair)
+    {
+        var activity = ActivitySource.StartActivity(
+            name: "SwapOrder",
+            kind: ActivityKind.Internal);
+
+        activity?.SetTag("trading.old_pair", oldPair);
+        activity?.SetTag("trading.new_pair", newPair);
+        activity?.SetTag("trading.order_type", "swap");
+
+        return activity;
+    }
+
+    /// <summary>
+    /// Starts a new activity for signal evaluation (polling + rating).
+    /// </summary>
+    public static Activity? StartSignalEvaluationActivity(string signalName, int pairCount)
+    {
+        var activity = ActivitySource.StartActivity(
+            name: "EvaluateSignals",
+            kind: ActivityKind.Internal);
+
+        activity?.SetTag("signal.name", signalName);
+        activity?.SetTag("signal.pair_count", pairCount);
+
+        return activity;
+    }
+
+    /// <summary>
+    /// Starts a new activity for signal rule matching.
+    /// </summary>
+    public static Activity? StartSignalRuleMatchActivity(string pair, string ruleName)
+    {
+        var activity = ActivitySource.StartActivity(
+            name: "MatchSignalRule",
+            kind: ActivityKind.Internal);
+
+        activity?.SetTag("trading.pair", pair);
+        activity?.SetTag("rule.name", ruleName);
+
+        return activity;
+    }
+
+    /// <summary>
+    /// Starts a new activity for an exchange API call.
+    /// </summary>
+    public static Activity? StartExchangeApiActivity(string operation)
+    {
+        var activity = ActivitySource.StartActivity(
+            name: "ExchangeApiCall",
+            kind: ActivityKind.Client);
+
+        activity?.SetTag("exchange.operation", operation);
+
+        return activity;
+    }
+
+    /// <summary>
+    /// Starts a new activity for ticker data fetch.
+    /// </summary>
+    public static Activity? StartTickerFetchActivity(int tickerCount)
+    {
+        var activity = ActivitySource.StartActivity(
+            name: "FetchTickers",
+            kind: ActivityKind.Client);
+
+        activity?.SetTag("exchange.operation", "fetch_tickers");
+        activity?.SetTag("exchange.ticker_count", tickerCount);
+
+        return activity;
+    }
+
+    /// <summary>
+    /// Starts a new activity for order placement on the exchange.
+    /// </summary>
+    public static Activity? StartOrderPlacementActivity(string pair, string side, decimal amount)
+    {
+        var activity = ActivitySource.StartActivity(
+            name: "PlaceOrder",
+            kind: ActivityKind.Client);
+
+        activity?.SetTag("exchange.operation", "place_order");
+        activity?.SetTag("trading.pair", pair);
+        activity?.SetTag("trading.side", side);
+        activity?.SetTag("trading.amount", amount);
+
+        return activity;
+    }
+
+    /// <summary>
+    /// Sets the result status on an activity. Call before disposing.
+    /// </summary>
+    public static void SetActivityResult(Activity? activity, bool success, string? errorMessage = null)
+    {
+        if (activity is null) return;
+
+        activity.SetTag("otel.status_code", success ? "OK" : "ERROR");
+        if (!success && errorMessage is not null)
+        {
+            activity.SetTag("otel.status_description", errorMessage);
+            activity.SetStatus(ActivityStatusCode.Error, errorMessage);
+        }
+        else if (success)
+        {
+            activity.SetStatus(ActivityStatusCode.Ok);
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Metric Recording Helpers
     // -------------------------------------------------------------------------

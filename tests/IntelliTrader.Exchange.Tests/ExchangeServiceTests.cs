@@ -180,16 +180,54 @@ public class ExchangeServiceTests
     #region Constructor Tests
 
     [Fact]
+    public void Constructor_WithNullLoggingService_DoesNotThrow()
+    {
+        // Primary constructors do not validate null parameters at construction time
+        var act = () => new TestableExchangeService(
+            null!,
+            _healthCheckServiceMock.Object,
+            _coreServiceMock.Object,
+            _configProviderMock.Object);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Constructor_WithNullHealthCheckService_DoesNotThrow()
+    {
+        // Primary constructors do not validate null parameters at construction time
+        var act = () => new TestableExchangeService(
+            _loggingServiceMock.Object,
+            null!,
+            _coreServiceMock.Object,
+            _configProviderMock.Object);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Constructor_WithNullCoreService_DoesNotThrow()
+    {
+        // Primary constructors do not validate null parameters at construction time
+        var act = () => new TestableExchangeService(
+            _loggingServiceMock.Object,
+            _healthCheckServiceMock.Object,
+            null!,
+            _configProviderMock.Object);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
     public void Constructor_WithNullConfigProvider_ThrowsArgumentNullException()
     {
-        // Act
+        // ConfigurableServiceBase validates configProvider is not null
         var act = () => new TestableExchangeService(
             _loggingServiceMock.Object,
             _healthCheckServiceMock.Object,
             _coreServiceMock.Object,
             null!);
 
-        // Assert
         act.Should().Throw<ArgumentNullException>()
             .WithParameterName("configProvider");
     }

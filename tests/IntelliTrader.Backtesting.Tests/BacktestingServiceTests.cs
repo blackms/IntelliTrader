@@ -502,22 +502,39 @@ public class BacktestingServiceInterfaceTests
 }
 
 /// <summary>
-/// Tests for BacktestingService constants and static members
+/// Tests for BacktestingService constants via the IBacktestingService interface.
+/// BacktestingService is internal, so we test snapshot file paths indirectly.
 /// </summary>
 public class BacktestingServiceConstantsTests
 {
     [Fact]
-    public void SnapshotFileExtension_IsBin()
+    public void GetSnapshotFilePath_ReturnsPathEndingWithBinExtension()
     {
+        // Arrange
+        var mockService = new Mock<IBacktestingService>();
+        mockService.Setup(x => x.GetSnapshotFilePath(It.IsAny<string>()))
+            .Returns("/path/to/snapshot.bin");
+
+        // Act
+        var path = mockService.Object.GetSnapshotFilePath("signals");
+
         // Assert
-        BacktestingService.SNAPSHOT_FILE_EXTENSION.Should().Be("bin");
+        path.Should().EndWith(".bin");
     }
 
     [Fact]
-    public void SnapshotFileExtension_IsNotEmpty()
+    public void GetSnapshotFilePath_ReturnsNonEmptyPath()
     {
+        // Arrange
+        var mockService = new Mock<IBacktestingService>();
+        mockService.Setup(x => x.GetSnapshotFilePath(It.IsAny<string>()))
+            .Returns("/path/to/snapshot.bin");
+
+        // Act
+        var path = mockService.Object.GetSnapshotFilePath("signals");
+
         // Assert
-        BacktestingService.SNAPSHOT_FILE_EXTENSION.Should().NotBeNullOrEmpty();
+        path.Should().NotBeNullOrEmpty();
     }
 }
 

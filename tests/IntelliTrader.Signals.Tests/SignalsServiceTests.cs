@@ -1124,4 +1124,535 @@ public class SignalsServiceTests
     }
 
     #endregion
+
+    #region Receiver Lifecycle Tests
+
+    [Fact]
+    public void Stop_WithoutStart_DoesNotThrow()
+    {
+        // Arrange
+        SetupConfig();
+
+        // Act
+        Action act = () => _sut.Stop();
+
+        // Assert
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Start_Stop_Start_RestartsReceiversCorrectly()
+    {
+        // Arrange
+        var receiverMock = CreateMockReceiver("Signal1", 60);
+        AddDefinition("Signal1");
+        SetupConfig();
+
+        // Act
+        _sut.Start();
+        _sut.Stop();
+        _sut.Start();
+
+        // Assert
+        receiverMock.Verify(x => x.Start(), Times.Exactly(2));
+        receiverMock.Verify(x => x.Stop(), Times.Once);
+        _sut.GetSignalNames().Should().ContainSingle().Which.Should().Be("Signal1");
+    }
+
+    [Fact]
+    public void Start_WithEmptyDefinitions_StartsWithNoReceivers()
+    {
+        // Arrange - no definitions added
+        SetupConfig();
+
+        // Act
+        _sut.Start();
+
+        // Assert
+        _sut.GetSignalNames().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Stop_AfterStartWithMultipleReceivers_AllReceiversStopped()
+    {
+        // Arrange
+        var mocks = new List<Mock<ISignalReceiver>>();
+        for (int i = 0; i < 5; i++)
+        {
+            var name = $"Signal{i}";
+            mocks.Add(CreateMockReceiver(name, (i + 1) * 60));
+            AddDefinition(name);
+        }
+        SetupConfig();
+        _sut.Start();
+
+        // Act
+        _sut.Stop();
+
+        // Assert
+        foreach (var mock in mocks)
+        {
+            mock.Verify(x => x.Stop(), Times.Once);
+        }
+        _sut.GetSignalNames().Should().BeEmpty();
+    }
+
+    #endregion
+
+    #region Signal Model Tests
+
+    [Fact]
+    public void Signal_Properties_CanBeSetAndRetrieved()
+    {
+        // Arrange & Act
+        var signal = new Signal
+        {
+            Name = "TestSignal",
+            Pair = "BTCUSDT",
+            Volume = 50000,
+            VolumeChange = 1.5,
+            Price = 42000.50m,
+            PriceChange = -2.3m,
+            Rating = 0.75,
+            RatingChange = 0.1,
+            Volatility = 0.03
+        };
+
+        // Assert
+        signal.Name.Should().Be("TestSignal");
+        signal.Pair.Should().Be("BTCUSDT");
+        signal.Volume.Should().Be(50000);
+        signal.VolumeChange.Should().Be(1.5);
+        signal.Price.Should().Be(42000.50m);
+        signal.PriceChange.Should().Be(-2.3m);
+        signal.Rating.Should().Be(0.75);
+        signal.RatingChange.Should().Be(0.1);
+        signal.Volatility.Should().Be(0.03);
+    }
+
+    [Fact]
+    public void Signal_NullableProperties_DefaultToNull()
+    {
+        // Arrange & Act
+        var signal = new Signal { Name = "Test", Pair = "BTCUSDT" };
+
+        // Assert
+        signal.Volume.Should().BeNull();
+        signal.VolumeChange.Should().BeNull();
+        signal.Price.Should().BeNull();
+        signal.PriceChange.Should().BeNull();
+        signal.Rating.Should().BeNull();
+        signal.RatingChange.Should().BeNull();
+        signal.Volatility.Should().BeNull();
+    }
+
+    #endregion
+
+    #region SignalDefinition Model Tests
+
+    [Fact]
+    public void SignalDefinition_Properties_CanBeSetAndRetrieved()
+    {
+        // Arrange & Act
+        var definition = new SignalDefinition
+        {
+            Name = "TV-5min",
+            Receiver = "TradingViewCryptoSignalReceiver",
+            Configuration = null
+        };
+
+        // Assert
+        definition.Name.Should().Be("TV-5min");
+        definition.Receiver.Should().Be("TradingViewCryptoSignalReceiver");
+        definition.Configuration.Should().BeNull();
+    }
+
+    #endregion
+
+    #region SignalsConfig Model Tests
+
+    [Fact]
+    public void SignalsConfig_Properties_CanBeSetAndRetrieved()
+    {
+        // Arrange & Act
+        var definitions = new List<SignalDefinition>
+        {
+            new SignalDefinition { Name = "Signal1", Receiver = "TradingView" },
+            new SignalDefinition { Name = "Signal2", Receiver = "TradingView" }
+        };
+
+        var config = new SignalsConfig
+        {
+            Enabled = true,
+            GlobalRatingSignals = new[] { "Signal1" },
+            Definitions = definitions
+        };
+
+        // Assert
+        config.Enabled.Should().BeTrue();
+        config.GlobalRatingSignals.Should().ContainSingle().Which.Should().Be("Signal1");
+        config.Definitions.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void SignalsConfig_DefinitionsInterface_ReturnsSameItems()
+    {
+        // Arrange
+        var definitions = new List<SignalDefinition>
+        {
+            new SignalDefinition { Name = "Signal1", Receiver = "TradingView" }
+        };
+
+        var config = new SignalsConfig
+        {
+            Enabled = true,
+            GlobalRatingSignals = new List<string>(),
+            Definitions = definitions
+        };
+
+        // Act - access through ISignalsConfig interface
+        ISignalsConfig iconfig = config;
+        var interfaceDefinitions = iconfig.Definitions.ToList();
+
+        // Assert
+        interfaceDefinitions.Should().HaveCount(1);
+        interfaceDefinitions[0].Name.Should().Be("Signal1");
+    }
+
+    #endregion
+
+    #region SignalRulesConfig Model Tests
+
+    [Fact]
+    public void SignalRulesConfig_Properties_CanBeSetAndRetrieved()
+    {
+        // Arrange & Act
+        var rulesConfig = new SignalRulesConfig
+        {
+            ProcessingMode = RuleProcessingMode.AllMatches,
+            CheckInterval = 5.0
+        };
+
+        // Assert
+        rulesConfig.ProcessingMode.Should().Be(RuleProcessingMode.AllMatches);
+        rulesConfig.CheckInterval.Should().Be(5.0);
+    }
+
+    [Fact]
+    public void SignalRulesConfig_DefaultValues()
+    {
+        // Arrange & Act
+        var rulesConfig = new SignalRulesConfig();
+
+        // Assert
+        rulesConfig.ProcessingMode.Should().Be(RuleProcessingMode.FirstMatch); // default enum value
+        rulesConfig.CheckInterval.Should().Be(0);
+    }
+
+    #endregion
+
+    #region Rating Aggregation Edge Cases
+
+    [Fact]
+    public void GetRating_WithMultipleSignals_OneHasNullRating_ReturnsNull()
+    {
+        // Arrange
+        var signal1 = CreateSignal("Signal1", "BTCUSDT", 0.8);
+        var signal2 = CreateSignal("Signal2", "BTCUSDT", null); // null rating
+        CreateMockReceiver("Signal1", 60, new[] { signal1 });
+        CreateMockReceiver("Signal2", 120, new[] { signal2 });
+        AddDefinition("Signal1");
+        AddDefinition("Signal2");
+        SetupConfig();
+        _sut.Start();
+
+        // Act
+        var result = _sut.GetRating("BTCUSDT", new[] { "Signal1", "Signal2" });
+
+        // Assert
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void GetRating_WithMultipleSignals_AllNegativeRatings_ReturnsNegativeAverage()
+    {
+        // Arrange
+        var signal1 = CreateSignal("Signal1", "BTCUSDT", -0.8);
+        var signal2 = CreateSignal("Signal2", "BTCUSDT", -0.4);
+        CreateMockReceiver("Signal1", 60, new[] { signal1 });
+        CreateMockReceiver("Signal2", 120, new[] { signal2 });
+        AddDefinition("Signal1");
+        AddDefinition("Signal2");
+        SetupConfig();
+        _sut.Start();
+
+        // Act
+        var result = _sut.GetRating("BTCUSDT", new[] { "Signal1", "Signal2" });
+
+        // Assert
+        result.Should().Be(-0.6);
+    }
+
+    [Fact]
+    public void GetRating_WithMultipleSignals_MixedPositiveNegative_ReturnsCorrectAverage()
+    {
+        // Arrange
+        var signal1 = CreateSignal("Signal1", "BTCUSDT", 0.5);
+        var signal2 = CreateSignal("Signal2", "BTCUSDT", -0.5);
+        CreateMockReceiver("Signal1", 60, new[] { signal1 });
+        CreateMockReceiver("Signal2", 120, new[] { signal2 });
+        AddDefinition("Signal1");
+        AddDefinition("Signal2");
+        SetupConfig();
+        _sut.Start();
+
+        // Act
+        var result = _sut.GetRating("BTCUSDT", new[] { "Signal1", "Signal2" });
+
+        // Assert
+        result.Should().Be(0.0);
+    }
+
+    [Fact]
+    public void GetGlobalRating_WithNegativeAverageRatings_ReturnsNegative()
+    {
+        // Arrange
+        CreateMockReceiver("Signal1", 60, averageRating: -0.3);
+        CreateMockReceiver("Signal2", 120, averageRating: -0.7);
+        AddDefinition("Signal1");
+        AddDefinition("Signal2");
+        SetupConfig(new[] { "Signal1", "Signal2" });
+        _sut.Start();
+
+        // Act
+        var result = _sut.GetGlobalRating();
+
+        // Assert
+        result.Should().Be(-0.5);
+    }
+
+    [Fact]
+    public void GetGlobalRating_WithZeroAverageRatings_ReturnsZero()
+    {
+        // Arrange
+        CreateMockReceiver("Signal1", 60, averageRating: 0.0);
+        CreateMockReceiver("Signal2", 120, averageRating: 0.0);
+        AddDefinition("Signal1");
+        AddDefinition("Signal2");
+        SetupConfig(new[] { "Signal1", "Signal2" });
+        _sut.Start();
+
+        // Act
+        var result = _sut.GetGlobalRating();
+
+        // Assert
+        result.Should().Be(0.0);
+    }
+
+    #endregion
+
+    #region GetSignal with Receiver Ordering
+
+    [Fact]
+    public void GetSignal_WithMultipleReceivers_ReturnsFromFirstMatchingReceiver()
+    {
+        // Arrange - two receivers have the same pair, GetSignal uses GetSignalsByName which
+        // returns signals from the specific named receiver
+        var btcSignal = CreateSignal("Signal1", "BTCUSDT", 0.9);
+        CreateMockReceiver("Signal1", 60, new[] { btcSignal });
+        AddDefinition("Signal1");
+        SetupConfig();
+        _sut.Start();
+
+        // Act
+        var result = _sut.GetSignal("BTCUSDT", "Signal1");
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Rating.Should().Be(0.9);
+    }
+
+    [Fact]
+    public void GetSignalsByName_ReturnsSignalsOrderedByReceiverPeriod()
+    {
+        // Arrange
+        var btcLong = CreateSignal("Signal15Min", "BTCUSDT", 0.8);
+        var btcShort = CreateSignal("Signal1Min", "BTCUSDT", 0.7);
+        CreateMockReceiver("Signal15Min", 900, new[] { btcLong });
+        CreateMockReceiver("Signal1Min", 60, new[] { btcShort });
+        AddDefinition("Signal15Min");
+        AddDefinition("Signal1Min");
+        SetupConfig();
+        _sut.Start();
+
+        // Act - null returns all signals
+        var result = _sut.GetSignalsByName(null)?.ToList();
+
+        // Assert - should be ordered by receiver period
+        result.Should().HaveCount(2);
+        result![0].Should().Be(btcShort);  // Period 60 first
+        result[1].Should().Be(btcLong);    // Period 900 last
+    }
+
+    #endregion
+
+    #region GetSignalsByPair with Empty Receivers
+
+    [Fact]
+    public void GetSignalsByPair_WithReceiversHavingNoSignals_ReturnsEmpty()
+    {
+        // Arrange - receiver with empty signal list
+        CreateMockReceiver("Signal1", 60, new List<ISignal>());
+        AddDefinition("Signal1");
+        SetupConfig();
+        _sut.Start();
+
+        // Act
+        var result = _sut.GetSignalsByPair("BTCUSDT").ToList();
+
+        // Assert
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetSignalsByPair_WithoutStarting_ReturnsEmpty()
+    {
+        // Arrange
+        SetupConfig();
+        // Don't call Start()
+
+        // Act
+        var result = _sut.GetSignalsByPair("BTCUSDT").ToList();
+
+        // Assert
+        result.Should().BeEmpty();
+    }
+
+    #endregion
+
+    #region Config Access Tests
+
+    [Fact]
+    public void Config_IsAccessibleThroughInterface()
+    {
+        // Arrange
+        SetupConfig(new[] { "Signal1" });
+
+        // Act
+        ISignalsService service = _sut;
+        var config = service.Config;
+
+        // Assert
+        config.Should().NotBeNull();
+        config.Enabled.Should().BeTrue();
+        config.GlobalRatingSignals.Should().ContainSingle().Which.Should().Be("Signal1");
+    }
+
+    [Fact]
+    public void Config_DisabledByDefault()
+    {
+        // Arrange
+        var config = new SignalsConfig
+        {
+            Enabled = false,
+            GlobalRatingSignals = new List<string>(),
+            Definitions = new List<SignalDefinition>()
+        };
+
+        // Assert
+        config.Enabled.Should().BeFalse();
+    }
+
+    #endregion
+
+    #region GetRating Per-Pair Isolation Tests
+
+    [Fact]
+    public void GetRating_DifferentPairs_ReturnIndependentRatings()
+    {
+        // Arrange
+        var btcSignal = CreateSignal("Signal1", "BTCUSDT", 0.9);
+        var ethSignal = CreateSignal("Signal1", "ETHUSDT", -0.3);
+        CreateMockReceiver("Signal1", 60, new[] { btcSignal, ethSignal });
+        AddDefinition("Signal1");
+        SetupConfig();
+        _sut.Start();
+
+        // Act
+        var btcRating = _sut.GetRating("BTCUSDT", "Signal1");
+        var ethRating = _sut.GetRating("ETHUSDT", "Signal1");
+
+        // Assert
+        btcRating.Should().Be(0.9);
+        ethRating.Should().Be(-0.3);
+    }
+
+    [Fact]
+    public void GetRating_MultipleSignals_DifferentPairs_AreIndependent()
+    {
+        // Arrange
+        var btcSignal1 = CreateSignal("Signal1", "BTCUSDT", 0.8);
+        var btcSignal2 = CreateSignal("Signal2", "BTCUSDT", 0.6);
+        var ethSignal1 = CreateSignal("Signal1", "ETHUSDT", -0.2);
+        var ethSignal2 = CreateSignal("Signal2", "ETHUSDT", -0.4);
+        CreateMockReceiver("Signal1", 60, new[] { btcSignal1, ethSignal1 });
+        CreateMockReceiver("Signal2", 120, new[] { btcSignal2, ethSignal2 });
+        AddDefinition("Signal1");
+        AddDefinition("Signal2");
+        SetupConfig();
+        _sut.Start();
+
+        // Act
+        var btcRating = _sut.GetRating("BTCUSDT", new[] { "Signal1", "Signal2" });
+        var ethRating = _sut.GetRating("ETHUSDT", new[] { "Signal1", "Signal2" });
+
+        // Assert
+        btcRating.Should().Be(0.7);  // (0.8 + 0.6) / 2
+        ethRating.Should().Be(-0.3); // (-0.2 + -0.4) / 2
+    }
+
+    #endregion
+
+    #region Rules Change Callback Tests
+
+    [Fact]
+    public void Start_InvokesOnSignalRulesChanged()
+    {
+        // Arrange
+        CreateMockReceiver("Signal1", 60);
+        AddDefinition("Signal1");
+        SetupConfig();
+
+        // Act
+        _sut.Start();
+
+        // Assert - OnSignalRulesChanged is called during Start, which calls GetRules
+        _rulesServiceMock.Verify(
+            x => x.GetRules(Constants.ServiceNames.SignalsService),
+            Times.Once);
+    }
+
+    [Fact]
+    public void RulesConfig_ProcessingMode_IsSetFromRules()
+    {
+        // Arrange
+        _moduleRulesMock.Setup(x => x.GetConfiguration<SignalRulesConfig>())
+            .Returns(new SignalRulesConfig
+            {
+                CheckInterval = 10,
+                ProcessingMode = RuleProcessingMode.AllMatches
+            });
+        CreateMockReceiver("Signal1", 60);
+        AddDefinition("Signal1");
+        SetupConfig();
+
+        // Act
+        _sut.Start();
+
+        // Assert
+        _sut.RulesConfig.ProcessingMode.Should().Be(RuleProcessingMode.AllMatches);
+        _sut.RulesConfig.CheckInterval.Should().Be(10);
+    }
+
+    #endregion
 }

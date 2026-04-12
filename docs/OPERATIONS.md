@@ -1,699 +1,638 @@
-# IntelliTrader Operations Guide
+# IntelliTrader Operations Runbook
 
-This document covers deployment, operations, and incident response for the IntelliTrader cryptocurrency trading bot.
+Production deployment, operations, and incident response procedures.
 
 ---
 
 ## Table of Contents
 
-1. [Local Development Setup](#local-development-setup)
-2. [Build and Test Commands](#build-and-test-commands)
-3. [Docker](#docker)
-4. [Deployment](#deployment)
-5. [Rollback Strategy](#rollback-strategy)
-6. [Runbooks - Common Incidents](#runbooks---common-incidents)
-7. [Observability](#observability)
+1. [Prerequisites](#prerequisites)
+2. [Startup Procedures](#startup-procedures)
+3. [Shutdown Procedures](#shutdown-procedures)
+4. [Health Check Verification](#health-check-verification)
+5. [Common Troubleshooting](#common-troubleshooting)
+6. [Incident Response](#incident-response)
+7. [Backup and Recovery](#backup-and-recovery)
+8. [Monitoring](#monitoring)
+9. [Configuration Reference](#configuration-reference)
 
 ---
 
-## Local Development Setup
+## Prerequisites
 
-### Prerequisites
+### Required Software
 
-- **.NET 9 SDK** - Download from [dotnet.microsoft.com](https://dotnet.microsoft.com/download/dotnet/9.0)
-- **Git** - For version control
-- **IDE** - Visual Studio 2022, VS Code with C# extension, or JetBrains Rider
-
-Verify .NET installation:
-
-```bash
-dotnet --version
-# Should output: 9.x.x
-```
-
-### Clone and Build
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd IntelliTrader
-
-# Restore dependencies and build
-dotnet build IntelliTrader.sln
-```
-
-### Configuration Setup
-
-All configuration files are located in `IntelliTrader/config/`:
-
-| File | Purpose |
+| Tool | Purpose |
 |------|---------|
-| `core.json` | Instance name, health checks, password, timezone |
-| `trading.json` | Market settings, buy/sell parameters, DCA levels, virtual trading |
-| `exchange.json` | API keys path, rate limiting |
-| `signals.json` | TradingView signal definitions |
-| `rules.json` | Signal rules (buy triggers) and trading rules (sell/DCA triggers) |
-| `web.json` | Web dashboard port and settings |
-| `logging.json` | Serilog configuration (console + rolling files) |
-| `notification.json` | Telegram alerts configuration |
-| `paths.json` | References to all other config files |
+| Docker 24+ | Container runtime |
+| docker compose v2 | Local/VM deployment |
+| kubectl 1.28+ | Kubernetes deployment |
+| helm 3.x | Helm chart deployment |
+| wget / curl | Health check verification |
 
-**Minimum Configuration for Development:**
+### Network Requirements
 
-1. **`config/core.json`** - Set password and instance name:
-```json
-{
-  "Core": {
-    "DebugMode": true,
-    "PasswordProtected": true,
-    "Password": "$2a$12$...",  // BCrypt hash
-    "InstanceName": "Dev",
-    "HealthCheckEnabled": true,
-    "HealthCheckInterval": 180
-  }
-}
-```
+- **Outbound HTTPS** to `api.binance.com` and `stream.binance.com` (WebSocket)
+- **Outbound HTTPS** to TradingView signal endpoints
+- **Outbound HTTPS** to `api.telegram.org` (if Telegram notifications enabled)
+- **Inbound TCP 7000** for dashboard access (configurable)
 
-2. **`config/trading.json`** - Enable virtual trading for development:
-```json
-{
-  "Trading": {
-    "VirtualTrading": true,
-    "VirtualAccountInitialBalance": 0.12,
-    "Market": "BTC",
-    "Exchange": "Binance"
-  }
-}
-```
+### Singleton Constraint
 
-3. **`config/web.json`** - Set web dashboard port:
-```json
-{
-  "Web": {
-    "Enabled": true,
-    "DebugMode": true,
-    "Port": 7000
-  }
-}
-```
-
-### Running Locally
-
-```bash
-# From repository root
-dotnet run --project IntelliTrader/IntelliTrader.csproj
-
-# Or build first, then run the DLL
-dotnet build IntelliTrader.sln
-dotnet IntelliTrader/bin/Debug/net9.0/IntelliTrader.dll
-```
-
-The web dashboard will be available at `http://localhost:7000`.
-
-**Important:** Always use Enter/Return key to exit the program gracefully to avoid corrupting account data files.
+IntelliTrader holds in-memory positions, trailing orders, and a persistent WebSocket connection. **Never run more than one instance** against the same Binance account. Running multiple replicas causes duplicate trades and split state.
 
 ---
 
-## Build and Test Commands
+## Startup Procedures
 
-### Build Commands
-
-```bash
-# Build entire solution (Debug)
-dotnet build IntelliTrader.sln
-
-# Build for Release
-dotnet build IntelliTrader.sln -c Release
-
-# Build specific project
-dotnet build IntelliTrader/IntelliTrader.csproj
-
-# Clean build artifacts
-dotnet clean IntelliTrader.sln
-```
-
-### Test Commands
-
-The solution includes 10 test projects using xUnit, FluentAssertions, and Moq:
+### Docker Compose
 
 ```bash
-# Run all tests
-dotnet test IntelliTrader.sln
+# 1. Prepare configuration
+cp .env.example .env          # edit host port, image tag as needed
 
-# Run tests with detailed output
-dotnet test IntelliTrader.sln --verbosity normal
+# 2. Mount API keys for live trading (skip for virtual trading)
+#    Uncomment the keys.bin volume line in docker-compose.yml
+#    Place encrypted keys.bin next to docker-compose.yml
 
-# Run tests with coverage (requires coverlet.collector)
-dotnet test IntelliTrader.sln --collect:"XPlat Code Coverage"
+# 3. Start
+docker compose up -d
 
-# Run specific test project
-dotnet test tests/IntelliTrader.Core.Tests/IntelliTrader.Core.Tests.csproj
-
-# Run tests matching a filter
-dotnet test --filter "FullyQualifiedName~HealthCheck"
-
-# Run tests in parallel (faster)
-dotnet test IntelliTrader.sln --parallel
+# 4. Verify startup
+docker compose logs -f        # watch for "Welcome to IntelliTrader"
+docker inspect --format='{{.State.Health.Status}}' intellitrader
 ```
 
-### Test Projects
+**Production-only (skip dev overrides):**
 
-| Project | Coverage Area |
-|---------|--------------|
-| `IntelliTrader.Core.Tests` | Core services, health checks, timed tasks |
-| `IntelliTrader.Domain.Tests` | Domain models and business logic |
-| `IntelliTrader.Trading.Tests` | Trading service, order execution |
-| `IntelliTrader.Exchange.Tests` | Exchange integration, WebSocket |
-| `IntelliTrader.Signals.Tests` | Signal processing and aggregation |
-| `IntelliTrader.Web.Tests` | Web controllers, API endpoints |
-| `IntelliTrader.Application.Tests` | Application bootstrapping |
-| `IntelliTrader.Infrastructure.Tests` | Infrastructure services |
-| `IntelliTrader.Rules.Tests` | Rule engine and conditions |
-| `IntelliTrader.Backtesting.Tests` | Backtesting service |
+```bash
+docker compose -f docker-compose.yml up -d
+```
+
+The dev override (`docker-compose.override.yml`) sets `ASPNETCORE_ENVIRONMENT=Development` and mounts config read-write. Production uses read-only config mounts.
+
+### Kubernetes (Helm)
+
+```bash
+# 1. Create namespace
+kubectl create namespace trading
+
+# 2. Create secret for API keys (live trading only)
+kubectl create secret generic intellitrader-keys \
+  --from-file=keys.bin=./keys.bin \
+  -n trading
+
+# 3. Install chart
+helm install intellitrader deploy/helm/intellitrader/ \
+  -n trading \
+  --set secret.existingSecret=intellitrader-keys \
+  --set config.files."trading\.json"='{"Trading":{"VirtualTrading":false}}'
+
+# 4. Verify
+kubectl get pods -n trading -w
+kubectl logs -f deploy/intellitrader -n trading
+```
+
+The Helm chart uses `strategy: Recreate` to prevent overlapping instances during rolling updates.
+
+### Bare Metal / VM
+
+```bash
+# 1. Build
+dotnet publish IntelliTrader/IntelliTrader.csproj -c Release -o /opt/intellitrader
+
+# 2. Copy config
+cp -r IntelliTrader/config /opt/intellitrader/config
+mkdir -p /opt/intellitrader/data /opt/intellitrader/log
+
+# 3. Encrypt API keys (live trading only)
+dotnet /opt/intellitrader/IntelliTrader.dll \
+  --encrypt --path=/opt/intellitrader/keys.bin \
+  --publickey=YOUR_API_KEY --privatekey=YOUR_API_SECRET
+
+# 4. Start
+dotnet /opt/intellitrader/IntelliTrader.dll
+```
+
+### Post-Startup Checklist
+
+After starting by any method, verify:
+
+1. Dashboard loads at `http://<host>:7000`
+2. `/api/health` returns `{"status":"ok"}`
+3. `/health/ready` returns `{"status":"ready"}` (may take 30-60s)
+4. Logs show "Welcome to IntelliTrader" followed by health check passes
+5. If live trading: verify account balance shows on dashboard
 
 ---
 
-## Docker
+## Shutdown Procedures
 
-**Note:** The repository does not currently include a Dockerfile for IntelliTrader. The application is designed to run as a standalone .NET application.
+### Graceful Shutdown
 
-To containerize the application, you would need to create a Dockerfile. Example structure:
+The application handles SIGTERM with a 30-second grace period to save positions.
 
-```dockerfile
-# Example Dockerfile (not currently in repo)
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
-WORKDIR /src
-COPY . .
-RUN dotnet publish IntelliTrader/IntelliTrader.csproj -c Release -o /app
-
-FROM mcr.microsoft.com/dotnet/aspnet:9.0
-WORKDIR /app
-COPY --from=build /app .
-ENTRYPOINT ["dotnet", "IntelliTrader.dll"]
-```
-
----
-
-## Deployment
-
-### Environment Preparation
-
-1. **Install .NET 9 Runtime** on the target server:
-```bash
-# Ubuntu/Debian
-wget https://dot.net/v1/dotnet-install.sh
-chmod +x dotnet-install.sh
-./dotnet-install.sh --runtime aspnetcore --version 9.0.0
-```
-
-2. **Create deployment directory**:
-```bash
-mkdir -p /opt/intellitrader
-mkdir -p /opt/intellitrader/config
-mkdir -p /opt/intellitrader/data
-mkdir -p /opt/intellitrader/log
-```
-
-3. **Set appropriate permissions**:
-```bash
-chown -R intellitrader:intellitrader /opt/intellitrader
-chmod 750 /opt/intellitrader
-```
-
-### Configuration for Production
-
-1. **Disable debug mode** in `config/core.json`:
-```json
-{
-  "Core": {
-    "DebugMode": false,
-    "PasswordProtected": true
-  }
-}
-```
-
-2. **Disable web debug mode** in `config/web.json`:
-```json
-{
-  "Web": {
-    "DebugMode": false
-  }
-}
-```
-
-3. **Configure logging** for production in `config/logging.json`:
-```json
-{
-  "Logging": {
-    "MinimumLevel": {
-      "Default": "Information"
-    }
-  }
-}
-```
-
-4. **Set appropriate health check timeouts** in `config/core.json`:
-```json
-{
-  "Core": {
-    "HealthCheckEnabled": true,
-    "HealthCheckInterval": 180,
-    "HealthCheckSuspendTradingTimeout": 900,
-    "HealthCheckFailuresToRestartServices": 3
-  }
-}
-```
-
-### API Key Encryption
-
-For live trading, encrypt your Binance API keys:
+**Docker Compose:**
 
 ```bash
-# Using the built-in encryption utility
-dotnet IntelliTrader.dll --encrypt --path=keys.bin --publickey=YOUR_API_KEY --privatekey=YOUR_API_SECRET
+docker compose down              # sends SIGTERM, waits 30s grace period
 ```
 
-**Windows batch file** (`Encrypt-Keys.bat`):
-```batch
-dotnet bin\Debug\net9.0\IntelliTrader.dll --encrypt --path=keys.bin --publickey=public_key --privatekey=private_key
-pause
-```
+**Kubernetes:**
 
-**Important:** The encrypted file is only valid for:
-- The current user
-- The computer it was created on
-
-Store the `keys.bin` file securely and reference it in `config/exchange.json`:
-```json
-{
-  "Exchange": {
-    "KeysPath": "keys.bin"
-  }
-}
-```
-
-### Starting the Service
-
-**Manual start:**
 ```bash
-cd /opt/intellitrader
-dotnet IntelliTrader.dll
+kubectl delete pod <pod-name> -n trading   # terminationGracePeriodSeconds: 30
+# Or scale to zero:
+kubectl scale deploy/intellitrader --replicas=0 -n trading
 ```
 
-**As a systemd service** (create `/etc/systemd/system/intellitrader.service`):
-```ini
-[Unit]
-Description=IntelliTrader Cryptocurrency Trading Bot
-After=network.target
+**Bare Metal:**
 
-[Service]
-Type=simple
-User=intellitrader
-WorkingDirectory=/opt/intellitrader
-ExecStart=/usr/bin/dotnet /opt/intellitrader/IntelliTrader.dll
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
 ```bash
-systemctl daemon-reload
-systemctl enable intellitrader
-systemctl start intellitrader
-```
-
----
-
-## Rollback Strategy
-
-### Application Rollback
-
-1. **Stop the service:**
-```bash
+# If running interactively: press Enter/Return
+# If running as systemd service:
 systemctl stop intellitrader
-# Or press Enter in console if running interactively
 ```
 
-2. **Backup current version:**
+### Emergency Stop
+
+Use when you need to halt trading immediately without waiting for grace period:
+
 ```bash
-mv /opt/intellitrader /opt/intellitrader.backup.$(date +%Y%m%d_%H%M%S)
+# Docker
+docker kill intellitrader
+
+# Kubernetes
+kubectl delete pod <pod-name> -n trading --grace-period=0 --force
+
+# Bare metal
+kill -9 <pid>
 ```
 
-3. **Restore previous version:**
-```bash
-# From backup
-cp -r /opt/intellitrader.previous /opt/intellitrader
-
-# Or redeploy from Git
-git checkout <previous-tag>
-dotnet publish -c Release -o /opt/intellitrader
-```
-
-4. **Restore configuration (if needed):**
-```bash
-cp -r /opt/intellitrader.backup.*/config/* /opt/intellitrader/config/
-```
-
-5. **Restart the service:**
-```bash
-systemctl start intellitrader
-```
-
-### Configuration Rollback
-
-Configuration files support hot-reload. To rollback configuration:
-
-1. **Backup current config:**
-```bash
-cp /opt/intellitrader/config/trading.json /opt/intellitrader/config/trading.json.backup
-```
-
-2. **Restore previous config:**
-```bash
-cp /opt/intellitrader/config/trading.json.previous /opt/intellitrader/config/trading.json
-```
-
-3. **Changes take effect automatically** due to file watcher (no restart needed for most configs).
-
-### Data File Rollback
-
-Account data is stored in JSON files:
-- `data/exchange-account.json` - Live trading account state
-- `data/virtual-account.json` - Virtual trading account state
-
-To rollback account state:
-```bash
-systemctl stop intellitrader
-cp data/virtual-account.json.backup data/virtual-account.json
-systemctl start intellitrader
-```
+**After emergency stop:** Check `/app/data/` files for consistency. Positions in memory may not have been flushed. Verify open orders on Binance directly.
 
 ---
 
-## Runbooks - Common Incidents
+## Health Check Verification
 
-### Exchange Connection Failures
+### Endpoints
 
-**Symptoms:**
-- Health check shows `[-] Tickers updated` with stale timestamp
-- Log entries showing connection errors to Binance
+| Endpoint | Auth | Purpose | Healthy Response |
+|----------|------|---------|-----------------|
+| `GET /api/health` | None | Docker HEALTHCHECK, basic liveness | `200 {"status":"ok"}` |
+| `GET /health/live` | None | K8s liveness probe | `200 {"status":"alive","timestamp":"..."}` |
+| `GET /health/ready` | None | K8s readiness probe | `200 {"status":"ready",...}` or `503 {"status":"not_ready",...}` |
+| `GET /api/status` | Yes | Full status with health details | `200` (requires session auth) |
+
+### Verification Commands
+
+```bash
+# Docker: check built-in healthcheck
+docker inspect --format='{{.State.Health.Status}}' intellitrader
+docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' intellitrader
+
+# Direct endpoint check
+curl -s http://localhost:7000/api/health | jq .
+curl -s http://localhost:7000/health/ready | jq .
+
+# Kubernetes
+kubectl get pods -n trading     # READY column shows probe status
+kubectl describe pod <pod> -n trading | grep -A5 "Conditions"
+```
+
+### Readiness Probe Details
+
+The `/health/ready` endpoint returns `503` when:
+
+- CoreService has not finished starting
+- Trading is suspended (manual or automatic)
+- Any internal health check is failing
+
+Response includes per-component breakdown:
+
+```json
+{
+  "status": "not_ready",
+  "coreRunning": true,
+  "tradingSuspended": true,
+  "failingCheckCount": 1,
+  "checks": [
+    {"name": "Tickers updated", "failed": true, "message": "...", "lastUpdated": "..."}
+  ]
+}
+```
+
+### Internal Health Checks
+
+These are evaluated every `HealthCheckInterval` seconds (default: 180):
+
+| Check | Passes When |
+|-------|-------------|
+| Account refreshed | Account balance refreshed from exchange |
+| Tickers updated | Price data received via WebSocket or REST |
+| TV Signals received | TradingView signals polled successfully |
+| Trading pairs processed | Trading pairs evaluated by rules engine |
+| Signals rules processed | Signal buy rules evaluated |
+| Trading rules processed | Trading sell/DCA rules evaluated |
+
+**Automatic escalation:**
+
+- Stale for `HealthCheckSuspendTradingTimeout` (default 900s) -> trading suspends
+- `HealthCheckFailuresToRestartServices` consecutive failures (default 3) -> services restart automatically
+
+---
+
+## Common Troubleshooting
+
+### WebSocket Disconnects
+
+**Symptoms:** Stale ticker prices, "Tickers updated" health check failing.
 
 **Diagnosis:**
-```bash
-# Check logs for connection errors
-grep -i "connection\|timeout\|429\|503" log/*-general.txt | tail -50
 
-# Check health status via web API
-curl http://localhost:7000/api/status
+```bash
+grep -i "websocket\|disconnect\|reconnect" /app/log/*-general.txt | tail -20
 ```
 
 **Resolution:**
 
-The system uses **Polly resilience pipelines** with automatic handling:
+1. The WebSocket pipeline automatically retries 5 times with fallback to REST API
+2. If reconnection fails persistently, check outbound connectivity to `stream.binance.com`
+3. Restart the service to reset connections: `docker compose restart`
 
-| Pipeline | Behavior |
-|----------|----------|
-| **ReadPipeline** | 3 retries with exponential backoff + jitter, 30s timeout, circuit breaker (50% failure ratio) |
-| **OrderPipeline** | 1 retry only (to prevent duplicates), 15s timeout, stricter circuit breaker (30% failure ratio) |
-| **WebSocketPipeline** | 5 reconnect attempts, automatic fallback to REST API |
+### Signal Failures
 
-**Circuit Breaker States:**
-- **Closed**: Normal operation
-- **Open**: Failing fast, not making requests (30-60s duration)
-- **Half-Open**: Testing if service recovered
-
-If circuit breaker is open for extended periods:
-
-1. Check Binance status: https://www.binance.com/en/support/announcement
-2. Verify network connectivity from server
-3. Check if IP is rate-limited (look for 429 errors)
-4. If rate-limited, wait for cooldown (Binance bans escalate: 2min -> 3 days)
-
-**Manual intervention:**
-```bash
-# Restart service to reset circuit breakers
-systemctl restart intellitrader
-```
-
-### Signal Service Unavailable
-
-**Symptoms:**
-- Health check shows `[-] TV Signals received` as stale
-- No new signals being processed
-- Buy rules not triggering
+**Symptoms:** "TV Signals received" health check stale, no new buy signals.
 
 **Diagnosis:**
+
 ```bash
-# Check TradingView signal errors
-grep -i "signal\|tradingview" log/*-general.txt | tail -50
+grep -i "signal\|tradingview" /app/log/*-general.txt | tail -20
 ```
 
 **Resolution:**
 
-1. **Check TradingView service status** - External dependency
-2. **Verify signal configuration** in `config/signals.json`
-3. **Check signal polling task** is running:
-   - Look for `TradingViewCryptoSignalPollingTimedTask` in logs
-   - Default polling interval: 7 seconds
+1. Check TradingView service availability
+2. Verify `config/signals.json` signal definitions are correct
+3. Trading automatically suspends after `HealthCheckSuspendTradingTimeout` and resumes when signals recover
 
-4. **Trading automatically suspends** when health checks fail:
-   - After `HealthCheckSuspendTradingTimeout` (default 900s) of stale data
-   - Trading resumes automatically when signals recover
+### Exchange API Errors
+
+**Symptoms:** Order failures, circuit breaker messages in logs.
+
+**Diagnosis:**
+
+```bash
+grep -i "429\|503\|circuit.breaker\|rate.limit" /app/log/*-general.txt | tail -20
+```
+
+**Resolution:**
+
+| Error | Action |
+|-------|--------|
+| HTTP 429 (rate limited) | Wait for cooldown. Binance bans escalate: 2min -> 3 days |
+| HTTP 503 (service unavailable) | Check [Binance status](https://www.binance.com/en/support/announcement) |
+| Circuit breaker OPEN | Automatically recovers after 30-60s. Restart if stuck |
+| Insufficient balance | Check account on Binance, adjust `BuyMaxCost` in trading.json |
+| Invalid pair / delisted | Remove pair from config, check Binance announcements |
+
+**Resilience pipelines:**
+
+- **ReadPipeline:** 3 retries, exponential backoff + jitter, 30s timeout, circuit breaker at 50% failure
+- **OrderPipeline:** 1 retry only (prevents duplicates), 15s timeout, circuit breaker at 30% failure
+- **WebSocketPipeline:** 5 reconnect attempts, automatic REST fallback
+
+### Container Restart Loops
+
+**Symptoms:** Pod in CrashLoopBackOff, container restarting repeatedly.
+
+**Diagnosis:**
+
+```bash
+# Docker
+docker logs intellitrader --tail 50
+
+# Kubernetes
+kubectl logs <pod> -n trading --previous    # logs from crashed container
+kubectl describe pod <pod> -n trading       # check Events section
+```
+
+**Common causes:**
+
+| Cause | Fix |
+|-------|-----|
+| Missing config files | Ensure config volume is mounted correctly |
+| Invalid JSON in config | Validate JSON syntax in all config files |
+| keys.bin not found (live trading) | Mount keys.bin volume, or set `VirtualTrading: true` |
+| Port 7000 already in use | Change `INTELLITRADER_HOST_PORT` in `.env` |
+| Insufficient memory | Increase memory limit (minimum 256Mi, recommended 512Mi) |
 
 ### High Memory Usage
 
-**Symptoms:**
-- Process memory growing continuously
-- System becoming unresponsive
-
 **Diagnosis:**
-```bash
-# Check process memory
-ps aux | grep IntelliTrader
 
-# Check .NET memory stats (if enabled)
-dotnet-counters monitor -p <PID> --counters System.Runtime
+```bash
+# Docker
+docker stats intellitrader
+
+# Kubernetes
+kubectl top pod -n trading
 ```
 
 **Resolution:**
 
-1. **Check order history size** in `config/trading.json`:
-```json
-{
-  "Trading": {
-    "MaxOrderHistorySize": 10000  // Reduce if needed
-  }
-}
-```
-
-2. **Check log file accumulation:**
-```bash
-ls -la log/
-# Clean old logs if excessive
-find log/ -name "*.txt" -mtime +7 -delete
-```
-
-3. **Check for memory leaks in timed tasks:**
-   - Review recent code changes
-   - Ensure disposable objects are being disposed
-
-4. **Restart service** as temporary mitigation:
-```bash
-systemctl restart intellitrader
-```
-
-### Order Execution Failures
-
-**Symptoms:**
-- Buy/Sell orders not executing
-- Log shows order errors
-- Health check shows `ORDER CIRCUIT BREAKER OPENED`
-
-**Diagnosis:**
-```bash
-# Check trade logs
-grep -i "order\|trade\|buy\|sell" log/*-trades.txt | tail -50
-grep -i "ORDER CIRCUIT BREAKER\|PlaceOrder" log/*-general.txt | tail -50
-```
-
-**Resolution:**
-
-1. **Check if trading is suspended:**
-```bash
-curl http://localhost:7000/api/status | jq '.TradingSuspended'
-```
-
-2. **If order circuit breaker opened:**
-   - The system automatically suspends order execution for 60 seconds
-   - Check for API errors (insufficient balance, invalid pair, etc.)
-   - Verify API keys are valid and have trading permissions
-
-3. **Check Binance account:**
-   - Verify sufficient balance
-   - Check if trading pair is valid and not delisted
-   - Verify API key permissions include trading
-
-4. **Order retry behavior:**
-   - Orders only retry once (to prevent duplicates)
-   - Only connection errors trigger retry (not response errors)
-   - If timeout occurs: **MANUALLY VERIFY ORDER STATUS** on Binance
-
-5. **Resume trading if safe:**
-   - Trading resumes automatically when health checks pass
-   - Manual restart if needed: `systemctl restart intellitrader`
+1. Reduce `MaxOrderHistorySize` in `config/trading.json`
+2. Clean old log files: `find /app/log -name "*.txt" -mtime +7 -delete`
+3. Restart service as temporary mitigation
 
 ---
 
-## Observability
+## Incident Response
 
-### OpenTelemetry Integration
+### Severity Levels
 
-IntelliTrader includes built-in OpenTelemetry instrumentation in `IntelliTrader.Infrastructure.Telemetry`:
+| Level | Description | Examples |
+|-------|-------------|---------|
+| SEV-1 | Active financial loss | Unintended live trades, wrong pair trading, API key compromised |
+| SEV-2 | Trading halted | All health checks failing, exchange unreachable, crash loop |
+| SEV-3 | Degraded operation | Signal delays, intermittent WebSocket drops, slow order execution |
 
-**Service Name:** `IntelliTrader`
+### SEV-1: Suspend Trading Immediately
 
-**Configuration** (in `Startup.cs`):
-```csharp
-// Console exporter enabled in Development
-// OTLP exporter for production (set OTEL_EXPORTER_OTLP_ENDPOINT)
-services.AddIntelliTraderTelemetry(enableConsoleExporter: isDevelopment);
-```
-
-### Available Metrics
-
-| Metric | Type | Description |
-|--------|------|-------------|
-| `trades.executed` | Counter | Total trades executed (with pair, order_type, virtual tags) |
-| `trades.buy_orders` | Counter | Total buy orders |
-| `trades.sell_orders` | Counter | Total sell orders |
-| `trades.failed` | Counter | Failed trade attempts (with reason tag) |
-| `trades.dca_orders` | Counter | DCA orders executed |
-| `trades.stop_loss_triggered` | Counter | Stop loss triggers |
-| `trades.trailing_triggered` | Counter | Trailing stop triggers |
-| `positions.open` | Gauge | Current open positions count |
-| `portfolio.value` | Gauge | Total portfolio value |
-| `trailing.buy_active` | Gauge | Active buy trailing stops |
-| `trailing.sell_active` | Gauge | Active sell trailing stops |
-| `trades.profit` | Histogram | Profit/loss percentage distribution |
-| `order.latency` | Histogram | Order execution latency (ms) |
-| `position.duration` | Histogram | Position hold duration (hours) |
-| `trades.cost` | Histogram | Trade cost distribution |
-
-### Distributed Tracing
-
-Activity spans are created for:
-- `BuyOrder` - Buy order execution
-- `SellOrder` - Sell order execution
-- `ProcessTradingRules` - Trading rule evaluation
-- `ProcessPosition` - Position processing
-- `ProcessTrailing` - Trailing stop processing
-- `DCAOrder` - DCA order execution
-- `StopLoss` - Stop loss processing
-
-### Logging Configuration
-
-Serilog is configured in `config/logging.json`:
-
-**Log Files:**
-- `log/{Date}-general.txt` - General application logs
-- `log/{Date}-trades.txt` - Trade-specific logs
-
-**Log Levels:**
-- `Verbose` - Most detailed (development)
-- `Information` - Normal operation
-- `Warning` - Health check failures, circuit breaker events
-- `Error` - Order failures, critical errors
-
-**Example log output:**
-```
-14:32:05 [INF] Health check results:
- [+] (14:32:01) Account refreshed
- [+] (14:32:03) Tickers updated
- [+] (14:32:04) TV Signals received
- [-] (14:30:00) Trading pairs processed  # Stale - will trigger suspension
-```
-
-### Health Check Endpoints
-
-Internal health checks are accessible via the web API:
+**Step 1 -- Stop all trading activity:**
 
 ```bash
-# Get current status including health checks
-curl http://localhost:7000/api/status
+# Option A: Suspend via dashboard UI (fastest if accessible)
+# Navigate to dashboard -> click "Suspend Trading"
+
+# Option B: Set virtual trading mode (prevents real orders)
+# Edit config/trading.json: "VirtualTrading": true
+# Config hot-reloads automatically
+
+# Option C: Kill the process
+docker compose down
+# or
+kubectl scale deploy/intellitrader --replicas=0 -n trading
 ```
 
-**Health Check Items:**
+**Step 2 -- Assess damage:**
 
-| Check | Updates When |
-|-------|-------------|
-| `Account refreshed` | Account balance refreshed from exchange |
-| `Tickers updated` | Price data updated (WebSocket or REST) |
-| `TV Signals received` | TradingView signals polled |
-| `Trading pairs processed` | Trading pairs evaluated |
-| `Signals rules processed` | Signal buy rules evaluated |
-| `Trading rules processed` | Trading sell rules evaluated |
+1. Log into Binance directly and check open orders
+2. Cancel any unintended open orders on Binance
+3. Review trade logs: `grep -i "order\|trade\|buy\|sell" /app/log/*-trades.txt | tail -100`
+4. Check account balance matches expected state
 
-**Health Check Behavior:**
-- Checks run every `HealthCheckInterval` seconds (default: 180)
-- Trading suspends if any check is stale for `HealthCheckSuspendTradingTimeout` seconds (default: 900)
-- After `HealthCheckFailuresToRestartServices` failures (default: 3), services restart automatically
+**Step 3 -- If API key compromised:**
 
-### Alert Recommendations
+1. Immediately disable the API key on Binance
+2. Create new API key with restricted permissions (no withdrawal)
+3. Re-encrypt: `dotnet IntelliTrader.dll --encrypt --path=keys.bin --publickey=NEW_KEY --privatekey=NEW_SECRET`
+4. Restart with new keys
 
-Configure Telegram alerts in `config/notification.json`:
+### SEV-2: Trading Halted
+
+**Step 1 -- Diagnose:**
+
+```bash
+curl -s http://localhost:7000/health/ready | jq .
+grep -i "error\|critical\|exception" /app/log/*-general.txt | tail -30
+```
+
+**Step 2 -- Resolve based on cause:**
+
+- **Exchange unreachable:** Check Binance status, check network. Wait or restart.
+- **Crash loop:** Check logs for root cause (see Container Restart Loops above).
+- **Health check cascade:** Restart service. If persists, check each component individually.
+
+**Step 3 -- Verify recovery:**
+
+```bash
+# Wait for readiness
+watch -n5 'curl -s http://localhost:7000/health/ready | jq .status'
+```
+
+### Position Recovery After Crash
+
+If the process crashed without graceful shutdown:
+
+1. Check data files in `/app/data/`:
+   - `exchange-account.json` (live trading state)
+   - `virtual-account.json` (virtual trading state)
+2. Compare positions in data file against actual Binance account
+3. If data file is corrupt or stale, delete it and restart (positions will be re-synced from exchange on startup for live trading)
+
+---
+
+## Backup and Recovery
+
+### What to Back Up
+
+| Item | Location | Frequency | Priority |
+|------|----------|-----------|----------|
+| Configuration | `/app/config/*.json` | After every change | Critical |
+| API keys | `keys.bin` | After rotation | Critical |
+| Account state | `/app/data/` | Daily | High |
+| Trade logs | `/app/log/` | Weekly | Medium |
+
+### Backup Procedures
+
+**Docker volumes:**
+
+```bash
+# Stop to ensure consistency
+docker compose stop
+
+# Backup config (bind mount)
+tar czf backup-config-$(date +%Y%m%d).tar.gz ./IntelliTrader/config/
+
+# Backup data volume
+docker run --rm -v intellitrader-data:/data -v $(pwd):/backup \
+  alpine tar czf /backup/backup-data-$(date +%Y%m%d).tar.gz -C /data .
+
+# Backup log volume
+docker run --rm -v intellitrader-log:/data -v $(pwd):/backup \
+  alpine tar czf /backup/backup-log-$(date +%Y%m%d).tar.gz -C /data .
+
+docker compose start
+```
+
+**Kubernetes PVC:**
+
+```bash
+# Scale down first
+kubectl scale deploy/intellitrader --replicas=0 -n trading
+
+# Copy data from PVC
+kubectl run backup --image=alpine --restart=Never -n trading \
+  --overrides='{"spec":{"containers":[{"name":"backup","image":"alpine",
+  "command":["tar","czf","/backup/data.tar.gz","-C","/data","."],
+  "volumeMounts":[{"name":"data","mountPath":"/data"},{"name":"backup","mountPath":"/backup"}]}],
+  "volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"intellitrader-data"}},
+  {"name":"backup","emptyDir":{}}]}}'
+
+kubectl cp trading/backup:/backup/data.tar.gz ./backup-data-$(date +%Y%m%d).tar.gz
+kubectl delete pod backup -n trading
+
+# Scale back up
+kubectl scale deploy/intellitrader --replicas=1 -n trading
+```
+
+### Recovery Procedures
+
+**Restore config:**
+
+```bash
+tar xzf backup-config-YYYYMMDD.tar.gz -C ./IntelliTrader/config/
+# Config hot-reloads; restart only if needed
+```
+
+**Restore data volume:**
+
+```bash
+docker compose stop
+docker run --rm -v intellitrader-data:/data -v $(pwd):/backup \
+  alpine sh -c "rm -rf /data/* && tar xzf /backup/backup-data-YYYYMMDD.tar.gz -C /data"
+docker compose start
+```
+
+**Full disaster recovery:**
+
+1. Deploy fresh instance (Docker or Helm)
+2. Restore config from backup
+3. Mount `keys.bin` from secure backup
+4. Restore data volume from backup
+5. Start and verify via health checks
+6. Verify positions match Binance account
+
+---
+
+## Monitoring
+
+### Health Endpoints Summary
+
+Poll these endpoints for automated monitoring:
+
+```bash
+# Basic liveness (Docker, load balancers)
+curl -sf http://localhost:7000/api/health || echo "DOWN"
+
+# Full readiness (Kubernetes, alerting)
+curl -sf http://localhost:7000/health/ready || echo "NOT READY"
+```
+
+### Log Files
+
+Serilog writes to `/app/log/`:
+
+| File Pattern | Content |
+|-------------|---------|
+| `{Date}-general.txt` | Application logs, health checks, errors |
+| `{Date}-trades.txt` | Trade execution logs (buys, sells, DCA) |
+
+**Key log patterns to watch:**
+
+```bash
+# Health check failures
+grep "\[-\]" /app/log/*-general.txt | tail -10
+
+# Circuit breaker events
+grep -i "circuit.breaker" /app/log/*-general.txt | tail -10
+
+# Order failures
+grep -i "failed\|error" /app/log/*-trades.txt | tail -10
+```
+
+### Telegram Notifications
+
+Configure in `config/notification.json`:
 
 ```json
 {
   "Notification": {
     "Enabled": true,
     "TelegramEnabled": true,
-    "TelegramBotToken": "YOUR_BOT_TOKEN",
-    "TelegramChatId": YOUR_CHAT_ID,
+    "TelegramBotToken": "BOT_TOKEN",
+    "TelegramChatId": CHAT_ID,
     "TelegramAlertsEnabled": true
   }
 }
 ```
 
-**Recommended Alerts to Monitor:**
+Alerts include: health check failures, trading suspension/resume, order failures, stop loss triggers.
 
-1. **Health Check Failures**
-   - "Health check failed" notifications
-   - Trading suspension/resume events
+### OpenTelemetry
 
-2. **Circuit Breaker Events**
-   - "ORDER CIRCUIT BREAKER OPENED" - Critical
-   - "Circuit breaker OPENED for exchange reads" - Warning
-
-3. **Trading Events**
-   - Order execution failures
-   - Stop loss triggers
-   - Large position changes
-
-4. **Infrastructure Metrics** (via OpenTelemetry exporter):
-   - `trades.failed` counter increases
-   - `order.latency` p99 > 5000ms
-   - Memory usage above threshold
-
-### Production Monitoring Setup
-
-For production, export telemetry to an observability platform:
+IntelliTrader exports metrics and traces via OpenTelemetry. Set the OTLP endpoint:
 
 ```bash
-# Set OTLP endpoint (e.g., for Jaeger, Grafana, etc.)
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4317
-
-# Or configure in code
-services.AddIntelliTraderTelemetryWithOtlp("http://collector:4317");
 ```
 
-**Recommended Dashboard Panels:**
-1. Trade execution rate (by type: buy/sell/dca)
-2. Order latency percentiles (p50, p95, p99)
-3. Open positions count over time
-4. Portfolio value trend
-5. Trade profit/loss distribution
-6. Health check status grid
-7. Circuit breaker state timeline
+**Key metrics to dashboard:**
+
+| Metric | Type | Alert Threshold |
+|--------|------|----------------|
+| `trades.failed` | Counter | Any increase |
+| `order.latency` | Histogram | p99 > 5000ms |
+| `positions.open` | Gauge | Unexpected changes |
+| `portfolio.value` | Gauge | Significant drops |
+| `trades.stop_loss_triggered` | Counter | Any increase |
+
+### Docker HEALTHCHECK
+
+The Dockerfile defines a built-in healthcheck:
+
+```
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3
+    CMD wget --quiet --tries=1 -O /dev/null http://127.0.0.1:7000/api/health || exit 1
+```
+
+Monitor via: `docker inspect --format='{{.State.Health.Status}}' intellitrader`
+
+---
+
+## Configuration Reference
+
+### Key Settings Quick Reference
+
+| Setting | File | Default | Description |
+|---------|------|---------|-------------|
+| `VirtualTrading` | trading.json | `true` | `true` = paper trading, `false` = real money |
+| `Market` | trading.json | `BTC` | Base market (e.g., BTC, USDT) |
+| `HealthCheckEnabled` | core.json | `true` | Enable internal health monitoring |
+| `HealthCheckInterval` | core.json | `180` | Seconds between health checks |
+| `HealthCheckSuspendTradingTimeout` | core.json | `900` | Seconds of stale data before auto-suspend |
+| `HealthCheckFailuresToRestartServices` | core.json | `3` | Consecutive failures before service restart |
+| `PasswordProtected` | core.json | `true` | Require password for dashboard |
+| `DebugMode` | core.json | `false` | Enable verbose logging (disable in production) |
+| `KeysPath` | exchange.json | `keys.bin` | Path to encrypted API key file |
+| `Port` | web.json | `7000` | Dashboard port |
+
+### Configuration Files
+
+All files in `/app/config/` support hot-reload (changes take effect without restart):
+
+| File | Purpose |
+|------|---------|
+| `core.json` | Instance name, health checks, password, timezone |
+| `trading.json` | Market, buy/sell params, DCA levels, virtual trading |
+| `exchange.json` | API keys path, rate limiting |
+| `signals.json` | TradingView signal definitions |
+| `rules.json` | Signal rules (buy triggers), trading rules (sell/DCA) |
+| `web.json` | Dashboard port, debug mode |
+| `logging.json` | Serilog levels, file paths |
+| `notification.json` | Telegram bot token, chat ID, alert settings |
+| `paths.json` | References to all other config files |
+| `backtesting.json` | Historical replay settings |
+| `caching.json` | Cache configuration |
+| `integration.json` | Third-party integration settings |
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ASPNETCORE_ENVIRONMENT` | `Production` | Runtime environment |
+| `ASPNETCORE_URLS` | `http://+:7000` | Listening URL |
+| `INTELLITRADER_HEADLESS` | `true` (in Docker) | Suppress interactive prompts |
+| `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT` | `true` | Use invariant globalization |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | (unset) | OpenTelemetry collector URL |

@@ -1652,7 +1652,7 @@ public class TradingServiceTests
     private void SetupTradingConfig(Action<TradingConfig> configureAction)
     {
         // Get current config through reflection and modify it
-        var configField = typeof(ConfigrableServiceBase<TradingConfig>)
+        var configField = typeof(ConfigurableServiceBase<TradingConfig>)
             .GetField("config", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
         var config = configField?.GetValue(_sut) as TradingConfig ?? new TradingConfig

@@ -6,7 +6,7 @@ using System.Text;
 
 namespace IntelliTrader.Core
 {
-    public abstract class ConfigrableServiceBase<TConfig> : IConfigurableService
+    public abstract class ConfigurableServiceBase<TConfig> : IConfigurableService
         where TConfig : class
     {
         private const double DELAY_BETWEEN_CONFIG_RELOADS_MILLISECONDS = 500;
@@ -33,7 +33,7 @@ namespace IntelliTrader.Core
         /// Default constructor for backward compatibility.
         /// Services should migrate to use the constructor that accepts IConfigProvider.
         /// </summary>
-        protected ConfigrableServiceBase()
+        protected ConfigurableServiceBase()
         {
             _configProvider = null;
         }
@@ -43,7 +43,7 @@ namespace IntelliTrader.Core
         /// Preferred constructor for proper DI usage.
         /// </summary>
         /// <param name="configProvider">The configuration provider</param>
-        protected ConfigrableServiceBase(IConfigProvider configProvider)
+        protected ConfigurableServiceBase(IConfigProvider configProvider)
         {
             _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
         }

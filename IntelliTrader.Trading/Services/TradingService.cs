@@ -43,7 +43,7 @@ namespace IntelliTrader.Trading
         IConfigProvider configProvider,
         IPortfolioRiskManager portfolioRiskManager = null,
         IPositionSizerFactory positionSizerFactory = null,
-        IDomainEventDispatcher domainEventDispatcher = null) : ConfigrableServiceBase<TradingConfig>(configProvider), ITradingService
+        IDomainEventDispatcher domainEventDispatcher = null) : ConfigurableServiceBase<TradingConfig>(configProvider), ITradingService
     {
         private readonly IApplicationContext _applicationContext = applicationContext ?? throw new ArgumentNullException(nameof(applicationContext));
         private readonly IDomainEventDispatcher _domainEventDispatcher = domainEventDispatcher;

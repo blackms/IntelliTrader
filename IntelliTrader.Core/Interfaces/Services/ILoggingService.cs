@@ -35,5 +35,40 @@ namespace IntelliTrader.Core
         /// <param name="value">The property value</param>
         /// <returns>A disposable scope that removes the context when disposed</returns>
         IDisposable BeginScope(string propertyName, object value);
+
+        /// <summary>
+        /// Creates a logging scope with a correlation ID for tracing related log entries across an operation.
+        /// All log entries within the scope will include the CorrelationId property.
+        /// </summary>
+        /// <param name="correlationId">Optional correlation ID. If null, a new GUID is generated.</param>
+        /// <returns>A disposable scope that removes the correlation ID when disposed</returns>
+        IDisposable BeginCorrelationScope(string? correlationId = null);
+
+        /// <summary>
+        /// Times an operation and logs its start and completion with duration in milliseconds.
+        /// Logs at Information level on start and completion, or Error level on failure.
+        /// </summary>
+        /// <param name="operationName">Name of the operation being timed</param>
+        /// <returns>A disposable that logs completion with duration when disposed</returns>
+        IDisposable TimeOperation(string operationName);
+
+        /// <summary>
+        /// Logs a message only every Nth invocation for the given event key.
+        /// Useful for high-volume events like ticker updates or signal polls.
+        /// </summary>
+        /// <param name="eventKey">Unique key identifying the high-volume event</param>
+        /// <param name="sampleRate">Log every Nth occurrence (e.g., 100 means log 1 in 100)</param>
+        /// <param name="message">The log message template</param>
+        /// <param name="propertyValues">Optional structured property values</param>
+        void InfoSampled(string eventKey, int sampleRate, string message, params object[] propertyValues);
+
+        /// <summary>
+        /// Logs a debug message only every Nth invocation for the given event key.
+        /// </summary>
+        /// <param name="eventKey">Unique key identifying the high-volume event</param>
+        /// <param name="sampleRate">Log every Nth occurrence</param>
+        /// <param name="message">The log message template</param>
+        /// <param name="propertyValues">Optional structured property values</param>
+        void DebugSampled(string eventKey, int sampleRate, string message, params object[] propertyValues);
     }
 }

@@ -3,15 +3,18 @@ using Serilog;
 using Serilog.Context;
 using Serilog.Core;
 using Serilog.Events;
+using Serilog.Formatting.Json;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
 
 namespace IntelliTrader.Core
 {
-    internal class LoggingService : ConfigrableServiceBase<LoggingConfig>, ILoggingService
+    internal class LoggingService : ConfigurableServiceBase<LoggingConfig>, ILoggingService
     {
         private int LOG_ENTRIES_MAX_LENGTH = 50000;
 
@@ -23,6 +26,7 @@ namespace IntelliTrader.Core
         private string logsPath;
 
         private readonly object syncRoot = new object();
+        private readonly ConcurrentDictionary<string, long> _samplingCounters = new ConcurrentDictionary<string, long>();
 
         public LoggingService(IConfigProvider configProvider) : base(configProvider)
         {
@@ -176,6 +180,37 @@ namespace IntelliTrader.Core
             }
         }
 
+        public IDisposable BeginCorrelationScope(string? correlationId = null)
+        {
+            var id = correlationId ?? Guid.NewGuid().ToString("N");
+            return LogContext.PushProperty(LogProperties.CorrelationId, id);
+        }
+
+        public IDisposable TimeOperation(string operationName)
+        {
+            return new OperationTimer(this, operationName);
+        }
+
+        public void InfoSampled(string eventKey, int sampleRate, string message, params object[] propertyValues)
+        {
+            if (sampleRate <= 0) sampleRate = 1;
+            var count = _samplingCounters.AddOrUpdate(eventKey, 1, (_, prev) => prev + 1);
+            if (count % sampleRate == 0)
+            {
+                Info(message, propertyValues);
+            }
+        }
+
+        public void DebugSampled(string eventKey, int sampleRate, string message, params object[] propertyValues)
+        {
+            if (sampleRate <= 0) sampleRate = 1;
+            var count = _samplingCounters.AddOrUpdate(eventKey, 1, (_, prev) => prev + 1);
+            if (count % sampleRate == 0)
+            {
+                Debug(message, propertyValues);
+            }
+        }
+
         public void DeleteAllLogs()
         {
             lock(syncRoot)
@@ -247,11 +282,23 @@ namespace IntelliTrader.Core
                 writerStringBuilder = new StringBuilder();
                 writer = new StringWriter(writerStringBuilder);
 
-                return new LoggerConfiguration()
+                var loggerConfig = new LoggerConfiguration()
                     .ReadFrom.ConfigurationSection(RawConfig)
                     .Enrich.FromLogContext()
-                    .WriteTo.Logger(config => config.WriteTo.Memory(writer, LogEventLevel.Information, outputTemplate).Filter.ByIncludingOnly(filterExpression))
-                    .CreateLogger();
+                    .WriteTo.Logger(config => config.WriteTo.Memory(writer, LogEventLevel.Information, outputTemplate).Filter.ByIncludingOnly(filterExpression));
+
+                // Add JSON file sink if configured
+                if (Config.JsonOutputEnabled)
+                {
+                    var jsonPath = Config.JsonOutputPath ?? "log/structured-.json";
+                    loggerConfig.WriteTo.File(
+                        new JsonFormatter(renderMessage: true),
+                        jsonPath,
+                        rollingInterval: RollingInterval.Day,
+                        retainedFileCountLimit: 31);
+                }
+
+                return loggerConfig.CreateLogger();
             }
         }
 
@@ -324,6 +371,49 @@ namespace IntelliTrader.Core
             {
                 _disposables[i]?.Dispose();
             }
+        }
+    }
+
+    /// <summary>
+    /// Tracks the duration of an operation and logs completion with elapsed time.
+    /// </summary>
+    internal sealed class OperationTimer : IDisposable
+    {
+        private readonly ILoggingService _loggingService;
+        private readonly string _operationName;
+        private readonly Stopwatch _stopwatch;
+        private readonly IDisposable _scope;
+        private bool _disposed;
+
+        public OperationTimer(ILoggingService loggingService, string operationName)
+        {
+            _loggingService = loggingService ?? throw new ArgumentNullException(nameof(loggingService));
+            _operationName = operationName ?? throw new ArgumentNullException(nameof(operationName));
+            _stopwatch = Stopwatch.StartNew();
+
+            _scope = loggingService.BeginScope(LogProperties.Operation, operationName);
+            _loggingService.Info("Operation {Operation} started", operationName);
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            _stopwatch.Stop();
+
+            using (LogContext.PushProperty(LogProperties.Duration, _stopwatch.ElapsedMilliseconds))
+            {
+                _loggingService.Info(
+                    "Operation {Operation} completed in {DurationMs}ms",
+                    _operationName,
+                    _stopwatch.ElapsedMilliseconds);
+            }
+
+            _scope?.Dispose();
         }
     }
 }

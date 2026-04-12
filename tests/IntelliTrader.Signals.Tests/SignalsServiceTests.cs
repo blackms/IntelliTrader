@@ -82,7 +82,7 @@ public class SignalsServiceTests
             GlobalRatingSignals = globalRatingSignals ?? new List<string>()
         };
 
-        // Use reflection to set the config since ConfigrableServiceBase manages it
+        // Use reflection to set the config since ConfigurableServiceBase manages it
         var configField = typeof(SignalsService)
             .BaseType!
             .GetField("config", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);

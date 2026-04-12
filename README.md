@@ -9,7 +9,8 @@
 [![Tests](https://img.shields.io/badge/Tests-1,010_Passing-00C853?style=for-the-badge&logo=checkmarx&logoColor=white)](https://github.com/blackms/IntelliTrader)
 [![Coverage](https://img.shields.io/badge/Coverage-92%25-00C853?style=for-the-badge&logo=codecov&logoColor=white)](https://codecov.io)
 [![License](https://img.shields.io/badge/License-CC--BY--NC--SA--4.0-FF6F00?style=for-the-badge&logo=creativecommons&logoColor=white)](LICENSE.txt)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](Dockerfile)
+[![Release](https://img.shields.io/github/v/release/blackms/IntelliTrader?style=for-the-badge&logo=github&color=00C853)](https://github.com/blackms/IntelliTrader/releases/latest)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://ghcr.io/blackms/intellitrader)
 [![Stars](https://img.shields.io/github/stars/blackms/intellitrader?style=for-the-badge&logo=github&color=FFD700)](https://github.com/blackms/IntelliTrader)
 [![CodeFactor](https://img.shields.io/badge/Code_Quality-A+-00C853?style=for-the-badge&logo=codefactor&logoColor=white)](https://www.codefactor.io)
 
@@ -549,6 +550,32 @@ helm uninstall intellitrader
 The chart includes Deployment, Service, ConfigMap, Secret, PVC, Ingress (optional), HPA (optional), and ServiceAccount templates. Liveness and readiness probes point at `/health/live` and `/health/ready` respectively. See `deploy/helm/intellitrader/values.yaml` for the full set of configurable parameters.
 
 > **Note**: IntelliTrader is a stateful singleton — the HPA defaults to `maxReplicas: 1`. Do not scale beyond 1 without external state coordination.
+
+### Environment Variable Configuration
+
+All JSON configuration settings can be overridden via environment variables, following [12-factor app](https://12factor.net/config) principles. Environment variables **take precedence** over values in JSON config files.
+
+**Naming convention:**
+
+```
+INTELLITRADER_{Section}__{Key}
+INTELLITRADER_{Section}__{NestedObject}__{Key}
+```
+
+The prefix `INTELLITRADER_` is stripped automatically. Double underscores (`__`) map to the `:` hierarchy separator used by .NET Configuration (this is standard `Microsoft.Extensions.Configuration` behavior).
+
+**Examples:**
+
+| JSON path | Environment variable |
+|---|---|
+| `core.json` > `Core.DebugMode` | `INTELLITRADER_Core__DebugMode=false` |
+| `core.json` > `Core.InstanceName` | `INTELLITRADER_Core__InstanceName=Prod` |
+| `trading.json` > `Trading.Enabled` | `INTELLITRADER_Trading__Enabled=true` |
+| `trading.json` > `Trading.VirtualTrading` | `INTELLITRADER_Trading__VirtualTrading=false` |
+| `trading.json` > `Trading.Market` | `INTELLITRADER_Trading__Market=USDT` |
+| `exchange.json` > `Exchange.KeysPath` | `INTELLITRADER_Exchange__KeysPath=/secrets/keys.bin` |
+
+This works with `docker run -e`, `docker compose` environment blocks, Kubernetes `env` specs, and `.env` files. See `.env.example` for a full list of documented overrides.
 
 <br />
 

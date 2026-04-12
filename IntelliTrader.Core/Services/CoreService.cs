@@ -17,7 +17,7 @@ namespace IntelliTrader.Core
         IWebService webService,
         IBacktestingService backtestingService,
         IApplicationContext applicationContext,
-        IConfigProvider configProvider) : ConfigrableServiceBase<CoreConfig>(configProvider), ICoreService
+        IConfigProvider configProvider) : ConfigurableServiceBase<CoreConfig>(configProvider), ICoreService
     {
         private readonly IApplicationContext _applicationContext = applicationContext ?? throw new ArgumentNullException(nameof(applicationContext));
         public override string ServiceName => Constants.ServiceNames.CoreService;

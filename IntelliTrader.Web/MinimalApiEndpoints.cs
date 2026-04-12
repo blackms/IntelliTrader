@@ -1,6 +1,7 @@
 using IntelliTrader.Core;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
 using System.Collections.Generic;
 using System.Linq;
@@ -21,8 +22,10 @@ namespace IntelliTrader.Web
             // GET /api/health - Anonymous liveness probe used by Docker
             // HEALTHCHECK and Kubernetes probes. Must stay outside of the
             // authenticated /api group so it can be reached without a session.
+            // Health endpoints are exempt from rate limiting so probes always succeed.
             endpoints.MapGet("/api/health", () => Results.Ok(new { status = "ok" }))
                 .AllowAnonymous()
+                .DisableRateLimiting()
                 .WithName("HealthCheck")
                 .WithDescription("Liveness probe returning 200 OK whenever the web host is running")
                 .WithTags("Health")
@@ -38,6 +41,7 @@ namespace IntelliTrader.Web
                     timestamp = DateTimeOffset.UtcNow
                 }))
                 .AllowAnonymous()
+                .DisableRateLimiting()
                 .WithName("LivenessProbe")
                 .WithDescription("Kubernetes liveness probe — 200 OK while the process is running")
                 .WithTags("Health")
@@ -86,6 +90,7 @@ namespace IntelliTrader.Web
                         : Results.Json(payload, statusCode: StatusCodes.Status503ServiceUnavailable);
                 })
                 .AllowAnonymous()
+                .DisableRateLimiting()
                 .WithName("ReadinessProbe")
                 .WithDescription("Kubernetes readiness probe — 200 when bot is ready, 503 otherwise")
                 .WithTags("Health")
@@ -93,7 +98,8 @@ namespace IntelliTrader.Web
                 .Produces(StatusCodes.Status503ServiceUnavailable);
 
             var apiGroup = endpoints.MapGroup("/api")
-                .RequireAuthorization();
+                .RequireAuthorization()
+                .RequireRateLimiting("status");
 
             // GET /api/status - Get current trading status
             apiGroup.MapGet("/status", (

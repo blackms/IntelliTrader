@@ -7,6 +7,8 @@ using IntelliTrader.Web.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
@@ -15,6 +17,7 @@ using Microsoft.OpenApi.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.RateLimiting;
 
 namespace IntelliTrader.Web
 {
@@ -106,10 +109,72 @@ namespace IntelliTrader.Web
                 // Include MVC controller actions in Swagger docs
                 c.DocInclusionPredicate((docName, apiDesc) => true);
             });
+
+            // Configure API rate limiting per endpoint category to prevent abuse.
+            // Limits are configurable via web.json RateLimiting section.
+            var rateLimitSection = Configuration.GetSection("Web:RateLimiting");
+            var tradingLimit = rateLimitSection.GetValue<int?>("TradingPermitLimit") ?? 10;
+            var statusLimit = rateLimitSection.GetValue<int?>("StatusPermitLimit") ?? 60;
+            var configLimit = rateLimitSection.GetValue<int?>("ConfigPermitLimit") ?? 5;
+            var windowSeconds = rateLimitSection.GetValue<int?>("WindowSeconds") ?? 60;
+
+            services.AddRateLimiter(options =>
+            {
+                options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+                options.AddFixedWindowLimiter("trading", opt =>
+                {
+                    opt.PermitLimit = tradingLimit;
+                    opt.Window = TimeSpan.FromSeconds(windowSeconds);
+                    opt.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+                    opt.QueueLimit = 0;
+                });
+
+                options.AddFixedWindowLimiter("status", opt =>
+                {
+                    opt.PermitLimit = statusLimit;
+                    opt.Window = TimeSpan.FromSeconds(windowSeconds);
+                    opt.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+                    opt.QueueLimit = 0;
+                });
+
+                options.AddFixedWindowLimiter("config", opt =>
+                {
+                    opt.PermitLimit = configLimit;
+                    opt.Window = TimeSpan.FromSeconds(windowSeconds);
+                    opt.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+                    opt.QueueLimit = 0;
+                });
+
+                options.OnRejected = async (context, cancellationToken) =>
+                {
+                    context.HttpContext.Response.Headers.RetryAfter =
+                        windowSeconds.ToString();
+                    await Task.CompletedTask;
+                };
+            });
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
+            // Security response headers middleware - placed early so all responses get headers
+            app.Use(async (context, next) =>
+            {
+                context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+                context.Response.Headers["X-Frame-Options"] = "DENY";
+                context.Response.Headers["X-XSS-Protection"] = "1; mode=block";
+                context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+                context.Response.Headers["Content-Security-Policy"] =
+                    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' ws: wss:";
+
+                if (context.Request.IsHttps)
+                {
+                    context.Response.Headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+                }
+
+                await next();
+            });
+
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();
@@ -140,10 +205,15 @@ namespace IntelliTrader.Web
                 });
             }
 
+            // Expose /metrics endpoint for Prometheus scraping
+            app.UseIntelliTraderPrometheusEndpoint();
+
             app.UseRouting();
 
             app.UseAuthentication();
             app.UseAuthorization();
+
+            app.UseRateLimiter();
 
             app.UseEndpoints(endpoints =>
             {

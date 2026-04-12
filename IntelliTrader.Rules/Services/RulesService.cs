@@ -9,7 +9,7 @@ namespace IntelliTrader.Rules
     internal class RulesService(
         ILoggingService loggingService,
         IApplicationContext applicationContext,
-        IConfigProvider configProvider) : ConfigrableServiceBase<RulesConfig>(configProvider), IRulesService
+        IConfigProvider configProvider) : ConfigurableServiceBase<RulesConfig>(configProvider), IRulesService
     {
         private readonly IApplicationContext _applicationContext = applicationContext ?? throw new ArgumentNullException(nameof(applicationContext));
 

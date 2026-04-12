@@ -252,7 +252,7 @@ public interface ITradingService : IConfigurableService
 
 **Configurable services implement `IConfigurableService`**:
 ```csharp
-internal class TradingService : ConfigrableServiceBase<TradingConfig>, ITradingService
+internal class TradingService : ConfigurableServiceBase<TradingConfig>, ITradingService
 {
     public override string ServiceName => Constants.ServiceNames.TradingService;
     protected override ILoggingService LoggingService => _loggingService;

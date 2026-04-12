@@ -8,6 +8,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -466,6 +467,7 @@ namespace IntelliTrader.Web.Controllers
 
         [HttpPost]
         [ValidateAntiForgeryToken]
+        [EnableRateLimiting("config")]
         public IActionResult Settings(SettingsViewModel model)
         {
             _coreService.Config.HealthCheckEnabled = model.HealthCheckEnabled;
@@ -486,6 +488,7 @@ namespace IntelliTrader.Web.Controllers
 
         [HttpPost]
         [ValidateAntiForgeryToken]
+        [EnableRateLimiting("config")]
         public IActionResult SaveConfig([FromForm] ConfigUpdateModel model)
         {
             if (!ModelState.IsValid)
@@ -505,6 +508,7 @@ namespace IntelliTrader.Web.Controllers
 
         [HttpPost]
         [ValidateAntiForgeryToken]
+        [EnableRateLimiting("trading")]
         public IActionResult Sell([FromForm] SellInputModel model)
         {
             if (!ModelState.IsValid)
@@ -522,6 +526,7 @@ namespace IntelliTrader.Web.Controllers
 
         [HttpPost]
         [ValidateAntiForgeryToken]
+        [EnableRateLimiting("trading")]
         public IActionResult Buy([FromForm] BuyInputModel model)
         {
             if (!ModelState.IsValid)
@@ -540,6 +545,7 @@ namespace IntelliTrader.Web.Controllers
 
         [HttpPost]
         [ValidateAntiForgeryToken]
+        [EnableRateLimiting("trading")]
         public IActionResult BuyDefault([FromForm] BuyDefaultInputModel model)
         {
             if (!ModelState.IsValid)
@@ -562,6 +568,7 @@ namespace IntelliTrader.Web.Controllers
 
         [HttpPost]
         [ValidateAntiForgeryToken]
+        [EnableRateLimiting("trading")]
         public IActionResult Swap([FromForm] SwapInputModel model)
         {
             if (!ModelState.IsValid)

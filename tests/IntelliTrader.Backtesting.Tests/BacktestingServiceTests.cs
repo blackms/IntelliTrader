@@ -14,7 +14,10 @@ namespace IntelliTrader.Backtesting.Tests;
 /// <summary>
 /// Tests for IBacktestingService interface behavior and BacktestingService functionality.
 /// These tests focus on testing the interface contract and behavior through mocks.
+/// Limitation: BacktestingService is internal, so these tests verify mock behavior only,
+/// not real service logic. They confirm the interface contract but do not exercise production code paths.
 /// </summary>
+[Trait("Category", "MockVerification")]
 public class BacktestingServiceInterfaceTests
 {
     private readonly Mock<IBacktestingService> _backtestingServiceMock;
@@ -506,7 +509,9 @@ public class BacktestingServiceInterfaceTests
 /// <summary>
 /// Tests for BacktestingService constants via the IBacktestingService interface.
 /// BacktestingService is internal, so we test snapshot file paths indirectly.
+/// Limitation: These tests verify mock behavior only, not real service logic.
 /// </summary>
+[Trait("Category", "MockVerification")]
 public class BacktestingServiceConstantsTests
 {
     [Fact]
@@ -541,8 +546,10 @@ public class BacktestingServiceConstantsTests
 }
 
 /// <summary>
-/// Tests for BacktestingConfig behavior
+/// Tests for BacktestingConfig behavior.
+/// Limitation: These tests verify mock behavior only, not real config implementation.
 /// </summary>
+[Trait("Category", "MockVerification")]
 public class BacktestingConfigTests
 {
     [Fact]
@@ -592,8 +599,10 @@ public class BacktestingConfigTests
 }
 
 /// <summary>
-/// Tests for BacktestingService performance metrics calculation
+/// Tests for BacktestingService performance metrics calculation.
+/// Limitation: These tests verify mock behavior only, not real performance calculations.
 /// </summary>
+[Trait("Category", "MockVerification")]
 public class BacktestingServicePerformanceTests
 {
     [Fact]
@@ -638,8 +647,10 @@ public class BacktestingServicePerformanceTests
 }
 
 /// <summary>
-/// Tests for time manipulation during backtesting
+/// Tests for time manipulation during backtesting.
+/// Limitation: These tests verify mock behavior only, not real time manipulation logic.
 /// </summary>
+[Trait("Category", "MockVerification")]
 public class BacktestingTimeManipulationTests
 {
     [Theory]

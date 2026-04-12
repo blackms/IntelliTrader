@@ -9,7 +9,6 @@ namespace IntelliTrader.Core
 {
     /// <summary>
     /// Builds and configures the Autofac DI container.
-    /// Replaces the static Application.BuildContainer() method.
     /// </summary>
     public class ApplicationBootstrapper : IApplicationBootstrapper
     {
@@ -54,15 +53,15 @@ namespace IntelliTrader.Core
         /// <inheritdoc/>
         public IContainer BuildContainer(Action<ContainerBuilder> configureBuilder)
         {
-            // Initialize the static Application facade before module registration
-            // This ensures modules can access config during registration (backward compatibility)
-            Application.Initialize(_configProvider, _applicationContext);
-
             var builder = new ContainerBuilder();
 
             // Register the singleton instances created during bootstrapping
             builder.RegisterInstance(_configProvider).As<IConfigProvider>().SingleInstance();
             builder.RegisterInstance(_applicationContext).As<IApplicationContext>().SingleInstance();
+
+            // Expose the config provider via builder properties so modules can access
+            // configuration at registration time without using the static Application facade.
+            builder.Properties[nameof(IConfigProvider)] = _configProvider;
 
             // Discover and register all IntelliTrader modules
             var assemblyPattern = new Regex($"{nameof(IntelliTrader)}.*.dll");

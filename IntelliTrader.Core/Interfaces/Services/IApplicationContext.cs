@@ -2,7 +2,6 @@ namespace IntelliTrader.Core
 {
     /// <summary>
     /// Provides application-wide runtime context such as speed multiplier for backtesting.
-    /// Replaces the static Application.Speed property.
     /// </summary>
     public interface IApplicationContext
     {

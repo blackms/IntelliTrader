@@ -4,7 +4,6 @@ namespace IntelliTrader.Core
 {
     /// <summary>
     /// Interface for building and configuring the DI container.
-    /// Replaces the static Application.BuildContainer() method.
     /// </summary>
     public interface IApplicationBootstrapper
     {

@@ -1,6 +1,5 @@
 using Autofac;
 using IntelliTrader.Core;
-using System;
 
 namespace IntelliTrader.Backtesting
 {
@@ -14,12 +13,10 @@ namespace IntelliTrader.Backtesting
                 .Named<IConfigurableService>(Constants.ServiceNames.BacktestingService)
                 .SingleInstance();
 
-            // Access config through the static facade during module registration.
-            // The facade is initialized by ApplicationBootstrapper before module loading,
-            // ensuring the same IConfigProvider instance is used throughout the application.
-#pragma warning disable CS0618 // Suppress obsolete warning - this is a known transitional usage
-            var backtestingConfig = Application.ConfigProvider.GetSection<BacktestingConfig>(Constants.ServiceNames.BacktestingService);
-#pragma warning restore CS0618
+            // Access config through builder properties set by ApplicationBootstrapper,
+            // avoiding the static Application facade (service locator pattern).
+            var configProvider = (IConfigProvider)builder.Properties[nameof(IConfigProvider)];
+            var backtestingConfig = configProvider.GetSection<BacktestingConfig>(Constants.ServiceNames.BacktestingService);
 
             if (backtestingConfig.Enabled && backtestingConfig.Replay)
             {

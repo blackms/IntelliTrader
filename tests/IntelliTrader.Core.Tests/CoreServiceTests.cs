@@ -343,7 +343,6 @@ public class CoreServiceTests
     #region Service Lifecycle Start Tests
 
     // Note: The following tests require the config directory to exist and are marked as integration tests.
-    // They test the full service lifecycle which depends on the Application.ConfigProvider static class.
     // To run these tests, ensure the config directory exists at the test output location.
 
     [Fact(Skip = "Requires config directory - integration test")]

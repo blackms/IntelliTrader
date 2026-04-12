@@ -13,6 +13,7 @@ namespace IntelliTrader.Exchange.Tests;
 /// </summary>
 public class TestableExchangeService : ExchangeService
 {
+    private readonly ILoggingService _loggingService;
     private readonly ConcurrentDictionary<string, Ticker> _tickers = new();
     private readonly Dictionary<string, decimal> _availableAmounts = new();
     private readonly List<IOrderDetails> _myTrades = new();
@@ -23,9 +24,11 @@ public class TestableExchangeService : ExchangeService
         ILoggingService loggingService,
         IHealthCheckService healthCheckService,
         ICoreService coreService,
+        IConfigProvider configProvider,
         Func<IOrder, IOrderDetails>? placeOrderHandler = null)
-        : base(loggingService, healthCheckService, coreService)
+        : base(loggingService, healthCheckService, coreService, configProvider)
     {
+        _loggingService = loggingService;
         _placeOrderHandler = placeOrderHandler;
     }
 
@@ -65,14 +68,14 @@ public class TestableExchangeService : ExchangeService
     {
         VirtualTradingEnabled = virtualTrading;
         _isStarted = true;
-        loggingService.Info("TestableExchangeService started");
+        _loggingService.Info("TestableExchangeService started");
     }
 
     public override void Stop()
     {
         _isStarted = false;
         _tickers.Clear();
-        loggingService.Info("TestableExchangeService stopped");
+        _loggingService.Info("TestableExchangeService stopped");
     }
 
     public override Task<IEnumerable<ITicker>> GetTickers(string market)
@@ -141,6 +144,7 @@ public class ExchangeServiceTests
     private readonly Mock<ILoggingService> _loggingServiceMock;
     private readonly Mock<IHealthCheckService> _healthCheckServiceMock;
     private readonly Mock<ICoreService> _coreServiceMock;
+    private readonly Mock<IConfigProvider> _configProviderMock;
     private TestableExchangeService _sut = null!;
 
     public ExchangeServiceTests()
@@ -148,6 +152,7 @@ public class ExchangeServiceTests
         _loggingServiceMock = new Mock<ILoggingService>();
         _healthCheckServiceMock = new Mock<IHealthCheckService>();
         _coreServiceMock = new Mock<ICoreService>();
+        _configProviderMock = new Mock<IConfigProvider>();
     }
 
     private TestableExchangeService CreateService(Func<IOrder, IOrderDetails>? placeOrderHandler = null)
@@ -156,6 +161,7 @@ public class ExchangeServiceTests
             _loggingServiceMock.Object,
             _healthCheckServiceMock.Object,
             _coreServiceMock.Object,
+            _configProviderMock.Object,
             placeOrderHandler);
     }
 
@@ -174,45 +180,18 @@ public class ExchangeServiceTests
     #region Constructor Tests
 
     [Fact]
-    public void Constructor_WithNullLoggingService_ThrowsArgumentNullException()
-    {
-        // Act
-        var act = () => new TestableExchangeService(
-            null!,
-            _healthCheckServiceMock.Object,
-            _coreServiceMock.Object);
-
-        // Assert
-        act.Should().Throw<ArgumentNullException>()
-            .WithParameterName("loggingService");
-    }
-
-    [Fact]
-    public void Constructor_WithNullHealthCheckService_ThrowsArgumentNullException()
-    {
-        // Act
-        var act = () => new TestableExchangeService(
-            _loggingServiceMock.Object,
-            null!,
-            _coreServiceMock.Object);
-
-        // Assert
-        act.Should().Throw<ArgumentNullException>()
-            .WithParameterName("healthCheckService");
-    }
-
-    [Fact]
-    public void Constructor_WithNullCoreService_ThrowsArgumentNullException()
+    public void Constructor_WithNullConfigProvider_ThrowsArgumentNullException()
     {
         // Act
         var act = () => new TestableExchangeService(
             _loggingServiceMock.Object,
             _healthCheckServiceMock.Object,
+            _coreServiceMock.Object,
             null!);
 
         // Assert
         act.Should().Throw<ArgumentNullException>()
-            .WithParameterName("coreService");
+            .WithParameterName("configProvider");
     }
 
     [Fact]

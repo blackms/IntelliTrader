@@ -16,6 +16,7 @@ namespace IntelliTrader.E2E.Tests
     /// These endpoints are used by Docker HEALTHCHECK and Kubernetes probes
     /// and must be accessible without authentication.
     /// </summary>
+    [Collection("E2E")]
     public class HealthEndpointTests : IClassFixture<TestWebHostFactory>
     {
         private readonly HttpClient _client;

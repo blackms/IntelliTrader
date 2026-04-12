@@ -177,7 +177,10 @@ namespace IntelliTrader.Core
 
         public void RemoveTask(string name)
         {
-            timedTasks.TryRemove(name, out HighResolutionTimedTask task);
+            if (timedTasks.TryRemove(name, out HighResolutionTimedTask task))
+            {
+                task?.Dispose();
+            }
         }
 
         public void RemoveAllTasks()

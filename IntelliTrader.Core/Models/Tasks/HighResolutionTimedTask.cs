@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Threading;
 
@@ -9,13 +9,13 @@ namespace IntelliTrader.Core
     /// for new work. See ADR-0016 for migration details.
     /// </summary>
     [Obsolete("Use BackgroundService instead. See docs/ADRs/ADR-0016-ihostedservice-migration.md for migration guidance.")]
-    public abstract class HighResolutionTimedTask
+    public abstract class HighResolutionTimedTask : IDisposable
     {
         /// <summary>
         /// Raised on unhandled exception
         /// </summary>
         public event UnhandledExceptionEventHandler UnhandledException;
-        
+
         /// <summary>
         /// Delay before starting the task in [ms]
         /// </summary>
@@ -138,5 +138,26 @@ namespace IntelliTrader.Core
         }
 
         public abstract void Run();
+
+        private bool disposed;
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!disposed)
+            {
+                if (disposing)
+                {
+                    Stop();
+                    resetEvent?.Dispose();
+                }
+                disposed = true;
+            }
+        }
     }
 }

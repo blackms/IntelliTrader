@@ -469,10 +469,13 @@ namespace IntelliTrader.Trading
             }
         }
 
-        public override void Dispose()
+        protected override void Dispose(bool disposing)
         {
-            base.Dispose();
-            healthCheckService.RemoveHealthCheck(Constants.HealthChecks.AccountRefreshed);
+            base.Dispose(disposing);
+            if (disposing)
+            {
+                healthCheckService.RemoveHealthCheck(Constants.HealthChecks.AccountRefreshed);
+            }
         }
     }
 }

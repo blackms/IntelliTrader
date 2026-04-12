@@ -238,6 +238,15 @@ namespace IntelliTrader.Signals.TradingView
             }
         }
 
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                httpClient?.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+
         private HttpClient CreateHttpClient()
         {
             var httpClient = new HttpClient();

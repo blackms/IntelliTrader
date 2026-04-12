@@ -40,5 +40,11 @@ namespace IntelliTrader.Core
         /// Forces a reconnection of the WebSocket stream.
         /// </summary>
         Task ReconnectWebSocketAsync();
+
+        /// <summary>
+        /// Updates the exchange API credentials at runtime without restarting the service.
+        /// Returns true if credentials were successfully applied.
+        /// </summary>
+        bool UpdateCredentials(string keysFilePath);
     }
 }

@@ -10,6 +10,7 @@
     "Rules": "rules.json",
     "Notification": "notification.json",
     "Web": "web.json",
-    "Backtesting": "backtesting.json"
+    "Backtesting": "backtesting.json",
+    "SecretRotation": "secret-rotation.json"
   }
 }

@@ -329,6 +329,28 @@ namespace IntelliTrader.Exchange.Binance
             });
         }
 
+        /// <inheritdoc />
+        public override bool UpdateCredentials(string keysFilePath)
+        {
+            if (_binanceApi == null)
+            {
+                _loggingService.Error("Cannot update credentials: Binance API not initialized");
+                return false;
+            }
+
+            try
+            {
+                _binanceApi.LoadAPIKeys(keysFilePath);
+                _loggingService.Info("Binance API credentials updated successfully");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _loggingService.Error("Failed to update Binance API credentials", ex);
+                return false;
+            }
+        }
+
         private void OnWebSocketTickersUpdated(IReadOnlyCollection<ITicker> updatedTickers)
         {
             if (!_started) return;

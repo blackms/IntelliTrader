@@ -1490,7 +1490,7 @@ namespace IntelliTrader.Trading
                 {
                     try
                     {
-                        await _domainEventDispatcher.DispatchAsync(domainEvent);
+                        await _domainEventDispatcher.DispatchAsync(domainEvent).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {

@@ -40,7 +40,7 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
     public async Task<Position?> GetByIdAsync(PositionId id, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(id);
-        await EnsureCacheLoadedAsync(cancellationToken);
+        await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
 
         return _cache.TryGetValue(id.Value, out var dto) ? PositionMapper.FromDto(dto) : null;
     }
@@ -49,7 +49,7 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
     public async Task<Position?> GetByPairAsync(TradingPair pair, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(pair);
-        await EnsureCacheLoadedAsync(cancellationToken);
+        await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
 
         var dto = _cache.Values
             .FirstOrDefault(p => !p.IsClosed &&
@@ -61,7 +61,7 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
     /// <inheritdoc />
     public async Task<IReadOnlyList<Position>> GetAllActiveAsync(CancellationToken cancellationToken = default)
     {
-        await EnsureCacheLoadedAsync(cancellationToken);
+        await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
 
         return _cache.Values
             .Where(p => !p.IsClosed)
@@ -75,7 +75,7 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(portfolioId);
-        await EnsureCacheLoadedAsync(cancellationToken);
+        await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
 
         return _cache.Values
             .Where(p => p.PortfolioId == portfolioId.Value)
@@ -89,7 +89,7 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
         DateTimeOffset to,
         CancellationToken cancellationToken = default)
     {
-        await EnsureCacheLoadedAsync(cancellationToken);
+        await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
 
         return _cache.Values
             .Where(p => p.IsClosed &&
@@ -104,7 +104,7 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
     public async Task SaveAsync(Position position, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(position);
-        await EnsureCacheLoadedAsync(cancellationToken);
+        await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
 
         // Preserve existing portfolio association if present
         PortfolioId? portfolioId = null;
@@ -116,14 +116,14 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
         var dto = PositionMapper.ToDto(position, portfolioId);
         _cache[position.Id.Value] = dto;
 
-        await PersistCacheAsync(cancellationToken);
+        await PersistCacheAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
     public async Task SaveManyAsync(IEnumerable<Position> positions, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(positions);
-        await EnsureCacheLoadedAsync(cancellationToken);
+        await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
 
         foreach (var position in positions)
         {
@@ -137,18 +137,18 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
             _cache[position.Id.Value] = dto;
         }
 
-        await PersistCacheAsync(cancellationToken);
+        await PersistCacheAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
     public async Task DeleteAsync(PositionId id, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(id);
-        await EnsureCacheLoadedAsync(cancellationToken);
+        await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
 
         if (_cache.TryRemove(id.Value, out _))
         {
-            await PersistCacheAsync(cancellationToken);
+            await PersistCacheAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -156,7 +156,7 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
     public async Task<bool> ExistsForPairAsync(TradingPair pair, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(pair);
-        await EnsureCacheLoadedAsync(cancellationToken);
+        await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
 
         return _cache.Values.Any(p => !p.IsClosed &&
                                       p.Pair.Symbol.Equals(pair.Symbol, StringComparison.OrdinalIgnoreCase));
@@ -165,7 +165,7 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
     /// <inheritdoc />
     public async Task<int> GetActiveCountAsync(CancellationToken cancellationToken = default)
     {
-        await EnsureCacheLoadedAsync(cancellationToken);
+        await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
         return _cache.Values.Count(p => !p.IsClosed);
     }
 
@@ -179,12 +179,12 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
     {
         ArgumentNullException.ThrowIfNull(positionId);
         ArgumentNullException.ThrowIfNull(portfolioId);
-        await EnsureCacheLoadedAsync(cancellationToken);
+        await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
 
         if (_cache.TryGetValue(positionId.Value, out var dto))
         {
             dto.PortfolioId = portfolioId.Value;
-            await PersistCacheAsync(cancellationToken);
+            await PersistCacheAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -193,11 +193,11 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
     /// </summary>
     public async Task ReloadAsync(CancellationToken cancellationToken = default)
     {
-        await _fileLock.WaitAsync(cancellationToken);
+        await _fileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             _cacheLoaded = false;
-            await LoadCacheAsync(cancellationToken);
+            await LoadCacheAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -209,12 +209,12 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
     {
         if (_cacheLoaded) return;
 
-        await _fileLock.WaitAsync(cancellationToken);
+        await _fileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (!_cacheLoaded)
             {
-                await LoadCacheAsync(cancellationToken);
+                await LoadCacheAsync(cancellationToken).ConfigureAwait(false);
             }
         }
         finally
@@ -232,7 +232,7 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
             return;
         }
 
-        var json = await File.ReadAllTextAsync(_filePath, cancellationToken);
+        var json = await File.ReadAllTextAsync(_filePath, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(json))
         {
             _cache = new ConcurrentDictionary<Guid, PositionDto>();
@@ -248,7 +248,7 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
 
     private async Task PersistCacheAsync(CancellationToken cancellationToken)
     {
-        await _fileLock.WaitAsync(cancellationToken);
+        await _fileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             var directory = Path.GetDirectoryName(_filePath);
@@ -259,7 +259,7 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
 
             var dtos = _cache.Values.ToList();
             var json = JsonSerializer.Serialize(dtos, _jsonOptions);
-            await File.WriteAllTextAsync(_filePath, json, cancellationToken);
+            await File.WriteAllTextAsync(_filePath, json, cancellationToken).ConfigureAwait(false);
         }
         finally
         {

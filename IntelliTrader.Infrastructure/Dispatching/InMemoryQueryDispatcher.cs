@@ -77,7 +77,7 @@ public sealed class InMemoryQueryDispatcher : IQueryDispatcher
                     new Error("InvocationFailed", "Handler returned null"));
             }
 
-            var result = await task;
+            var result = await task.ConfigureAwait(false);
 
             _logger.LogDebug(
                 "Query {QueryType} handled with success={IsSuccess}",

@@ -90,7 +90,7 @@ namespace IntelliTrader.Core
             // to avoid blocking a thread pool thread during the delay
             _ = Task.Run(async () =>
             {
-                await Task.Delay(Constants.Timeouts.StartupDelayMs);
+                await Task.Delay(Constants.Timeouts.StartupDelayMs).ConfigureAwait(false);
                 StartAllTasks();
             });
 

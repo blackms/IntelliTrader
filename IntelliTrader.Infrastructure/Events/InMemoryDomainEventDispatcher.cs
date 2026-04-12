@@ -84,7 +84,7 @@ public class InMemoryDomainEventDispatcher : IDomainEventDispatcher
         {
             try
             {
-                await InvokeHandlerAsync(handler, domainEvent, cancellationToken);
+                await InvokeHandlerAsync(handler, domainEvent, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -117,7 +117,7 @@ public class InMemoryDomainEventDispatcher : IDomainEventDispatcher
         foreach (var domainEvent in eventList)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await DispatchAsync(domainEvent, cancellationToken);
+            await DispatchAsync(domainEvent, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -175,7 +175,7 @@ public class InMemoryDomainEventDispatcher : IDomainEventDispatcher
 
         if (task != null)
         {
-            await task;
+            await task.ConfigureAwait(false);
         }
     }
 }

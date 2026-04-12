@@ -277,9 +277,16 @@ namespace IntelliTrader.Exchange.Binance.Resilience
 
         /// <summary>
         /// Determines if an exception indicates a server-side error (5xx or 429).
+        /// Uses HttpRequestException.StatusCode when available, falls back to message matching.
         /// </summary>
         private static bool IsServerError(Exception ex)
         {
+            if (ex is System.Net.Http.HttpRequestException httpEx && httpEx.StatusCode.HasValue)
+            {
+                var code = (int)httpEx.StatusCode.Value;
+                return code == 429 || (code >= 500 && code <= 504);
+            }
+
             var message = ex.Message;
             return message.Contains("500") ||
                    message.Contains("502") ||
@@ -290,9 +297,16 @@ namespace IntelliTrader.Exchange.Binance.Resilience
 
         /// <summary>
         /// Determines if an exception is a transient error that should be retried.
+        /// Uses HttpRequestException.StatusCode when available, falls back to message matching.
         /// </summary>
         private static bool IsTransientError(Exception ex)
         {
+            if (ex is System.Net.Http.HttpRequestException httpEx && httpEx.StatusCode.HasValue)
+            {
+                var code = (int)httpEx.StatusCode.Value;
+                return code == 429 || code == 500 || code == 502 || code == 503 || code == 504;
+            }
+
             var message = ex.Message;
             return message.Contains("429") ||    // Rate limit
                    message.Contains("503") ||    // Service unavailable

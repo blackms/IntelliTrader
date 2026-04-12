@@ -143,20 +143,13 @@ namespace IntelliTrader.Signals.Base
 
         public IEnumerable<ISignal> GetSignalsByName(string signalName)
         {
-            IEnumerable<ISignal> signals = null;
+            IEnumerable<ISignal> signals = Enumerable.Empty<ISignal>();
             foreach (var kvp in signalReceivers.OrderBy(r => r.Value.GetPeriod()))
             {
                 if (signalName == null || signalName == kvp.Key)
                 {
                     ISignalReceiver receiver = kvp.Value;
-                    if (signals == null)
-                    {
-                        signals = receiver.GetSignals();
-                    }
-                    else
-                    {
-                        signals = signals.Concat(receiver.GetSignals());
-                    }
+                    signals = signals.Concat(receiver.GetSignals());
                 }
             }
             return signals;

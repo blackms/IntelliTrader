@@ -263,7 +263,7 @@ function showSettings(e) {
     var row = table.row(tr);
     var config = row.data().Config;
     $("#modalTitle").text(pair + " Settings");
-    $("#modalContent").html("<pre>" + JSON.stringify(config, null, 4) + "</pre>");
+    $("#modalContent").empty().append($("<pre>").text(JSON.stringify(config, null, 4)));
     $("#modal").modal('show');
 }
 

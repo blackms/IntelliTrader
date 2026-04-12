@@ -139,7 +139,10 @@ function updateStatus() {
         data.HealthChecks.sort(function (a, b) { return a.Name > b.Name; });
         healthChecks.attr("title", data.HealthChecks.map(function (check) { return check.Name + ": " + new Date(check.LastUpdated).toTimeString().split(' ')[0] + (check.Failed ? " (Failed)" : " (OK)"); }).join("\r\n"));
         var logEntries = $("#logEntries");
-        logEntries.html(data.LogEntries.join("<br />"));
+        logEntries.empty();
+        data.LogEntries.forEach(function(entry) {
+            $("<div>").text(entry).appendTo(logEntries);
+        });
         setStatus("none");
     }).fail(function (data) {
         setStatus("error");

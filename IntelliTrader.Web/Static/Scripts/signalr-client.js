@@ -310,7 +310,10 @@ var IntelliTraderSignalR = (function () {
         // Update log entries
         if (data.LogEntries && data.LogEntries.length > 0) {
             var logEntries = $("#logEntries");
-            logEntries.html(data.LogEntries.join("<br />"));
+            logEntries.empty();
+            data.LogEntries.forEach(function(entry) {
+                $("<div>").text(entry).appendTo(logEntries);
+            });
         }
 
         setConnectionStatus("connected");

@@ -97,6 +97,12 @@ namespace IntelliTrader.Backtesting
             throw new NotImplementedException();
         }
 
+        public bool UpdateCredentials(string keysFilePath)
+        {
+            // Not applicable for backtesting
+            return false;
+        }
+
         #endregion Not Needed For Backtesting
     }
 }

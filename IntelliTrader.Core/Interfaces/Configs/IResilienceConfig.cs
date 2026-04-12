@@ -1,150 +1,137 @@
-using IntelliTrader.Core;
-
-namespace IntelliTrader.Exchange.Binance.Config
+namespace IntelliTrader.Core
 {
     /// <summary>
-    /// Configuration options for exchange resilience policies.
-    /// Defines timeout, retry, circuit breaker, and rate limiting settings
-    /// for both read operations and order execution.
+    /// Configuration for exchange resilience policies including retry, circuit breaker,
+    /// rate limiting, and WebSocket reconnection settings.
     /// </summary>
-    public class ResilienceConfig : IResilienceConfig
+    public interface IResilienceConfig
     {
         // === Read Operations ===
 
         /// <summary>
         /// Timeout for read operations in seconds.
         /// </summary>
-        public int ReadTimeoutSeconds { get; set; } = 30;
+        int ReadTimeoutSeconds { get; }
 
         /// <summary>
         /// Maximum concurrent read operations allowed.
         /// </summary>
-        public int MaxConcurrentReads { get; set; } = 10;
+        int MaxConcurrentReads { get; }
 
         /// <summary>
         /// Maximum queued read operations when concurrency limit is reached.
         /// </summary>
-        public int ReadQueueLimit { get; set; } = 20;
+        int ReadQueueLimit { get; }
 
         /// <summary>
         /// Maximum retry attempts for read operations.
         /// </summary>
-        public int ReadMaxRetryAttempts { get; set; } = 3;
+        int ReadMaxRetryAttempts { get; }
 
         /// <summary>
         /// Initial delay before first retry for read operations (milliseconds).
         /// </summary>
-        public int ReadInitialDelayMs { get; set; } = 1000;
+        int ReadInitialDelayMs { get; }
 
         // === Order Operations ===
 
         /// <summary>
         /// Timeout for order operations in seconds.
-        /// Shorter than reads because markets move fast.
         /// </summary>
-        public int OrderTimeoutSeconds { get; set; } = 15;
+        int OrderTimeoutSeconds { get; }
 
         /// <summary>
         /// Maximum concurrent order operations allowed.
-        /// Kept low to prevent overwhelming the exchange.
         /// </summary>
-        public int MaxConcurrentOrders { get; set; } = 3;
+        int MaxConcurrentOrders { get; }
 
         /// <summary>
         /// Maximum queued order operations when concurrency limit is reached.
         /// </summary>
-        public int OrderQueueLimit { get; set; } = 5;
+        int OrderQueueLimit { get; }
 
         /// <summary>
         /// Maximum retry attempts for order operations.
-        /// CRITICAL: Set to 0 — orders must NOT be retried automatically.
-        /// Even a single retry risks duplicate orders if the original request
-        /// reached the exchange but the response was lost.
+        /// Set to 0 to prevent duplicate orders.
         /// </summary>
-        public int OrderMaxRetryAttempts { get; set; } = 0;
+        int OrderMaxRetryAttempts { get; }
 
         /// <summary>
         /// Initial delay before first retry for order operations (milliseconds).
         /// </summary>
-        public int OrderInitialDelayMs { get; set; } = 500;
+        int OrderInitialDelayMs { get; }
 
         // === Circuit Breaker (Reads) ===
 
         /// <summary>
         /// Failure ratio threshold to open circuit breaker for reads (0.0-1.0).
         /// </summary>
-        public double CircuitBreakerFailureRatio { get; set; } = 0.5;
+        double CircuitBreakerFailureRatio { get; }
 
         /// <summary>
         /// Sampling duration for circuit breaker failure ratio calculation (seconds).
         /// </summary>
-        public int CircuitBreakerSamplingSeconds { get; set; } = 30;
+        int CircuitBreakerSamplingSeconds { get; }
 
         /// <summary>
         /// Minimum number of operations before circuit breaker can open.
         /// </summary>
-        public int CircuitBreakerMinimumThroughput { get; set; } = 8;
+        int CircuitBreakerMinimumThroughput { get; }
 
         /// <summary>
         /// Duration the circuit breaker stays open before transitioning to half-open (seconds).
         /// </summary>
-        public int CircuitBreakerBreakDurationSeconds { get; set; } = 30;
+        int CircuitBreakerBreakDurationSeconds { get; }
 
         // === Circuit Breaker (Orders) ===
 
         /// <summary>
         /// Failure ratio threshold to open circuit breaker for orders (0.0-1.0).
-        /// More sensitive than reads to prevent order failures.
         /// </summary>
-        public double OrderCircuitBreakerFailureRatio { get; set; } = 0.3;
+        double OrderCircuitBreakerFailureRatio { get; }
 
         /// <summary>
         /// Sampling duration for order circuit breaker (seconds).
         /// </summary>
-        public int OrderCircuitBreakerSamplingSeconds { get; set; } = 60;
+        int OrderCircuitBreakerSamplingSeconds { get; }
 
         /// <summary>
         /// Minimum number of orders before circuit breaker can open.
         /// </summary>
-        public int OrderCircuitBreakerMinimumThroughput { get; set; } = 5;
+        int OrderCircuitBreakerMinimumThroughput { get; }
 
         /// <summary>
         /// Duration the order circuit breaker stays open (seconds).
         /// </summary>
-        public int OrderCircuitBreakerBreakDurationSeconds { get; set; } = 60;
+        int OrderCircuitBreakerBreakDurationSeconds { get; }
 
         // === WebSocket ===
 
         /// <summary>
         /// Timeout for WebSocket connection establishment (seconds).
         /// </summary>
-        public int WebSocketConnectTimeoutSeconds { get; set; } = 30;
+        int WebSocketConnectTimeoutSeconds { get; }
 
         /// <summary>
         /// Maximum reconnection attempts before falling back to REST.
         /// </summary>
-        public int WebSocketMaxReconnectAttempts { get; set; } = 5;
+        int WebSocketMaxReconnectAttempts { get; }
 
         /// <summary>
         /// Delay between WebSocket reconnection attempts (seconds).
         /// </summary>
-        public int WebSocketReconnectDelaySeconds { get; set; } = 5;
+        int WebSocketReconnectDelaySeconds { get; }
 
         // === Rate Limiting ===
 
         /// <summary>
-        /// Maximum requests per minute (below Binance's 1200/min limit).
+        /// Maximum requests per minute.
         /// </summary>
-        public int RateLimitPermitsPerMinute { get; set; } = 1000;
+        int RateLimitPermitsPerMinute { get; }
 
         /// <summary>
         /// Maximum queued requests when rate limit is reached.
         /// </summary>
-        public int RateLimitQueueLimit { get; set; } = 50;
-
-        /// <summary>
-        /// Creates a default configuration with recommended values.
-        /// </summary>
-        public static ResilienceConfig Default => new();
+        int RateLimitQueueLimit { get; }
     }
 }

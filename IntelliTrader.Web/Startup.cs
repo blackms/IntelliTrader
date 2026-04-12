@@ -11,6 +11,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using Microsoft.OpenApi.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -85,6 +86,26 @@ namespace IntelliTrader.Web
             // Includes tracing, metrics for trading operations, ASP.NET Core, HTTP, and runtime
             var enableConsoleExporter = Environment.IsDevelopment();
             services.AddIntelliTraderTelemetry(enableConsoleExporter);
+
+            // Configure OpenAPI/Swagger documentation
+            services.AddEndpointsApiExplorer();
+            services.AddSwaggerGen(c =>
+            {
+                c.SwaggerDoc("v1", new OpenApiInfo
+                {
+                    Title = "IntelliTrader API",
+                    Version = "v1",
+                    Description = "Cryptocurrency trading bot REST API for managing trades, monitoring signals, and checking system health.",
+                    Contact = new OpenApiContact
+                    {
+                        Name = "IntelliTrader",
+                        Url = new Uri("https://github.com/nicamedic/IntelliTrader")
+                    }
+                });
+
+                // Include MVC controller actions in Swagger docs
+                c.DocInclusionPredicate((docName, apiDesc) => true);
+            });
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
@@ -103,6 +124,14 @@ namespace IntelliTrader.Web
                 FileProvider = new PhysicalFileProvider(
                 Path.Combine(env.ContentRootPath, "Static")),
                 RequestPath = "/Static"
+            });
+
+            // Serve OpenAPI spec and Swagger UI (before auth so it's publicly accessible)
+            app.UseSwagger();
+            app.UseSwaggerUI(c =>
+            {
+                c.SwaggerEndpoint("/swagger/v1/swagger.json", "IntelliTrader API v1");
+                c.RoutePrefix = "swagger";
             });
 
             app.UseRouting();

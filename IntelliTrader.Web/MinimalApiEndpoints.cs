@@ -24,7 +24,9 @@ namespace IntelliTrader.Web
             endpoints.MapGet("/api/health", () => Results.Ok(new { status = "ok" }))
                 .AllowAnonymous()
                 .WithName("HealthCheck")
-                .WithDescription("Liveness probe returning 200 OK whenever the web host is running");
+                .WithDescription("Liveness probe returning 200 OK whenever the web host is running")
+                .WithTags("Health")
+                .Produces(StatusCodes.Status200OK);
 
             // GET /health/live - Kubernetes-style liveness probe.
             // Returns 200 whenever the web host is running. This is a
@@ -37,7 +39,9 @@ namespace IntelliTrader.Web
                 }))
                 .AllowAnonymous()
                 .WithName("LivenessProbe")
-                .WithDescription("Kubernetes liveness probe — 200 OK while the process is running");
+                .WithDescription("Kubernetes liveness probe — 200 OK while the process is running")
+                .WithTags("Health")
+                .Produces(StatusCodes.Status200OK);
 
             // GET /health/ready - Kubernetes-style readiness probe.
             // Returns 200 only when the bot is fully initialized AND
@@ -83,7 +87,10 @@ namespace IntelliTrader.Web
                 })
                 .AllowAnonymous()
                 .WithName("ReadinessProbe")
-                .WithDescription("Kubernetes readiness probe — 200 when bot is ready, 503 otherwise");
+                .WithDescription("Kubernetes readiness probe — 200 when bot is ready, 503 otherwise")
+                .WithTags("Health")
+                .Produces(StatusCodes.Status200OK)
+                .Produces(StatusCodes.Status503ServiceUnavailable);
 
             var apiGroup = endpoints.MapGroup("/api")
                 .RequireAuthorization();
@@ -109,7 +116,10 @@ namespace IntelliTrader.Web
                 return Results.Json(status);
             })
             .WithName("GetStatus")
-            .WithDescription("Get current trading status including balance, ratings, and health checks");
+            .WithDescription("Get current trading status including balance, ratings, and health checks")
+            .WithTags("Trading")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status401Unauthorized);
 
             // POST /api/trading-pairs - Get all trading pairs with their details
             apiGroup.MapPost("/trading-pairs", (
@@ -148,7 +158,10 @@ namespace IntelliTrader.Web
                 return Results.Json(tradingPairs);
             })
             .WithName("GetTradingPairs")
-            .WithDescription("Get all active trading pairs with their current status and configuration");
+            .WithDescription("Get all active trading pairs with their current status and configuration")
+            .WithTags("Trading")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status401Unauthorized);
 
             // POST /api/market-pairs - Get all market pairs with signals
             apiGroup.MapPost("/market-pairs", (
@@ -196,7 +209,10 @@ namespace IntelliTrader.Web
                 }
             })
             .WithName("GetMarketPairs")
-            .WithDescription("Get all market pairs with their signal data and configuration");
+            .WithDescription("Get all market pairs with their signal data and configuration")
+            .WithTags("Signals")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status401Unauthorized);
 
             // POST /api/market-pairs/filtered - Get market pairs with signals filter in body
             apiGroup.MapPost("/market-pairs/filtered", async (
@@ -253,7 +269,11 @@ namespace IntelliTrader.Web
                 }
             })
             .WithName("GetMarketPairsFiltered")
-            .WithDescription("Get market pairs filtered by specific signal names");
+            .WithDescription("Get market pairs filtered by specific signal names")
+            .WithTags("Signals")
+            .Accepts<List<string>>("application/json")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status401Unauthorized);
 
             // GET /api/signal-names - Get all available signal names
             apiGroup.MapGet("/signal-names", (ISignalsService signalsService) =>
@@ -261,7 +281,10 @@ namespace IntelliTrader.Web
                 return Results.Json(signalsService.GetSignalNames());
             })
             .WithName("GetSignalNames")
-            .WithDescription("Get all available signal names");
+            .WithDescription("Get all available signal names")
+            .WithTags("Signals")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status401Unauthorized);
 
             return endpoints;
         }

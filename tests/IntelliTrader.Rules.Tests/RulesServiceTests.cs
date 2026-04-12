@@ -10,11 +10,14 @@ namespace IntelliTrader.Rules.Tests;
 public class RulesServiceTests
 {
     private readonly Mock<ILoggingService> _loggingServiceMock;
+    private readonly Mock<IApplicationContext> _applicationContextMock;
     private readonly TestableRulesService _sut;
 
     public RulesServiceTests()
     {
         _loggingServiceMock = new Mock<ILoggingService>();
+        _applicationContextMock = new Mock<IApplicationContext>();
+        _applicationContextMock.Setup(x => x.Speed).Returns(1);
         _sut = CreateRulesServiceWithConfig(CreateDefaultConfig());
     }
 
@@ -22,7 +25,7 @@ public class RulesServiceTests
 
     private TestableRulesService CreateRulesServiceWithConfig(IRulesConfig config)
     {
-        var service = new TestableRulesService(_loggingServiceMock.Object);
+        var service = new TestableRulesService(_loggingServiceMock.Object, _applicationContextMock.Object);
         service.SetConfig(config);
         return service;
     }
@@ -1074,11 +1077,13 @@ internal class TestableRulesService : IRulesService
     public IRulesConfig Config { get; private set; } = null!;
 
     private readonly ILoggingService _loggingService;
+    private readonly IApplicationContext _applicationContext;
     private readonly List<Action> _rulesChangeCallbacks = new List<Action>();
 
-    public TestableRulesService(ILoggingService loggingService)
+    public TestableRulesService(ILoggingService loggingService, IApplicationContext applicationContext)
     {
         _loggingService = loggingService;
+        _applicationContext = applicationContext;
     }
 
     public IConfigurationSection RawConfig => throw new NotImplementedException();
@@ -1124,10 +1129,10 @@ internal class TestableRulesService : IRulesService
                 condition.MaxGlobalRating != null && (globalRating == null || globalRating > condition.MaxGlobalRating) ||
                 condition.Pairs != null && (pair == null || !condition.Pairs.Contains(pair)) ||
 
-                condition.MinAge != null && (tradingPair == null || tradingPair.CurrentAge < condition.MinAge / Application.Speed) ||
-                condition.MaxAge != null && (tradingPair == null || tradingPair.CurrentAge > condition.MaxAge / Application.Speed) ||
-                condition.MinLastBuyAge != null && (tradingPair == null || tradingPair.LastBuyAge < condition.MinLastBuyAge / Application.Speed) ||
-                condition.MaxLastBuyAge != null && (tradingPair == null || tradingPair.LastBuyAge > condition.MaxLastBuyAge / Application.Speed) ||
+                condition.MinAge != null && (tradingPair == null || tradingPair.CurrentAge < condition.MinAge / _applicationContext.Speed) ||
+                condition.MaxAge != null && (tradingPair == null || tradingPair.CurrentAge > condition.MaxAge / _applicationContext.Speed) ||
+                condition.MinLastBuyAge != null && (tradingPair == null || tradingPair.LastBuyAge < condition.MinLastBuyAge / _applicationContext.Speed) ||
+                condition.MaxLastBuyAge != null && (tradingPair == null || tradingPair.LastBuyAge > condition.MaxLastBuyAge / _applicationContext.Speed) ||
                 condition.MinMargin != null && (tradingPair == null || tradingPair.CurrentMargin < condition.MinMargin) ||
                 condition.MaxMargin != null && (tradingPair == null || tradingPair.CurrentMargin > condition.MaxMargin) ||
                 condition.MinMarginChange != null && (tradingPair == null || tradingPair.Metadata.LastBuyMargin == null || (tradingPair.CurrentMargin - tradingPair.Metadata.LastBuyMargin) < condition.MinMarginChange) ||

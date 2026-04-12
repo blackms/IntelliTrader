@@ -1,8 +1,5 @@
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Primitives;
 using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace IntelliTrader.Core
 {
@@ -22,25 +19,12 @@ namespace IntelliTrader.Core
         protected virtual ILoggingService LoggingService => null;
 
         /// <summary>
-        /// Gets the config provider. Derived classes should override this to provide
-        /// the injected config provider. Returns the static fallback by default for backward compatibility.
+        /// Gets the config provider injected via constructor.
         /// </summary>
-#pragma warning disable CS0618 // Suppress obsolete warning - this is intentional backward compatibility
-        protected virtual IConfigProvider ConfigProvider => _configProvider ?? Application.ConfigProvider;
-#pragma warning restore CS0618
-
-        /// <summary>
-        /// Default constructor for backward compatibility.
-        /// Services should migrate to use the constructor that accepts IConfigProvider.
-        /// </summary>
-        protected ConfigurableServiceBase()
-        {
-            _configProvider = null;
-        }
+        protected IConfigProvider ConfigProvider => _configProvider;
 
         /// <summary>
         /// Constructor that accepts an injected IConfigProvider.
-        /// Preferred constructor for proper DI usage.
         /// </summary>
         /// <param name="configProvider">The configuration provider</param>
         protected ConfigurableServiceBase(IConfigProvider configProvider)

@@ -32,7 +32,7 @@ namespace IntelliTrader.Rules.Specifications
         public ITradingPair? TradingPair { get; }
 
         /// <summary>
-        /// The speed multiplier from Application.Speed for age calculations.
+        /// The speed multiplier for age calculations.
         /// </summary>
         public double Speed { get; }
 

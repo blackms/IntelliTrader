@@ -7,6 +7,8 @@ using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 
+#pragma warning disable CS0612 // Type or member is obsolete
+
 namespace IntelliTrader.Core
 {
     internal class CoreService(

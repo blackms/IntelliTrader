@@ -3,6 +3,8 @@ using MessagePack;
 using System.IO;
 using System.Linq;
 
+#pragma warning disable CS0612 // Type or member is obsolete
+
 namespace IntelliTrader.Backtesting
 {
     internal class BacktestingSaveSnapshotsTimedTask : HighResolutionTimedTask

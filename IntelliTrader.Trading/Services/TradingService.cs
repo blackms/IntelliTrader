@@ -921,7 +921,8 @@ namespace IntelliTrader.Trading
                     effectiveMaxCost = options.MaxCost.Value;
                 }
 
-                decimal amount = options.Amount ?? Math.Round(effectiveMaxCost / currentPrice, 4);
+                // Use 8 decimal places (Binance max precision for most pairs) instead of hardcoded 4
+                decimal amount = options.Amount ?? Math.Round(effectiveMaxCost / currentPrice, 8);
 
                 var orderRequest = new BuyOrder
                 {

@@ -182,6 +182,12 @@ namespace IntelliTrader.Web
                     opt.QueueLimit = 0;
                 });
 
+                options.AddFixedWindowLimiter("login", opt =>
+                {
+                    opt.PermitLimit = 5;
+                    opt.Window = TimeSpan.FromMinutes(1);
+                });
+
                 options.OnRejected = async (context, cancellationToken) =>
                 {
                     context.HttpContext.Response.Headers.RetryAfter =

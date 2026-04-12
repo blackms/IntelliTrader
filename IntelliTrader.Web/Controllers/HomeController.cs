@@ -83,6 +83,7 @@ namespace IntelliTrader.Web.Controllers
 
         [HttpPost]
         [AllowAnonymous]
+        [EnableRateLimiting("login")]
         public async Task<IActionResult> Login(LoginViewModel model)
         {
             if (ModelState.IsValid)
@@ -137,7 +138,9 @@ namespace IntelliTrader.Web.Controllers
             }
         }
 
+        [HttpPost]
         [AllowAnonymous]
+        [ValidateAntiForgeryToken]
         public async Task<IActionResult> Logout()
         {
             await HttpContext.SignOutAsync();

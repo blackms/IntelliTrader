@@ -15,11 +15,7 @@
 # Local development overrides live in `docker-compose.override.yml`,
 # which Compose merges automatically. To run *only* this base file (i.e.
 # without dev overrides) use `docker compose -f docker-compose.yml ...`.
-#
-# NOTE: A pre-existing systemic Autofac DI bug (tracked in #38) currently
-# prevents the application from starting end-to-end. The container will
-# build and reach `Welcome to IntelliTrader`, then crash on bootstrap.
-# This compose file is correct and will work as soon as #38 is fixed.
+
 
 services:
   intellitrader:

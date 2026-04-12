@@ -17,21 +17,22 @@ This repository contains two distinct projects:
 # Build
 dotnet build IntelliTrader.sln
 
-# Run (Windows)
-Start-IntelliTrader.bat
-# Or directly:
-dotnet bin/Debug/netcoreapp2.1/IntelliTrader.dll
+# Run
+dotnet run --project IntelliTrader
 
 # Encrypt API keys for live trading
-dotnet bin/Debug/netcoreapp2.1/IntelliTrader.dll --encrypt --path keys.bin --publickey YOUR_API_KEY --privatekey YOUR_API_SECRET
+dotnet run --project IntelliTrader -- --encrypt --path keys.bin --publickey YOUR_API_KEY --privatekey YOUR_API_SECRET
 ```
 
 ### Architecture
 
-**Solution Structure** - Multi-project .NET Core 2.1 solution with Autofac DI:
+**Solution Structure** - Multi-project .NET 9 solution with Autofac DI:
 
 - `IntelliTrader/` - Main executable, configuration files, entry point (`Program.cs`)
 - `IntelliTrader.Core/` - Core services, interfaces, models, timed tasks (`Application.cs` manages DI container)
+- `IntelliTrader.Application/` - CQRS commands, queries, handlers, and ports
+- `IntelliTrader.Domain/` - Domain entities, value objects, aggregates, events, and specifications
+- `IntelliTrader.Infrastructure/` - Infrastructure adapters, persistence, telemetry, messaging
 - `IntelliTrader.Trading/` - Buy/sell/swap order execution
 - `IntelliTrader.Signals.Base/TradingView/` - Signal acquisition from TradingView
 - `IntelliTrader.Rules/` - Rule engine for trading decisions
@@ -58,16 +59,28 @@ dotnet bin/Debug/netcoreapp2.1/IntelliTrader.dll --encrypt --path keys.bin --pub
 All JSON configs in `IntelliTrader/config/` with hot-reload support:
 - `core.json` - Health checks, debug mode, instance name
 - `trading.json` - Market, exchange, buy/sell/DCA parameters, virtual trading toggle
+- `exchange.json` - API keys path, rate limiting
 - `signals.json` - TradingView signal definitions
 - `rules.json` - Signal rules (buy triggers) and trading rules (sell/DCA triggers)
 - `web.json` - Web interface port and settings
+- `logging.json` - Serilog levels, file paths
 - `notification.json` - Telegram alerts
+- `paths.json` - References to all other config files
+- `alerting.json` - Alert configuration
+- `audit.json` - Audit trail settings
+- `secret-rotation.json` - Secret rotation policies
+- `users.json` - User accounts and roles
 
 ### Key Patterns
 
 - **Timed Tasks**: `HighResolutionTimedTask` for concurrent polling operations
 - **Rule Engine**: Conditions checked via `IRulesService.CheckConditions()` with signal-specific and pair-specific conditions
 - **Plugin Architecture**: Modules auto-discovered from `IntelliTrader.*.dll` assemblies via `AppModule : Module`
+- **Clean Architecture**: Domain-centric layering with Application, Domain, and Infrastructure separation
+- **CQRS**: Command/Query separation with dedicated dispatchers and handlers
+- **Domain Events**: Async event dispatch (e.g., `OrderPlacedEvent`, `OrderFilledEvent`) via `EventDispatcher`
+- **Resilience Pipelines (Polly v8)**: Retry, circuit breaker, bulkhead, and timeout policies for exchange API calls
+- **Specification Pattern**: Composable business rules via specifications in the Domain layer
 
 ---
 

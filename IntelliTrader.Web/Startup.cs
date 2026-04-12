@@ -14,6 +14,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using Microsoft.OpenApi.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -90,6 +91,26 @@ namespace IntelliTrader.Web
             // Includes tracing, metrics for trading operations, ASP.NET Core, HTTP, and runtime
             var enableConsoleExporter = Environment.IsDevelopment();
             services.AddIntelliTraderTelemetry(enableConsoleExporter);
+
+            // Configure OpenAPI/Swagger documentation
+            services.AddEndpointsApiExplorer();
+            services.AddSwaggerGen(c =>
+            {
+                c.SwaggerDoc("v1", new OpenApiInfo
+                {
+                    Title = "IntelliTrader API",
+                    Version = "v1",
+                    Description = "Cryptocurrency trading bot REST API for managing trades, monitoring signals, and checking system health.",
+                    Contact = new OpenApiContact
+                    {
+                        Name = "IntelliTrader",
+                        Url = new Uri("https://github.com/nicamedic/IntelliTrader")
+                    }
+                });
+
+                // Include MVC controller actions in Swagger docs
+                c.DocInclusionPredicate((docName, apiDesc) => true);
+            });
 
             // Configure API rate limiting per endpoint category to prevent abuse.
             // Limits are configurable via web.json RateLimiting section.
@@ -171,6 +192,20 @@ namespace IntelliTrader.Web
                 Path.Combine(env.ContentRootPath, "Static")),
                 RequestPath = "/Static"
             });
+
+            // Serve OpenAPI spec and Swagger UI (before auth so it's publicly accessible).
+            // Only enabled in Development or when explicitly opted-in via config to avoid
+            // leaking API surface details in production.
+            var enableSwagger = env.IsDevelopment() || Configuration.GetValue<bool>("Swagger:Enabled");
+            if (enableSwagger)
+            {
+                app.UseSwagger();
+                app.UseSwaggerUI(c =>
+                {
+                    c.SwaggerEndpoint("/swagger/v1/swagger.json", "IntelliTrader API v1");
+                    c.RoutePrefix = "swagger";
+                });
+            }
 
             // Expose /metrics endpoint for Prometheus scraping
             app.UseIntelliTraderPrometheusEndpoint();

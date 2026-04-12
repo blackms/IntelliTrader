@@ -54,6 +54,13 @@ namespace IntelliTrader.Exchange.Base
             return Task.CompletedTask;
         }
 
+        /// <inheritdoc />
+        public virtual bool UpdateCredentials(string keysFilePath)
+        {
+            LoggingService.Debug("Credential update not implemented for this exchange");
+            return false;
+        }
+
         /// <summary>
         /// Raises the TickersUpdated event.
         /// </summary>

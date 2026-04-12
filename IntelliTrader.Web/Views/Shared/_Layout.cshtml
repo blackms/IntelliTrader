@@ -57,6 +57,10 @@
                     <a class="nav-item nav-link" href="/Settings">Settings</a>
                     <a class="nav-item nav-link" href="/Log">Log</a>
                     <a class="nav-item nav-link" href="/Help">Help</a>
+                    <form method="post" action="/Logout" style="display:inline">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="nav-item nav-link btn btn-link" style="cursor:pointer">Logout</button>
+                    </form>
                     <span class="nav-item nav-link text-muted" title="Lovingly handcrafted by Jazzo"><text>v</text>@Model.Version</span>
                 </div>
             </div>

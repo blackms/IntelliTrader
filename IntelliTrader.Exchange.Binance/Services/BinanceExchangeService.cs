@@ -280,6 +280,14 @@ namespace IntelliTrader.Exchange.Binance
         {
             if (_tickers.TryGetValue(pair, out Ticker? ticker))
             {
+                // Stale price protection: if ticker data is older than 60 seconds,
+                // return 0 to prevent trading on outdated prices. The calling code
+                // in TradingService.CanBuy() already checks price <= 0 and blocks the trade.
+                if (TimeSinceLastTickerUpdate.TotalSeconds > MaxTickersAgeToReconnectSeconds)
+                {
+                    _loggingService.Warning($"[StalePrice] Ticker data for {pair} is {TimeSinceLastTickerUpdate.TotalSeconds:F0}s old (limit: {MaxTickersAgeToReconnectSeconds}s). Returning 0 to block trading.");
+                    return Task.FromResult(0m);
+                }
                 return Task.FromResult(ticker.LastPrice);
             }
             else

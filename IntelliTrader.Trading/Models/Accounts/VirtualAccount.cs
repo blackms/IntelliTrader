@@ -37,19 +37,30 @@ namespace IntelliTrader.Trading
         {
             lock (SyncRoot)
             {
-                string virtualAccountFilePath = Path.Combine(Directory.GetCurrentDirectory(), tradingService.Config.VirtualAccountFilePath);
-
-                var data = new TradingAccountData
+                try
                 {
-                    Balance = balance,
-                    TradingPairs = tradingPairs
-                };
+                    string virtualAccountFilePath = Path.Combine(Directory.GetCurrentDirectory(), tradingService.Config.VirtualAccountFilePath);
 
-                var options = new JsonSerializerOptions { WriteIndented = true };
-                string virtualAccountJson = JsonSerializer.Serialize(data, options);
-                var virtualAccountFile = new FileInfo(virtualAccountFilePath);
-                virtualAccountFile.Directory?.Create();
-                File.WriteAllText(virtualAccountFile.FullName, virtualAccountJson);
+                    var data = new TradingAccountData
+                    {
+                        Balance = balance,
+                        TradingPairs = tradingPairs
+                    };
+
+                    var options = new JsonSerializerOptions { WriteIndented = true };
+                    string virtualAccountJson = JsonSerializer.Serialize(data, options);
+                    var virtualAccountFile = new FileInfo(virtualAccountFilePath);
+                    virtualAccountFile.Directory?.Create();
+
+                    // Atomic write: write to temp file first, then rename
+                    var tempPath = virtualAccountFile.FullName + ".tmp";
+                    File.WriteAllText(tempPath, virtualAccountJson);
+                    File.Move(tempPath, virtualAccountFile.FullName, overwrite: true);
+                }
+                catch (Exception ex)
+                {
+                    loggingService.Error("Unable to save virtual account data", ex);
+                }
             }
         }
 
@@ -121,11 +132,18 @@ namespace IntelliTrader.Trading
             var virtualAccountFile = new FileInfo(virtualAccountFilePath);
             virtualAccountFile.Directory?.Create();
 
+            // Atomic write: write to temp file first, then rename
+            var tempPath = virtualAccountFile.FullName + ".tmp";
 #if NETCOREAPP2_1
             // .NET Core 2.1 doesn't have WriteAllTextAsync
-            await Task.Run(() => File.WriteAllText(virtualAccountFile.FullName, virtualAccountJson), cancellationToken).ConfigureAwait(false);
+            await Task.Run(() =>
+            {
+                File.WriteAllText(tempPath, virtualAccountJson);
+                File.Move(tempPath, virtualAccountFile.FullName, overwrite: true);
+            }, cancellationToken).ConfigureAwait(false);
 #else
-            await File.WriteAllTextAsync(virtualAccountFile.FullName, virtualAccountJson, cancellationToken).ConfigureAwait(false);
+            await File.WriteAllTextAsync(tempPath, virtualAccountJson, cancellationToken).ConfigureAwait(false);
+            File.Move(tempPath, virtualAccountFile.FullName, overwrite: true);
 #endif
         }
 

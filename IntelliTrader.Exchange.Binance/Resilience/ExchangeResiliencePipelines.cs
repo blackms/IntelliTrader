@@ -178,29 +178,14 @@ namespace IntelliTrader.Exchange.Binance.Resilience
                     }
                 })
 
-                // 3. Retry - VERY CONSERVATIVE for orders to prevent duplicates
-                // CRITICAL: Only retry on true connection errors where we know the request
-                // never reached the server. Do NOT retry on TaskCanceledException/timeout
-                // because the server may have executed the order but the response was slow.
-                .AddRetry(new RetryStrategyOptions
-                {
-                    MaxRetryAttempts = _config.OrderMaxRetryAttempts, // Should be 1
-                    BackoffType = DelayBackoffType.Exponential,
-                    Delay = TimeSpan.FromMilliseconds(_config.OrderInitialDelayMs),
-                    UseJitter = true,
-                    // ONLY retry on connection errors, NOT on timeout or any response
-                    ShouldHandle = new PredicateBuilder()
-                        .Handle<HttpRequestException>(ex => IsConnectionError(ex)),
-                    OnRetry = args =>
-                    {
-                        _loggingService.Warning($"[Resilience] RETRYING ORDER (attempt {args.AttemptNumber + 1}/{_config.OrderMaxRetryAttempts}) - VERIFY ORDER STATUS BEFORE RETRY! Reason: {args.Outcome.Exception?.Message ?? "Unknown"}");
-                        return default;
-                    }
-                })
+                // 3. NO RETRY for order operations.
+                // CRITICAL: Orders must NOT be retried automatically to prevent duplicate orders.
+                // A failed order should be logged and the operator notified, not retried blindly.
+                // The retry has been removed entirely (OrderMaxRetryAttempts = 0) as even a single
+                // retry risks placing a duplicate order if the original request reached the exchange
+                // but the response was lost.
 
-                // 4. Timeout - INSIDE retry so each attempt gets its own timeout.
-                // If a timeout fires, it will NOT trigger a retry (TaskCanceledException
-                // is excluded from retry ShouldHandle), preventing duplicate orders.
+                // 4. Timeout - applied once per order attempt.
                 .AddTimeout(new TimeoutStrategyOptions
                 {
                     Timeout = TimeSpan.FromSeconds(_config.OrderTimeoutSeconds),

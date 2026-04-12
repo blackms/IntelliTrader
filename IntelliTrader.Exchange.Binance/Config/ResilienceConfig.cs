@@ -55,10 +55,11 @@ namespace IntelliTrader.Exchange.Binance.Config
 
         /// <summary>
         /// Maximum retry attempts for order operations.
-        /// CRITICAL: Keep very low (1) to prevent duplicate orders.
-        /// Only retries on connection errors, not response errors.
+        /// CRITICAL: Set to 0 — orders must NOT be retried automatically.
+        /// Even a single retry risks duplicate orders if the original request
+        /// reached the exchange but the response was lost.
         /// </summary>
-        public int OrderMaxRetryAttempts { get; set; } = 1;
+        public int OrderMaxRetryAttempts { get; set; } = 0;
 
         /// <summary>
         /// Initial delay before first retry for order operations (milliseconds).

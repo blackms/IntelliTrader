@@ -29,6 +29,11 @@ namespace IntelliTrader.Core
         // Tracks which config files were originally encrypted so we re-encrypt on save
         private readonly ConcurrentDictionary<string, bool> _encryptedFiles = new ConcurrentDictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 
+        // Tracks decrypted temp files so they can be cleaned up on disposal
+        private readonly List<string> _tempFiles = new List<string>();
+        private readonly object _tempFileLock = new object();
+        private bool _disposed;
+
         private const string MasterPasswordEnvVar = "INTELLITRADER_MASTER_PASSWORD";
 
         public ConfigProvider() : this(new ConfigValidationService())
@@ -38,6 +43,8 @@ namespace IntelliTrader.Core
         public ConfigProvider(IConfigValidationService validationService)
         {
             _validationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
+
+            AppDomain.CurrentDomain.ProcessExit += (_, _) => CleanupTempFiles();
 
             IConfigurationRoot pathsConfig = GetConfig(PATHS_CONFIG_PATH, changedPathsConfig =>
             {
@@ -234,8 +241,10 @@ namespace IntelliTrader.Core
                             string decrypted = ConfigEncryption.Decrypt(raw, masterPassword);
                             // Write a decrypted temporary file that the JSON provider can read.
                             // Place it in the system temp directory so we don't pollute the config folder.
-                            string tempFile = Path.Combine(Path.GetTempPath(), $"intellitrader_cfg_{Path.GetFileName(configPath)}");
+                            // Use a random filename to avoid predictable temp file paths.
+                            string tempFile = Path.Combine(Path.GetTempPath(), $"intellitrader_{Path.GetRandomFileName()}.json");
                             File.WriteAllText(tempFile, decrypted);
+                            TrackTempFile(tempFile);
                             effectivePath = Path.GetFileName(tempFile);
                             effectiveBaseDir = Path.GetDirectoryName(tempFile);
                         }
@@ -310,6 +319,54 @@ namespace IntelliTrader.Core
                 LogError($"Failed to re-encrypt config file '{filePath}'. Saving as plaintext.", ex);
                 return content;
             }
+        }
+
+        /// <summary>
+        /// Tracks a temporary file for cleanup on disposal or process exit.
+        /// </summary>
+        private void TrackTempFile(string path)
+        {
+            lock (_tempFileLock)
+            {
+                _tempFiles.Add(path);
+            }
+        }
+
+        /// <summary>
+        /// Deletes all tracked temporary files containing decrypted configuration data.
+        /// </summary>
+        private void CleanupTempFiles()
+        {
+            string[] files;
+            lock (_tempFileLock)
+            {
+                files = _tempFiles.ToArray();
+                _tempFiles.Clear();
+            }
+
+            foreach (var file in files)
+            {
+                try
+                {
+                    if (File.Exists(file))
+                    {
+                        File.Delete(file);
+                    }
+                }
+                catch
+                {
+                    // Best-effort cleanup; avoid throwing during disposal/process exit.
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+
+            _disposed = true;
+            CleanupTempFiles();
         }
     }
 }

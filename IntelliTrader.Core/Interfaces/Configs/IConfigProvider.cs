@@ -8,7 +8,7 @@ namespace IntelliTrader.Core
     /// <summary>
     /// Provides access to application configuration sections with support for hot-reload and change notifications.
     /// </summary>
-    public interface IConfigProvider
+    public interface IConfigProvider : IDisposable
     {
         /// <summary>
         /// Gets the raw JSON string for a configuration section.

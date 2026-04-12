@@ -6,6 +6,7 @@ using System.Linq;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
@@ -321,9 +322,29 @@ namespace IntelliTrader.Web.Controllers
             return View(model);
         }
 
+        // Keys whose values must be redacted before sending config JSON to the browser.
+        private static readonly HashSet<string> SensitiveKeyPatterns = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "password", "token", "secret", "key", "apikey", "privatekey"
+        };
+
+        private const string RedactedPlaceholder = "********";
+
         [Authorize(Policy = AuthPolicies.AdminOnly)]
         public IActionResult Settings()
         {
+            var rawConfigs = _configurableServices
+                .Where(s => !s.GetType().Name.Contains(Constants.ServiceNames.BacktestingService))
+                .OrderBy(s => s.ServiceName)
+                .ToDictionary(s => s.ServiceName, s => _configProvider.GetSectionJson(s.ServiceName));
+
+            // Redact sensitive values before sending to the browser
+            var redactedConfigs = new Dictionary<string, string>();
+            foreach (var kvp in rawConfigs)
+            {
+                redactedConfigs[kvp.Key] = RedactSensitiveJson(kvp.Value);
+            }
+
             var model = new SettingsViewModel()
             {
                 InstanceName = _coreService.Config.InstanceName,
@@ -333,10 +354,76 @@ namespace IntelliTrader.Web.Controllers
                 SellEnabled = _tradingService.Config.SellEnabled,
                 TradingSuspended = _tradingService.IsTradingSuspended,
                 HealthCheckEnabled = _coreService.Config.HealthCheckEnabled,
-                Configs = _configurableServices.Where(s => !s.GetType().Name.Contains(Constants.ServiceNames.BacktestingService)).OrderBy(s => s.ServiceName).ToDictionary(s => s.ServiceName, s => _configProvider.GetSectionJson(s.ServiceName))
+                Configs = redactedConfigs
             };
 
             return View(model);
+        }
+
+        /// <summary>
+        /// Parses a JSON string, replaces values of keys that match sensitive patterns
+        /// with a redacted placeholder, and returns the sanitised JSON.
+        /// Returns the original string unchanged if parsing fails.
+        /// </summary>
+        private static string RedactSensitiveJson(string json)
+        {
+            if (string.IsNullOrEmpty(json))
+                return json;
+
+            try
+            {
+                var node = JsonNode.Parse(json);
+                if (node != null)
+                {
+                    RedactNode(node);
+                    return node.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+                }
+            }
+            catch
+            {
+                // If JSON is unparseable, return it as-is rather than crashing.
+            }
+
+            return json;
+        }
+
+        private static void RedactNode(JsonNode node)
+        {
+            if (node is JsonObject obj)
+            {
+                var keys = obj.Select(p => p.Key).ToList();
+                foreach (var key in keys)
+                {
+                    if (IsSensitiveKey(key))
+                    {
+                        obj[key] = RedactedPlaceholder;
+                    }
+                    else if (obj[key] is JsonNode child)
+                    {
+                        RedactNode(child);
+                    }
+                }
+            }
+            else if (node is JsonArray arr)
+            {
+                foreach (var item in arr)
+                {
+                    if (item != null)
+                    {
+                        RedactNode(item);
+                    }
+                }
+            }
+        }
+
+        private static bool IsSensitiveKey(string key)
+        {
+            foreach (var pattern in SensitiveKeyPatterns)
+            {
+                if (key.IndexOf(pattern, StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+            return false;
         }
 
         public IActionResult Log()

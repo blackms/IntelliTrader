@@ -40,6 +40,12 @@ namespace IntelliTrader.Web.Middleware
             "/Swap"
         };
 
+        // Config endpoints where we capture only the config section name (not the full definition).
+        private static readonly HashSet<string> ConfigPaths = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "/SaveConfig"
+        };
+
         // Form field names that must never appear in audit logs.
         private static readonly HashSet<string> SensitiveFields = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -104,7 +110,7 @@ namespace IntelliTrader.Web.Middleware
         /// </summary>
         private static async Task<string> BuildAuditDetailsAsync(HttpRequest request, string path)
         {
-            if (!IsTradingPath(path) || !request.HasFormContentType)
+            if ((!IsTradingPath(path) && !IsConfigPath(path)) || !request.HasFormContentType)
             {
                 return $"POST {path}";
             }
@@ -115,6 +121,20 @@ namespace IntelliTrader.Web.Middleware
                 request.EnableBuffering();
 
                 var form = await request.ReadFormAsync();
+
+                // For config endpoints, only log the config section name, never the definition (may contain secrets).
+                if (IsConfigPath(path))
+                {
+                    var configName = form.ContainsKey("name") ? form["name"].ToString() : "(unknown)";
+
+                    if (request.Body.CanSeek)
+                    {
+                        request.Body.Position = 0;
+                    }
+
+                    return $"POST {path} config={configName}";
+                }
+
                 var safeFields = new List<string>();
 
                 foreach (var field in form)
@@ -157,6 +177,11 @@ namespace IntelliTrader.Web.Middleware
         private static bool IsTradingPath(string path)
         {
             return path != null && TradingPaths.Contains(path);
+        }
+
+        private static bool IsConfigPath(string path)
+        {
+            return path != null && ConfigPaths.Contains(path);
         }
 
         private static string DeriveAction(string path)

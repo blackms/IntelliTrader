@@ -1,6 +1,8 @@
 {
   "Logging": {
     "Enabled": true,
+    "JsonOutputEnabled": false,
+    "JsonOutputPath": "log/structured-.json",
     "MinimumLevel": {
       "Default": "Verbose",
       "Override": {

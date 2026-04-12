@@ -11,7 +11,8 @@ namespace IntelliTrader.Trading
 {
     internal abstract class TradingAccountBase : ITradingAccount
     {
-        public object SyncRoot { get; private set; } = new object();
+        private readonly object _syncRoot = new object();
+        public object SyncRoot => _syncRoot;
 
         protected readonly ILoggingService loggingService;
         protected readonly INotificationService notificationService;

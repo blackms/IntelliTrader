@@ -29,7 +29,7 @@ namespace IntelliTrader.Signals.TradingView
         private List<Signal>? signals;
         private double? averageRating;
 
-        private object syncRoot = new object();
+        private readonly object syncRoot = new object();
 
         public TradingViewCryptoSignalPollingTimedTask(ILoggingService loggingService, IHealthCheckService healthCheckService,
             ITradingService tradingService, TradingViewCryptoSignalReceiver signalReceiver)

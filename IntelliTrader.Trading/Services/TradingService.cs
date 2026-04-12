@@ -59,7 +59,8 @@ namespace IntelliTrader.Trading
 
         ITradingConfig ITradingService.Config => Config;
 
-        public object SyncRoot { get; private set; } = new object();
+        private readonly object _syncRoot = new object();
+        public object SyncRoot => _syncRoot;
 
         public IModuleRules Rules { get; private set; }
         public TradingRulesConfig RulesConfig { get; private set; }

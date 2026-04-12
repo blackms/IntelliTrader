@@ -837,6 +837,28 @@ public class TestableLoggingService : ILoggingService
         return scope;
     }
 
+    public IDisposable BeginCorrelationScope(string? correlationId = null)
+    {
+        var scope = new TestableScope(this);
+        ActiveScopes.Add(scope);
+        return scope;
+    }
+
+    public IDisposable TimeOperation(string operationName)
+    {
+        return new TestableNoOpDisposable();
+    }
+
+    public void InfoSampled(string eventKey, int sampleRate, string message, params object[] propertyValues)
+    {
+        LogMessage(LogLevel.Information, message, null, propertyValues);
+    }
+
+    public void DebugSampled(string eventKey, int sampleRate, string message, params object[] propertyValues)
+    {
+        LogMessage(LogLevel.Debug, message, null, propertyValues);
+    }
+
     internal void RemoveScope(TestableScope scope)
     {
         ActiveScopes.Remove(scope);

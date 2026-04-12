@@ -59,7 +59,7 @@ public class BinanceWebSocketServiceTests
     public async Task DisconnectAsync_WhenNotConnected_ShouldCompleteWithoutError()
     {
         // Arrange
-        _mockService.Setup(x => x.DisconnectAsync()).Returns(Task.CompletedTask);
+        _mockService.Setup(x => x.DisconnectAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         // Act
         var act = async () => await _mockService.Object.DisconnectAsync();
@@ -73,7 +73,7 @@ public class BinanceWebSocketServiceTests
     {
         // Arrange
         var pairs = new[] { "BTCUSDT", "ETHUSDT" };
-        _mockService.Setup(x => x.SubscribeToTickersAsync(It.IsAny<IEnumerable<string>>()))
+        _mockService.Setup(x => x.SubscribeToTickersAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         // Act
@@ -88,7 +88,7 @@ public class BinanceWebSocketServiceTests
     {
         // Arrange
         var pairs = new[] { "BTCUSDT", "ETHUSDT" };
-        _mockService.Setup(x => x.UnsubscribeFromTickersAsync(It.IsAny<IEnumerable<string>>()))
+        _mockService.Setup(x => x.UnsubscribeFromTickersAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         // Act

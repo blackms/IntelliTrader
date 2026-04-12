@@ -1,3 +1,14 @@
+// Automatically include CSRF anti-forgery token in all AJAX POST requests
+$.ajaxPrefilter(function (options, originalOptions, jqXHR) {
+    if (options.type.toUpperCase() === 'POST') {
+        var token = $('input[name="__RequestVerificationToken"]').val();
+        if (token) {
+            if (options.data) { options.data += '&'; } else { options.data = ''; }
+            options.data += '__RequestVerificationToken=' + encodeURIComponent(token);
+        }
+    }
+});
+
 // Use SignalR for real-time updates if available, fallback to polling
 var useSignalR = typeof IntelliTraderSignalR !== "undefined";
 var pollingInterval = null;

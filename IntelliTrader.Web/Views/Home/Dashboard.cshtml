@@ -4,6 +4,8 @@
     ViewData["Instance"] = Model.InstanceName;
 }
 
+@Html.AntiForgeryToken()
+
 @section AddToHead{
     <link rel="stylesheet" type="text/css" href="@Url.Content("~/Static/Styles/Views/dashboard.css")">
     <script type="text/javascript" src="@Url.Content("~/Static/Scripts/Views/dashboard.js")"></script>

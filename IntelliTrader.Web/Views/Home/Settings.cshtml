@@ -5,6 +5,8 @@
     ViewData["CustomPageHeader"] = true;
 }
 
+@Html.AntiForgeryToken()
+
 @section AddToHead{
     <link rel="stylesheet" type="text/css" href="@Url.Content("~/Static/Styles/Vendor/jsoneditor.min.css")">
     <link rel="stylesheet" type="text/css" href="@Url.Content("~/Static/Styles/Views/settings.css")">

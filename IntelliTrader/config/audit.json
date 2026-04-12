@@ -1,0 +1,9 @@
+{
+  "Audit": {
+    "Enabled": true,
+    "LogDirectory": "log",
+    "LogFileName": "audit.log",
+    "RetentionDays": 90,
+    "MaxFileSizeMB": 50
+  }
+}

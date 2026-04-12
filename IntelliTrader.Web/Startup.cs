@@ -3,6 +3,7 @@ using IntelliTrader.Core;
 using IntelliTrader.Infrastructure.Telemetry;
 using IntelliTrader.Web.BackgroundServices;
 using IntelliTrader.Web.Hubs;
+using IntelliTrader.Web.Middleware;
 using IntelliTrader.Web.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
@@ -45,6 +46,7 @@ namespace IntelliTrader.Web
             services.AddSingleton(_ => Container.Resolve<ISignalsService>());
             services.AddSingleton(_ => Container.Resolve<ILoggingService>());
             services.AddSingleton(_ => Container.Resolve<IHealthCheckService>());
+            services.AddSingleton(_ => Container.Resolve<IAuditService>());
             services.AddSingleton(_ => Container.Resolve<IEnumerable<IConfigurableService>>());
 
             // Register password service for secure password hashing (BCrypt)
@@ -174,6 +176,8 @@ namespace IntelliTrader.Web
             app.UseIntelliTraderPrometheusEndpoint();
 
             app.UseRouting();
+
+            app.UseMiddleware<AuditMiddleware>();
 
             app.UseAuthentication();
             app.UseAuthorization();

@@ -222,14 +222,9 @@ namespace IntelliTrader.Signals.TradingView
                 {
                     return 100 * Math.Sign((double)b);
                 }
-                else if (b == 0)
-                {
-                    return -100 * Math.Sign((double)a);
-                }
                 else
                 {
-                    var change = Math.Abs((double)((b - a) / a * 100));
-                    return (a < b) ? change : change * -1;
+                    return ((double)b - (double)a) / Math.Abs((double)a) * 100;
                 }
             }
             else

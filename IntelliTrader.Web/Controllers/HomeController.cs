@@ -652,7 +652,20 @@ namespace IntelliTrader.Web.Controllers
 
             if (Directory.Exists(logsPath))
             {
-                foreach (var tradesLogFilePath in Directory.EnumerateFiles(logsPath, "*-trades.txt", SearchOption.TopDirectoryOnly))
+                var logFiles = Directory.EnumerateFiles(logsPath, "*-trades.txt", SearchOption.TopDirectoryOnly);
+
+                // When filtering by a specific date, skip log files that were last modified
+                // before the requested date to avoid reading irrelevant files
+                if (date != null)
+                {
+                    logFiles = logFiles.Where(f =>
+                    {
+                        var lastWrite = File.GetLastWriteTimeUtc(f);
+                        return lastWrite >= date.Value.UtcDateTime.Date;
+                    });
+                }
+
+                foreach (var tradesLogFilePath in logFiles)
                 {
                     IEnumerable<string> logLines = Utils.ReadAllLinesWriteSafe(tradesLogFilePath);
                     foreach (var logLine in logLines)

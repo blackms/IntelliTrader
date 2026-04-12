@@ -129,7 +129,7 @@ namespace IntelliTrader.Core
                 resetEvent.Set();
                 timeWatcher.Stop();
 
-                if (!terminateThread)
+                if (terminateThread)
                 {
                     timerThread?.Join();
                     timerThread = null;

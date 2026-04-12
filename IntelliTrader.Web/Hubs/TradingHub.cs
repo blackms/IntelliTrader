@@ -6,6 +6,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace IntelliTrader.Web.Hubs
@@ -27,6 +28,13 @@ namespace IntelliTrader.Web.Hubs
         /// Prefix for pair-specific groups.
         /// </summary>
         public const string PairGroupPrefix = "Pair_";
+
+        /// <summary>
+        /// Maximum number of pair subscriptions allowed per connection.
+        /// </summary>
+        private const int MaxSubscriptionsPerConnection = 50;
+
+        private static readonly Regex ValidPairPattern = new(@"^[A-Z0-9]{2,20}$", RegexOptions.Compiled);
 
         private static readonly ConcurrentDictionary<string, HashSet<string>> _pairSubscriptions = new();
         private static readonly object _subscriptionLock = new();
@@ -89,6 +97,24 @@ namespace IntelliTrader.Web.Hubs
             }
 
             var normalizedPair = pair.ToUpperInvariant();
+
+            if (!ValidPairPattern.IsMatch(normalizedPair))
+            {
+                _logger.LogWarning("Client {ConnectionId} attempted to subscribe with invalid pair format: {Pair}", Context.ConnectionId, normalizedPair);
+                return;
+            }
+
+            // Check subscription limit per connection
+            lock (_subscriptionLock)
+            {
+                int currentCount = _pairSubscriptions.Count(kvp => kvp.Value.Contains(Context.ConnectionId));
+                if (currentCount >= MaxSubscriptionsPerConnection)
+                {
+                    _logger.LogWarning("Client {ConnectionId} exceeded max subscriptions ({Max})", Context.ConnectionId, MaxSubscriptionsPerConnection);
+                    return;
+                }
+            }
+
             var groupName = $"{PairGroupPrefix}{normalizedPair}";
 
             await Groups.AddToGroupAsync(Context.ConnectionId, groupName);

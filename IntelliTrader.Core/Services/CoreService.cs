@@ -92,8 +92,16 @@ namespace IntelliTrader.Core
             // to avoid blocking a thread pool thread during the delay
             _ = Task.Run(async () =>
             {
-                await Task.Delay(Constants.Timeouts.StartupDelayMs).ConfigureAwait(false);
-                StartAllTasks();
+                try
+                {
+                    await Task.Delay(Constants.Timeouts.StartupDelayMs).ConfigureAwait(false);
+                    StartAllTasks();
+                }
+                catch (Exception ex)
+                {
+                    loggingService.Error("Failed to start timed tasks", ex);
+                    Running = false;
+                }
             });
 
             Running = true;

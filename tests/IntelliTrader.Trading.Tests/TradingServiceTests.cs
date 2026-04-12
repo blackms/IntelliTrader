@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using FluentAssertions;
 using Moq;
 using Xunit;
@@ -549,9 +551,9 @@ public class TradingServiceTests
         _exchangeServiceMock.Setup(x => x.GetMarketPairs(It.IsAny<string>()))
             .ReturnsAsync(new List<string> { oldPair, newPair });
 
-        // Track PlaceOrder calls
-        _accountMock.Setup(x => x.PlaceOrder(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>()))
-            .Returns((IOrder order, OrderMetadata metadata) =>
+        // Track PlaceOrderAsync calls
+        _accountMock.Setup(x => x.PlaceOrderAsync(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>(), It.IsAny<CancellationToken>()))
+            .Returns((IOrder order, OrderMetadata metadata, CancellationToken ct) =>
             {
                 if (order.Side == OrderSide.Sell)
                 {
@@ -560,14 +562,14 @@ public class TradingServiceTests
                         // After successful sell, old pair no longer exists
                         _accountMock.Setup(x => x.HasTradingPair(oldPair)).Returns(false);
                     }
-                    return sellOrderMock.Object;
+                    return Task.FromResult(sellOrderMock.Object);
                 }
                 else
                 {
                     // After buy, new pair exists
                     _accountMock.Setup(x => x.HasTradingPair(newPair)).Returns(true);
                     _accountMock.Setup(x => x.GetTradingPair(newPair)).Returns(newTradingPair);
-                    return buyOrderMock.Object;
+                    return Task.FromResult(buyOrderMock.Object);
                 }
             });
     }
@@ -601,9 +603,9 @@ public class TradingServiceTests
         _sut.Swap(options);
 
         // Assert - Verify sell order was placed first
-        _accountMock.Verify(x => x.PlaceOrder(
+        _accountMock.Verify(x => x.PlaceOrderAsync(
             It.Is<IOrder>(o => o.Side == OrderSide.Sell && o.Pair == oldPair),
-            It.IsAny<OrderMetadata>()), Times.Once);
+            It.IsAny<OrderMetadata>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -635,9 +637,9 @@ public class TradingServiceTests
         _sut.Swap(options);
 
         // Assert - Verify buy order was placed after sell
-        _accountMock.Verify(x => x.PlaceOrder(
+        _accountMock.Verify(x => x.PlaceOrderAsync(
             It.Is<IOrder>(o => o.Side == OrderSide.Buy && o.Pair == newPair),
-            It.IsAny<OrderMetadata>()), Times.Once);
+            It.IsAny<OrderMetadata>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -670,9 +672,9 @@ public class TradingServiceTests
         _sut.Swap(options);
 
         // Assert - Verify buy order was NOT placed because sell failed
-        _accountMock.Verify(x => x.PlaceOrder(
+        _accountMock.Verify(x => x.PlaceOrderAsync(
             It.Is<IOrder>(o => o.Side == OrderSide.Buy),
-            It.IsAny<OrderMetadata>()), Times.Never);
+            It.IsAny<OrderMetadata>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -706,9 +708,9 @@ public class TradingServiceTests
         _sut.Swap(options);
 
         // Assert - Verify buy order was placed with metadata containing SwapPair
-        _accountMock.Verify(x => x.PlaceOrder(
+        _accountMock.Verify(x => x.PlaceOrderAsync(
             It.Is<IOrder>(o => o.Side == OrderSide.Buy),
-            It.Is<OrderMetadata>(m => m.SwapPair == oldPair && m.SignalRule == signalRule)), Times.Once);
+            It.Is<OrderMetadata>(m => m.SwapPair == oldPair && m.SignalRule == signalRule), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -750,9 +752,9 @@ public class TradingServiceTests
         // Assert - Verify buy order metadata includes additional costs
         // The additional costs calculation is: AverageCostPaid - CurrentCost + AdditionalCosts
         // = 100 - 95 + 5 = 10
-        _accountMock.Verify(x => x.PlaceOrder(
+        _accountMock.Verify(x => x.PlaceOrderAsync(
             It.Is<IOrder>(o => o.Side == OrderSide.Buy),
-            It.Is<OrderMetadata>(m => m.AdditionalCosts.HasValue && m.AdditionalCosts.Value == 10m)), Times.Once);
+            It.Is<OrderMetadata>(m => m.AdditionalCosts.HasValue && m.AdditionalCosts.Value == 10m), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -785,9 +787,9 @@ public class TradingServiceTests
         _sut.Swap(options);
 
         // Assert - Verify buy order metadata includes DCA levels
-        _accountMock.Verify(x => x.PlaceOrder(
+        _accountMock.Verify(x => x.PlaceOrderAsync(
             It.Is<IOrder>(o => o.Side == OrderSide.Buy),
-            It.Is<OrderMetadata>(m => m.AdditionalDCALevels == dcaLevel)), Times.Once);
+            It.Is<OrderMetadata>(m => m.AdditionalDCALevels == dcaLevel), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -843,7 +845,7 @@ public class TradingServiceTests
 
         // Assert - Verify logging was called and no orders were placed
         _loggingServiceMock.Verify(x => x.Info(It.Is<string>(s => s.Contains("pair does not exist")), It.IsAny<Exception>()), Times.Once);
-        _accountMock.Verify(x => x.PlaceOrder(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>()), Times.Never);
+        _accountMock.Verify(x => x.PlaceOrderAsync(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -871,8 +873,8 @@ public class TradingServiceTests
 
         // Capture the sell order placed
         IOrder capturedSellOrder = null;
-        _accountMock.Setup(x => x.PlaceOrder(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>()))
-            .Callback<IOrder, OrderMetadata>((order, metadata) =>
+        _accountMock.Setup(x => x.PlaceOrderAsync(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>(), It.IsAny<CancellationToken>()))
+            .Callback<IOrder, OrderMetadata, CancellationToken>((order, metadata, ct) =>
             {
                 if (order.Side == OrderSide.Sell)
                 {
@@ -885,8 +887,8 @@ public class TradingServiceTests
                     _accountMock.Setup(x => x.GetTradingPair(newPair)).Returns(newTradingPair);
                 }
             })
-            .Returns((IOrder order, OrderMetadata metadata) =>
-                order.Side == OrderSide.Sell ? sellOrderMock.Object : buyOrderMock.Object);
+            .Returns((IOrder order, OrderMetadata metadata, CancellationToken ct) =>
+                Task.FromResult(order.Side == OrderSide.Sell ? sellOrderMock.Object : buyOrderMock.Object));
 
         var options = new SwapOptions(oldPair, newPair, new OrderMetadata()) { ManualOrder = true };
 
@@ -925,8 +927,8 @@ public class TradingServiceTests
 
         // Capture the buy order metadata
         OrderMetadata capturedBuyMetadata = null;
-        _accountMock.Setup(x => x.PlaceOrder(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>()))
-            .Callback<IOrder, OrderMetadata>((order, metadata) =>
+        _accountMock.Setup(x => x.PlaceOrderAsync(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>(), It.IsAny<CancellationToken>()))
+            .Callback<IOrder, OrderMetadata, CancellationToken>((order, metadata, ct) =>
             {
                 if (order.Side == OrderSide.Sell)
                 {
@@ -939,8 +941,8 @@ public class TradingServiceTests
                     _accountMock.Setup(x => x.GetTradingPair(newPair)).Returns(newTradingPair);
                 }
             })
-            .Returns((IOrder order, OrderMetadata metadata) =>
-                order.Side == OrderSide.Sell ? sellOrderMock.Object : buyOrderMock.Object);
+            .Returns((IOrder order, OrderMetadata metadata, CancellationToken ct) =>
+                Task.FromResult(order.Side == OrderSide.Sell ? sellOrderMock.Object : buyOrderMock.Object));
 
         var options = new SwapOptions(oldPair, newPair, new OrderMetadata()) { ManualOrder = true };
 
@@ -1119,8 +1121,8 @@ public class TradingServiceTests
         SetupDefaultMocks();
         var orderDetails = CreateFilledOrderDetails("BTCUSDT", OrderSide.Buy);
         _accountMock.Setup(x => x.HasTradingPair("BTCUSDT")).Returns(false);
-        _accountMock.Setup(x => x.PlaceOrder(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>()))
-            .Returns(orderDetails);
+        _accountMock.Setup(x => x.PlaceOrderAsync(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(orderDetails);
         _accountMock.Setup(x => x.GetTradingPair("BTCUSDT")).Returns((ITradingPair)null);
         _notificationServiceMock.Setup(x => x.NotifyAsync(It.IsAny<string>())).Returns(Task.CompletedTask);
 
@@ -1130,9 +1132,9 @@ public class TradingServiceTests
         _sut.Buy(options);
 
         // Assert
-        _accountMock.Verify(x => x.PlaceOrder(
+        _accountMock.Verify(x => x.PlaceOrderAsync(
             It.Is<IOrder>(o => o.Pair == "BTCUSDT" && o.Side == OrderSide.Buy),
-            It.IsAny<OrderMetadata>()), Times.Once);
+            It.IsAny<OrderMetadata>(), It.IsAny<CancellationToken>()), Times.Once);
         _sut.OrderHistory.Should().Contain(orderDetails);
     }
 
@@ -1148,7 +1150,7 @@ public class TradingServiceTests
         _sut.Buy(options);
 
         // Assert
-        _accountMock.Verify(x => x.PlaceOrder(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>()), Times.Never);
+        _accountMock.Verify(x => x.PlaceOrderAsync(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>(), It.IsAny<CancellationToken>()), Times.Never);
         _sut.OrderHistory.Should().BeEmpty();
         _loggingServiceMock.Verify(x => x.Debug(It.Is<string>(s => s.Contains("trading suspended")), It.IsAny<Exception>()), Times.Once);
     }
@@ -1213,8 +1215,8 @@ public class TradingServiceTests
 
         _accountMock.Setup(x => x.HasTradingPair("BTCUSDT")).Returns(true);
         _accountMock.Setup(x => x.GetTradingPair("BTCUSDT")).Returns(tradingPairMock.Object);
-        _accountMock.Setup(x => x.PlaceOrder(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>()))
-            .Returns(orderDetails);
+        _accountMock.Setup(x => x.PlaceOrderAsync(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(orderDetails);
         _notificationServiceMock.Setup(x => x.NotifyAsync(It.IsAny<string>())).Returns(Task.CompletedTask);
 
         var options = new SellOptions("BTCUSDT");
@@ -1223,9 +1225,9 @@ public class TradingServiceTests
         _sut.Sell(options);
 
         // Assert
-        _accountMock.Verify(x => x.PlaceOrder(
+        _accountMock.Verify(x => x.PlaceOrderAsync(
             It.Is<IOrder>(o => o.Pair == "BTCUSDT" && o.Side == OrderSide.Sell),
-            It.IsAny<OrderMetadata>()), Times.Once);
+            It.IsAny<OrderMetadata>(), It.IsAny<CancellationToken>()), Times.Once);
         _sut.OrderHistory.Should().Contain(orderDetails);
     }
 
@@ -1242,7 +1244,7 @@ public class TradingServiceTests
         _sut.Sell(options);
 
         // Assert
-        _accountMock.Verify(x => x.PlaceOrder(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>()), Times.Never);
+        _accountMock.Verify(x => x.PlaceOrderAsync(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>(), It.IsAny<CancellationToken>()), Times.Never);
         _sut.OrderHistory.Should().BeEmpty();
         _loggingServiceMock.Verify(x => x.Debug(It.Is<string>(s => s.Contains("pair does not exist")), It.IsAny<Exception>()), Times.Once);
     }
@@ -1276,7 +1278,7 @@ public class TradingServiceTests
 
         // Assert - Should be in trailing buys, not immediately executed
         _sut.GetTrailingBuys().Should().Contain("BTCUSDT");
-        _accountMock.Verify(x => x.PlaceOrder(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>()), Times.Never);
+        _accountMock.Verify(x => x.PlaceOrderAsync(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -1311,7 +1313,7 @@ public class TradingServiceTests
 
         // Assert - Should be in trailing sells, not immediately executed
         _sut.GetTrailingSells().Should().Contain("BTCUSDT");
-        _accountMock.Verify(x => x.PlaceOrder(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>()), Times.Never);
+        _accountMock.Verify(x => x.PlaceOrderAsync(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -1321,8 +1323,8 @@ public class TradingServiceTests
         SetupDefaultMocks();
         var orderDetails = CreateFilledOrderDetails("BTCUSDT", OrderSide.Buy);
         _accountMock.Setup(x => x.HasTradingPair("BTCUSDT")).Returns(false);
-        _accountMock.Setup(x => x.PlaceOrder(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>()))
-            .Returns(orderDetails);
+        _accountMock.Setup(x => x.PlaceOrderAsync(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(orderDetails);
         _accountMock.Setup(x => x.GetTradingPair("BTCUSDT")).Returns((ITradingPair)null);
         _notificationServiceMock.Setup(x => x.NotifyAsync(It.IsAny<string>())).Returns(Task.CompletedTask);
 
@@ -1349,8 +1351,8 @@ public class TradingServiceTests
 
         _accountMock.Setup(x => x.HasTradingPair("BTCUSDT")).Returns(true);
         _accountMock.Setup(x => x.GetTradingPair("BTCUSDT")).Returns(tradingPairMock.Object);
-        _accountMock.Setup(x => x.PlaceOrder(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>()))
-            .Returns(orderDetails);
+        _accountMock.Setup(x => x.PlaceOrderAsync(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(orderDetails);
         _notificationServiceMock.Setup(x => x.NotifyAsync(It.IsAny<string>())).Returns(Task.CompletedTask);
 
         var options = new SellOptions("BTCUSDT");
@@ -1965,8 +1967,8 @@ public class TradingServiceTests
         orderDetailsMock.Setup(x => x.AmountFilled).Returns(0.001m);
         orderDetailsMock.Setup(x => x.AverageCost).Returns(50m);
 
-        _accountMock.Setup(x => x.PlaceOrder(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>()))
-            .Returns(orderDetailsMock.Object);
+        _accountMock.Setup(x => x.PlaceOrderAsync(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(orderDetailsMock.Object);
         _accountMock.Setup(x => x.HasTradingPair("BTCUSDT")).Returns(false);
         _accountMock.Setup(x => x.GetTradingPair("BTCUSDT")).Returns((ITradingPair)null);
     }
@@ -1990,8 +1992,8 @@ public class TradingServiceTests
 
         _accountMock.Setup(x => x.HasTradingPair("BTCUSDT")).Returns(true);
         _accountMock.Setup(x => x.GetTradingPair("BTCUSDT")).Returns(tradingPairMock.Object);
-        _accountMock.Setup(x => x.PlaceOrder(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>()))
-            .Returns(orderDetailsMock.Object);
+        _accountMock.Setup(x => x.PlaceOrderAsync(It.IsAny<IOrder>(), It.IsAny<OrderMetadata>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(orderDetailsMock.Object);
     }
 
     [Fact]

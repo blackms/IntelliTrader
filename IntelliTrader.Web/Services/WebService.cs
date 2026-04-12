@@ -59,16 +59,36 @@ namespace IntelliTrader.Web
                     }
                 }
 
+                var bindAddress = IPAddress.Loopback;
+                if (!string.IsNullOrEmpty(Config.BindAddress))
+                {
+                    if (string.Equals(Config.BindAddress, "any", StringComparison.OrdinalIgnoreCase) ||
+                        Config.BindAddress == "0.0.0.0")
+                    {
+                        bindAddress = IPAddress.Any;
+                    }
+                    else if (IPAddress.TryParse(Config.BindAddress, out var parsed))
+                    {
+                        bindAddress = parsed;
+                    }
+                    else
+                    {
+                        loggingService.Warning($"Invalid BindAddress '{Config.BindAddress}', falling back to loopback (127.0.0.1)");
+                    }
+                }
+
                 var webHostBuilder = new WebHostBuilder()
                     .UseContentRoot(contentRoot)
                     .UseStartup<Startup>()
                     .UseKestrel(options =>
                     {
-                        options.Listen(IPAddress.Any, Config.Port);
+                        options.Listen(bindAddress, Config.Port);
                     });
 
                 if (Config.DebugMode)
                 {
+                    loggingService.Warning("SECURITY WARNING: DebugMode is enabled. The developer exception page will be shown, " +
+                        "which may expose sensitive information. Disable DebugMode in web.json for production deployments.");
                     webHostBuilder.UseEnvironment("Development");
                 }
                 else

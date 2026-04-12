@@ -61,7 +61,7 @@ public sealed class LegacyTradingServiceAdapter : ILegacyTradingServiceAdapter
         }
     }
 
-    public Task<Result<PlaceBuyOrderResult>> PlaceBuyOrderAsync(
+    public async Task<Result<PlaceBuyOrderResult>> PlaceBuyOrderAsync(
         string pair,
         decimal? amount,
         decimal? maxCost,
@@ -81,23 +81,20 @@ public sealed class LegacyTradingServiceAdapter : ILegacyTradingServiceAdapter
                 Metadata = ConvertMetadata(metadata)
             };
 
-            // The legacy Buy method is synchronous and queues the order
-            _tradingService.Buy(options);
+            await _tradingService.BuyAsync(options, cancellationToken).ConfigureAwait(false);
 
-            // Since the legacy service queues orders, we return a pending result
-            // The actual order details will be available in OrderHistory after execution
-            return Task.FromResult(Result<PlaceBuyOrderResult>.Success(new PlaceBuyOrderResult
+            return Result<PlaceBuyOrderResult>.Success(new PlaceBuyOrderResult
             {
                 Success = true,
                 Pair = pair,
                 Timestamp = DateTimeOffset.UtcNow
-            }));
+            });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error placing buy order for {Pair}", pair);
-            return Task.FromResult(Result<PlaceBuyOrderResult>.Failure(
-                Error.ExchangeError($"Failed to place buy order: {ex.Message}")));
+            return Result<PlaceBuyOrderResult>.Failure(
+                Error.ExchangeError($"Failed to place buy order: {ex.Message}"));
         }
     }
 
@@ -129,7 +126,7 @@ public sealed class LegacyTradingServiceAdapter : ILegacyTradingServiceAdapter
         }
     }
 
-    public Task<Result<PlaceSellOrderResult>> PlaceSellOrderAsync(
+    public async Task<Result<PlaceSellOrderResult>> PlaceSellOrderAsync(
         string pair,
         decimal? amount,
         bool isManualOrder,
@@ -147,21 +144,20 @@ public sealed class LegacyTradingServiceAdapter : ILegacyTradingServiceAdapter
                 Swap = !string.IsNullOrEmpty(swapPair)
             };
 
-            // The legacy Sell method is synchronous and queues the order
-            _tradingService.Sell(options);
+            await _tradingService.SellAsync(options, cancellationToken).ConfigureAwait(false);
 
-            return Task.FromResult(Result<PlaceSellOrderResult>.Success(new PlaceSellOrderResult
+            return Result<PlaceSellOrderResult>.Success(new PlaceSellOrderResult
             {
                 Success = true,
                 Pair = pair,
                 Timestamp = DateTimeOffset.UtcNow
-            }));
+            });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error placing sell order for {Pair}", pair);
-            return Task.FromResult(Result<PlaceSellOrderResult>.Failure(
-                Error.ExchangeError($"Failed to place sell order: {ex.Message}")));
+            return Result<PlaceSellOrderResult>.Failure(
+                Error.ExchangeError($"Failed to place sell order: {ex.Message}"));
         }
     }
 
@@ -190,7 +186,7 @@ public sealed class LegacyTradingServiceAdapter : ILegacyTradingServiceAdapter
         }
     }
 
-    public Task<Result<PlaceSwapOrderResult>> PlaceSwapOrderAsync(
+    public async Task<Result<PlaceSwapOrderResult>> PlaceSwapOrderAsync(
         string oldPair,
         string newPair,
         bool isManualOrder,
@@ -204,22 +200,21 @@ public sealed class LegacyTradingServiceAdapter : ILegacyTradingServiceAdapter
                 ManualOrder = isManualOrder
             };
 
-            // The legacy Swap method is synchronous and queues the orders
-            _tradingService.Swap(options);
+            await _tradingService.SwapAsync(options, cancellationToken).ConfigureAwait(false);
 
-            return Task.FromResult(Result<PlaceSwapOrderResult>.Success(new PlaceSwapOrderResult
+            return Result<PlaceSwapOrderResult>.Success(new PlaceSwapOrderResult
             {
                 Success = true,
                 OldPair = oldPair,
                 NewPair = newPair,
                 Timestamp = DateTimeOffset.UtcNow
-            }));
+            });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error placing swap order from {OldPair} to {NewPair}", oldPair, newPair);
-            return Task.FromResult(Result<PlaceSwapOrderResult>.Failure(
-                Error.ExchangeError($"Failed to place swap order: {ex.Message}")));
+            return Result<PlaceSwapOrderResult>.Failure(
+                Error.ExchangeError($"Failed to place swap order: {ex.Message}"));
         }
     }
 
@@ -228,7 +223,7 @@ public sealed class LegacyTradingServiceAdapter : ILegacyTradingServiceAdapter
     {
         try
         {
-            var pairs = await _tradingService.GetMarketPairsAsync();
+            var pairs = await _tradingService.GetMarketPairsAsync().ConfigureAwait(false);
             return Result<IReadOnlyList<string>>.Success(pairs.ToList());
         }
         catch (Exception ex)

@@ -66,6 +66,25 @@ public class TradingBenchmarks
             applicationContextMock.Object,
             configProviderMock.Object);
 
+        // Inject default trading config via reflection
+        var defaultConfig = new TradingConfig
+        {
+            Market = "USDT",
+            Exchange = "Binance",
+            ExcludedPairs = new List<string>(),
+            DCALevels = new List<DCALevel>(),
+            BuyType = OrderType.Market,
+            SellType = OrderType.Market,
+            BuyMaxCost = 100m,
+            MaxPairs = 0,
+            VirtualTrading = true,
+            VirtualAccountFilePath = "test-virtual-account.json",
+            VirtualAccountInitialBalance = 10000m
+        };
+        var configField = typeof(ConfigurableServiceBase<TradingConfig>)
+            .GetField("config", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        configField?.SetValue(_sut, defaultConfig);
+
         var field = typeof(TradingService).GetField("<Account>k__BackingField",
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         field?.SetValue(_sut, accountMock.Object);

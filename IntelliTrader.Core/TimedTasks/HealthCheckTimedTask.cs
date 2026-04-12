@@ -3,8 +3,15 @@ using System.Collections.Generic;
 using System.Text;
 using System.Linq;
 
+#pragma warning disable CS0612 // Type or member is obsolete
+
 namespace IntelliTrader.Core
 {
+    /// <summary>
+    /// Legacy health check timed task. Replaced by <see cref="HealthCheckBackgroundService"/>.
+    /// Kept for reference during migration. See ADR-0016.
+    /// </summary>
+    [Obsolete("Replaced by HealthCheckBackgroundService. See ADR-0016.")]
     internal class HealthCheckTimedTask : HighResolutionTimedTask
     {
         private readonly ILoggingService loggingService;

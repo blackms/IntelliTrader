@@ -4,6 +4,11 @@ using System.Timers;
 
 namespace IntelliTrader.Core
 {
+    /// <summary>
+    /// Legacy timed task base class. Use <see cref="Microsoft.Extensions.Hosting.BackgroundService"/>
+    /// for new work. See ADR-0016 for migration details.
+    /// </summary>
+    [Obsolete("Use BackgroundService instead. See docs/ADRs/ADR-0016-ihostedservice-migration.md for migration guidance.")]
     public abstract class LowResolutionTimedTask
     {
         /// <summary>

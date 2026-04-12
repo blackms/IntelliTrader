@@ -67,7 +67,7 @@ public abstract class TimedBackgroundService : BackgroundService
 
         if (_startDelay > TimeSpan.Zero)
         {
-            await Task.Delay(_startDelay, stoppingToken);
+            await Task.Delay(_startDelay, stoppingToken).ConfigureAwait(false);
         }
 
         IsRunning = true;
@@ -78,7 +78,7 @@ public abstract class TimedBackgroundService : BackgroundService
 
             try
             {
-                await ExecuteWorkAsync(stoppingToken);
+                await ExecuteWorkAsync(stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -87,7 +87,7 @@ public abstract class TimedBackgroundService : BackgroundService
             }
             catch (Exception ex)
             {
-                await OnErrorAsync(ex, stoppingToken);
+                await OnErrorAsync(ex, stoppingToken).ConfigureAwait(false);
             }
 
             ExecutionCount++;
@@ -99,7 +99,7 @@ public abstract class TimedBackgroundService : BackgroundService
             {
                 try
                 {
-                    await Task.Delay(delayTime, stoppingToken);
+                    await Task.Delay(delayTime, stoppingToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {

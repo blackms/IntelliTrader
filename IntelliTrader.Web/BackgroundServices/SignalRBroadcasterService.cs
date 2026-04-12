@@ -149,7 +149,7 @@ namespace IntelliTrader.Web.BackgroundServices
                     try
                     {
                         // Update current price
-                        var currentPrice = _tradingService.GetCurrentPrice(pair.Pair);
+                        var currentPrice = await _tradingService.GetCurrentPriceAsync(pair.Pair).ConfigureAwait(false);
                         if (currentPrice > 0)
                         {
                             pair.SetCurrentPrice(currentPrice);

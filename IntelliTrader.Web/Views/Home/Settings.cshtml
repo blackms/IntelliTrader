@@ -45,8 +45,8 @@
         {
             <div class="tab-pane" id="tab_@kvp.Key">
                 <div class="config-container">
-                    <div class="config-value" id="@Html.Raw(kvp.Key + "Value")" data-config="@kvp.Key">@Html.Raw(kvp.Value)</div>
-                    <div class="config-editor" id="@Html.Raw(kvp.Key + "Editor")" data-config="@kvp.Key"></div>
+                    <div class="config-value" id="@(kvp.Key + "Value")" data-config="@kvp.Key">@kvp.Value</div>
+                    <div class="config-editor" id="@(kvp.Key + "Editor")" data-config="@kvp.Key"></div>
                 </div>
                 <div class="config-options bg-dark">
                     <span class="save-config-status" id="saveConfigStatus"></span>

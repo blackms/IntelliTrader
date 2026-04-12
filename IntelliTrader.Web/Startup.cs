@@ -72,6 +72,9 @@ namespace IntelliTrader.Web
             {
                 options.LoginPath = "/Login";
                 options.Cookie.Name = $"{nameof(IntelliTrader)}_{coreService.Config.InstanceName}";
+                options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+                options.Cookie.SameSite = SameSiteMode.Strict;
+                options.Cookie.HttpOnly = true;
             });
 
             // Load users.json for RBAC if it exists, otherwise fall back to legacy single-password mode
@@ -190,6 +193,13 @@ namespace IntelliTrader.Web
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
+            // Conditionally enforce HTTPS redirection in production when configured.
+            // Disabled by default so dev/Docker setups without TLS certificates don't break.
+            if (!env.IsDevelopment() && Configuration.GetValue<bool>("Web:EnableHttpsRedirection"))
+            {
+                app.UseHttpsRedirection();
+            }
+
             // Security response headers middleware - placed early so all responses get headers
             app.Use(async (context, next) =>
             {

@@ -1,16 +1,21 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Threading;
 
 namespace IntelliTrader.Core
 {
+    /// <summary>
+    /// Legacy timed task base class. Use <see cref="Microsoft.Extensions.Hosting.BackgroundService"/>
+    /// for new work. See ADR-0016 for migration details.
+    /// </summary>
+    [Obsolete("Use BackgroundService instead. See docs/ADRs/ADR-0016-ihostedservice-migration.md for migration guidance.")]
     public abstract class HighResolutionTimedTask : IDisposable
     {
         /// <summary>
         /// Raised on unhandled exception
         /// </summary>
         public event UnhandledExceptionEventHandler UnhandledException;
-        
+
         /// <summary>
         /// Delay before starting the task in [ms]
         /// </summary>

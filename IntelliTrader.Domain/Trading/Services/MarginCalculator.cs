@@ -162,6 +162,12 @@ public sealed class MarginCalculator
         }
 
         var buyFees = position.TotalFees;
+        // TODO: This uses cost basis to estimate sell fees, but should ideally use
+        // current market value (currentPrice * quantity) for accurate estimation.
+        // Current value is not available in this context without adding a price parameter.
+        // Example: position cost=1000, current value=1500, fee=0.1% =>
+        //   current calc: 1000 * 0.001 = 1.00 (underestimates)
+        //   correct calc: 1500 * 0.001 = 1.50
         var estimatedSellFees = Money.Create(
             position.TotalCost.Amount * (sellFeePercentage / 100m),
             position.Currency);

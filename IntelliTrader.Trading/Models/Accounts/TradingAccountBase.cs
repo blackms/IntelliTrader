@@ -92,7 +92,11 @@ namespace IntelliTrader.Trading
                             tradingPair.OrderIds.Add(order.OrderId);
                             tradingPair.OrderDates.Add(order.Date);
                         }
-                        tradingPair.AveragePricePaid = (tradingPair.AverageCostPaid + order.AverageCost) / (tradingPair.TotalAmount + order.AmountFilled);
+                        // Fix: denominator must use amountAfterFees to match TotalAmount accumulation.
+                        // Example: existing 50 units at cost 100, new order 10 units with 0.1 fee =>
+                        //   amountAfterFees = 9.9, cost = 110 => avgPrice = 210 / 59.9 = 3.506
+                        //   Using order.AmountFilled (10) would give 210 / 60 = 3.500 (wrong)
+                        tradingPair.AveragePricePaid = (tradingPair.AverageCostPaid + order.AverageCost) / (tradingPair.TotalAmount + amountAfterFees);
                         tradingPair.FeesPairCurrency += feesPairCurrency;
                         tradingPair.FeesMarketCurrency += feesMarketCurrency;
                         tradingPair.TotalAmount += amountAfterFees;
@@ -130,21 +134,39 @@ namespace IntelliTrader.Trading
                     {
                         decimal balanceDifference = order.AverageCost;
 
+                        decimal sellFeesMarketCurrency = 0;
                         if (order.Fees != 0 && order.FeesCurrency != null)
                         {
                             if (order.FeesCurrency == tradingService.Config.Market)
                             {
+                                sellFeesMarketCurrency = order.Fees;
                                 tradingPair.FeesMarketCurrency += order.Fees;
                                 balanceDifference -= order.Fees;
                             }
                             else
                             {
                                 string feesPair = order.FeesCurrency + tradingService.Config.Market;
-                                tradingPair.FeesMarketCurrency += tradingService.GetCurrentPrice(feesPair) * order.Fees;
+                                if (feesPair == order.Pair)
+                                {
+                                    // Fees in pair currency reduce the effective sell proceeds
+                                    balanceDifference -= tradingService.GetCurrentPrice(feesPair) * order.Fees;
+                                }
+                                sellFeesMarketCurrency = tradingService.GetCurrentPrice(feesPair) * order.Fees;
+                                tradingPair.FeesMarketCurrency += sellFeesMarketCurrency;
                             }
                         }
                         balance += balanceDifference;
-                        decimal profit = (order.AverageCost - tradingPair.AverageCostPaid - (tradingPair.Metadata.AdditionalCosts ?? 0)) * (order.AmountFilled / tradingPair.TotalAmount);
+
+                        decimal additionalCosts = tradingPair.Metadata.AdditionalCosts ?? 0;
+                        decimal sellRatio = order.AmountFilled / tradingPair.TotalAmount;
+
+                        // Correct partial sell profit formula:
+                        // profit = sell proceeds - proportional cost basis - sell fees
+                        // Example: bought 100 units for 1000 total, additional costs 10, selling 25 units for 300:
+                        //   proportional cost = (1000 + 10) * (25 / 100) = 252.5
+                        //   profit = 300 - 252.5 - sellFees
+                        decimal proportionalCostBasis = (tradingPair.AverageCostPaid + additionalCosts) * sellRatio;
+                        decimal profit = order.AverageCost - proportionalCostBasis - sellFeesMarketCurrency;
 
                         var tradeResult = new TradeResult
                         {

@@ -2,6 +2,12 @@
   "Web": {
     "Enabled": true,
     "DebugMode": true,
-    "Port": 7000
+    "Port": 7000,
+    "RateLimiting": {
+      "TradingPermitLimit": 10,
+      "StatusPermitLimit": 60,
+      "ConfigPermitLimit": 5,
+      "WindowSeconds": 60
+    }
   }
 }

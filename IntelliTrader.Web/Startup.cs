@@ -7,6 +7,8 @@ using IntelliTrader.Web.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
@@ -14,6 +16,7 @@ using Microsoft.Extensions.Hosting;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.RateLimiting;
 
 namespace IntelliTrader.Web
 {
@@ -85,6 +88,50 @@ namespace IntelliTrader.Web
             // Includes tracing, metrics for trading operations, ASP.NET Core, HTTP, and runtime
             var enableConsoleExporter = Environment.IsDevelopment();
             services.AddIntelliTraderTelemetry(enableConsoleExporter);
+
+            // Configure API rate limiting per endpoint category to prevent abuse.
+            // Limits are configurable via web.json RateLimiting section.
+            var rateLimitSection = Configuration.GetSection("Web:RateLimiting");
+            var tradingLimit = rateLimitSection.GetValue<int?>("TradingPermitLimit") ?? 10;
+            var statusLimit = rateLimitSection.GetValue<int?>("StatusPermitLimit") ?? 60;
+            var configLimit = rateLimitSection.GetValue<int?>("ConfigPermitLimit") ?? 5;
+            var windowSeconds = rateLimitSection.GetValue<int?>("WindowSeconds") ?? 60;
+
+            services.AddRateLimiter(options =>
+            {
+                options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+                options.AddFixedWindowLimiter("trading", opt =>
+                {
+                    opt.PermitLimit = tradingLimit;
+                    opt.Window = TimeSpan.FromSeconds(windowSeconds);
+                    opt.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+                    opt.QueueLimit = 0;
+                });
+
+                options.AddFixedWindowLimiter("status", opt =>
+                {
+                    opt.PermitLimit = statusLimit;
+                    opt.Window = TimeSpan.FromSeconds(windowSeconds);
+                    opt.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+                    opt.QueueLimit = 0;
+                });
+
+                options.AddFixedWindowLimiter("config", opt =>
+                {
+                    opt.PermitLimit = configLimit;
+                    opt.Window = TimeSpan.FromSeconds(windowSeconds);
+                    opt.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+                    opt.QueueLimit = 0;
+                });
+
+                options.OnRejected = async (context, cancellationToken) =>
+                {
+                    context.HttpContext.Response.Headers.RetryAfter =
+                        windowSeconds.ToString();
+                    await Task.CompletedTask;
+                };
+            });
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
@@ -109,6 +156,8 @@ namespace IntelliTrader.Web
 
             app.UseAuthentication();
             app.UseAuthorization();
+
+            app.UseRateLimiter();
 
             app.UseEndpoints(endpoints =>
             {

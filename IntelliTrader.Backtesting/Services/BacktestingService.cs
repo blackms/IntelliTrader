@@ -29,7 +29,8 @@ namespace IntelliTrader.Backtesting
 
         IBacktestingConfig IBacktestingService.Config => Config;
 
-        public object SyncRoot { get; private set; } = new object();
+        private readonly object _syncRoot = new object();
+        public object SyncRoot => _syncRoot;
 
         private BacktestingLoadSnapshotsTimedTask backtestingLoadSnapshotsTimedTask;
         private BacktestingSaveSnapshotsTimedTask backtestingSaveSnapshotsTimedTask;

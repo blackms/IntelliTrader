@@ -82,7 +82,7 @@ namespace IntelliTrader.Core
         private TConfig config;
         private IConfigurationSection rawConfig;
         private DateTimeOffset lastReloadDate;
-        private object syncRoot = new object();
+        private readonly object syncRoot = new object();
 
         protected virtual void PrepareConfig() { }
         protected virtual void OnConfigReloaded() { }

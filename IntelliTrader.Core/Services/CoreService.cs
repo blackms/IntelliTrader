@@ -16,6 +16,7 @@ namespace IntelliTrader.Core
         ITradingService tradingService,
         IWebService webService,
         IBacktestingService backtestingService,
+        IAlertingService alertingService,
         IApplicationContext applicationContext,
         IConfigProvider configProvider) : ConfigurableServiceBase<CoreConfig>(configProvider), ICoreService
     {
@@ -73,6 +74,7 @@ namespace IntelliTrader.Core
             {
                 webService.Start();
             }
+            alertingService.Start();
 
             // Use Task.Run with Task.Delay instead of ThreadPool with Thread.Sleep
             // to avoid blocking a thread pool thread during the delay
@@ -112,6 +114,7 @@ namespace IntelliTrader.Core
             {
                 backtestingService.Stop();
             }
+            alertingService.Stop();
 
             StopAllTasks();
             RemoveAllTasks();

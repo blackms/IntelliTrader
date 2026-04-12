@@ -15,6 +15,9 @@ public class CoreServiceTests
     private readonly Mock<ITradingService> _tradingServiceMock;
     private readonly Mock<IWebService> _webServiceMock;
     private readonly Mock<IBacktestingService> _backtestingServiceMock;
+    private readonly Mock<IAlertingService> _alertingServiceMock;
+    private readonly Mock<IApplicationContext> _applicationContextMock;
+    private readonly Mock<IConfigProvider> _configProviderMock;
     private readonly ICoreService _sut;
 
     public CoreServiceTests()
@@ -25,6 +28,10 @@ public class CoreServiceTests
         _tradingServiceMock = new Mock<ITradingService>();
         _webServiceMock = new Mock<IWebService>();
         _backtestingServiceMock = new Mock<IBacktestingService>();
+        _alertingServiceMock = new Mock<IAlertingService>();
+        _applicationContextMock = new Mock<IApplicationContext>();
+        _applicationContextMock.Setup(x => x.Speed).Returns(1.0);
+        _configProviderMock = new Mock<IConfigProvider>();
 
         SetupDefaultMocks();
 
@@ -78,7 +85,10 @@ public class CoreServiceTests
             _healthCheckServiceMock.Object,
             _tradingServiceMock.Object,
             _webServiceMock.Object,
-            _backtestingServiceMock.Object
+            _backtestingServiceMock.Object,
+            _alertingServiceMock.Object,
+            _applicationContextMock.Object,
+            _configProviderMock.Object
         });
 
         return (ICoreService)instance;

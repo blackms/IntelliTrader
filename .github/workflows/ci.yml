@@ -48,9 +48,6 @@ jobs:
         run: dotnet build ${{ env.SOLUTION }} --configuration ${{ env.CONFIGURATION }} --no-restore
 
       - name: Test
-        # NOTE: IntelliTrader.Trading.Tests is temporarily excluded via --filter
-        # because 117/141 tests are pre-existing failures unrelated to this
-        # pipeline. Tracked in issue #36 — remove the filter once fixed.
         run: >
           dotnet test ${{ env.SOLUTION }}
           --configuration ${{ env.CONFIGURATION }}
@@ -59,7 +56,6 @@ jobs:
           --logger "console;verbosity=normal"
           --results-directory ./TestResults
           --collect:"XPlat Code Coverage"
-          --filter "FullyQualifiedName!~IntelliTrader.Trading.Tests"
           -- RunConfiguration.CollectSourceInformation=true
 
       - name: Upload test results

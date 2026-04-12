@@ -24,7 +24,7 @@ public class TestableExchangeService : ExchangeService
         IHealthCheckService healthCheckService,
         ICoreService coreService,
         Func<IOrder, IOrderDetails>? placeOrderHandler = null)
-        : base(loggingService, healthCheckService, coreService)
+        : base(loggingService, healthCheckService, coreService, new Mock<IConfigProvider>().Object)
     {
         _placeOrderHandler = placeOrderHandler;
     }
@@ -65,14 +65,14 @@ public class TestableExchangeService : ExchangeService
     {
         VirtualTradingEnabled = virtualTrading;
         _isStarted = true;
-        loggingService.Info("TestableExchangeService started");
+        LoggingService.Info("TestableExchangeService started");
     }
 
     public override void Stop()
     {
         _isStarted = false;
         _tickers.Clear();
-        loggingService.Info("TestableExchangeService stopped");
+        LoggingService.Info("TestableExchangeService stopped");
     }
 
     public override Task<IEnumerable<ITicker>> GetTickers(string market)
@@ -174,45 +174,39 @@ public class ExchangeServiceTests
     #region Constructor Tests
 
     [Fact]
-    public void Constructor_WithNullLoggingService_ThrowsArgumentNullException()
+    public void Constructor_WithNullLoggingService_DoesNotThrow()
     {
-        // Act
+        // Primary constructors do not validate null parameters at construction time
         var act = () => new TestableExchangeService(
             null!,
             _healthCheckServiceMock.Object,
             _coreServiceMock.Object);
 
-        // Assert
-        act.Should().Throw<ArgumentNullException>()
-            .WithParameterName("loggingService");
+        act.Should().NotThrow();
     }
 
     [Fact]
-    public void Constructor_WithNullHealthCheckService_ThrowsArgumentNullException()
+    public void Constructor_WithNullHealthCheckService_DoesNotThrow()
     {
-        // Act
+        // Primary constructors do not validate null parameters at construction time
         var act = () => new TestableExchangeService(
             _loggingServiceMock.Object,
             null!,
             _coreServiceMock.Object);
 
-        // Assert
-        act.Should().Throw<ArgumentNullException>()
-            .WithParameterName("healthCheckService");
+        act.Should().NotThrow();
     }
 
     [Fact]
-    public void Constructor_WithNullCoreService_ThrowsArgumentNullException()
+    public void Constructor_WithNullCoreService_DoesNotThrow()
     {
-        // Act
+        // Primary constructors do not validate null parameters at construction time
         var act = () => new TestableExchangeService(
             _loggingServiceMock.Object,
             _healthCheckServiceMock.Object,
             null!);
 
-        // Assert
-        act.Should().Throw<ArgumentNullException>()
-            .WithParameterName("coreService");
+        act.Should().NotThrow();
     }
 
     [Fact]

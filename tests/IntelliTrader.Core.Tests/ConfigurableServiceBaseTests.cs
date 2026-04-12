@@ -21,21 +21,28 @@ public class ConfigurableServiceBaseTests
     }
 
     /// <summary>
-    /// Creates a real IConfigurationSection backed by in-memory data,
+    /// Creates a real IConfigurationSection backed by JSON data,
     /// because IConfigurationSection.Get&lt;T&gt;() is an extension method and cannot be mocked.
     /// </summary>
     private static IConfigurationSection CreateRealConfigSection(string serviceName, string value)
     {
-        var data = new Dictionary<string, string?>
+        var json = $"{{\"{serviceName}\": {{\"Value\": \"{value}\"}}}}";
+        var tempFile = Path.GetTempFileName();
+        try
         {
-            { $"{serviceName}:Value", value }
-        };
+            File.WriteAllText(tempFile, json);
+            var config = new ConfigurationBuilder()
+                .AddJsonFile(tempFile, optional: false)
+                .Build();
 
-        var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(data)
-            .Build();
-
-        return config.GetSection(serviceName);
+            return config.GetSection(serviceName);
+        }
+        finally
+        {
+            // Clean up temp file after building config
+            // (ConfigurationBuilder reads it synchronously)
+            try { File.Delete(tempFile); } catch { }
+        }
     }
 
     #region Constructor Tests

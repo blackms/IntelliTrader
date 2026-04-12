@@ -53,7 +53,8 @@ namespace IntelliTrader.Exchange.Binance
             ILoggingService loggingService,
             IHealthCheckService healthCheckService,
             ICoreService coreService,
-            IConfigProvider configProvider)
+            IConfigProvider configProvider,
+            IResilienceConfig resilienceConfig)
             : base(loggingService, healthCheckService, coreService, configProvider)
         {
             _loggingService = loggingService;
@@ -64,7 +65,8 @@ namespace IntelliTrader.Exchange.Binance
             // - ReadPipeline: 3 retries, 30s timeout, circuit breaker (for GetTickers, GetAvailableAmounts, GetMyTrades)
             // - OrderPipeline: 1 retry ONLY, 15s timeout, stricter circuit breaker (for PlaceOrder - CRITICAL)
             // - WebSocketPipeline: For connection management
-            _resiliencePipelines = new ExchangeResiliencePipelines(loggingService, ResilienceConfig.Default);
+            var config = resilienceConfig as ResilienceConfig ?? ResilienceConfig.Default;
+            _resiliencePipelines = new ExchangeResiliencePipelines(loggingService, config);
 
             _loggingService.Info("[Resilience] Exchange resilience pipelines initialized");
         }
@@ -111,7 +113,7 @@ namespace IntelliTrader.Exchange.Binance
             }
             catch (Exception ex)
             {
-                _loggingService.Warning($"Failed to get initial tickers via REST, falling back to ExchangeSharp: {ex.Message}");
+                _loggingService.Warning($"Failed to get initial tickers via REST, falling back to ExchangeSharp", ex);
                 var initialTickers = _binanceApi.GetTickersAsync().GetAwaiter().GetResult();
                 _tickers = new ConcurrentDictionary<string, Ticker>(initialTickers.Select(t => new KeyValuePair<string, Ticker>(t.Key, new Ticker
                 {

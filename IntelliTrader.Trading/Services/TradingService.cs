@@ -531,7 +531,7 @@ namespace IntelliTrader.Trading
                 }
                 catch (Exception ex)
                 {
-                    loggingService.Error($"SWAP COMPENSATION EXCEPTION for {options.OldPair}: {ex.Message}. Manual intervention required!");
+                    loggingService.Error($"SWAP COMPENSATION EXCEPTION for {options.OldPair}. Manual intervention required!", ex);
                     _ = notificationService.NotifyAsync($"CRITICAL: Swap compensation exception for {options.OldPair}. Manual intervention required!");
                 }
                 return;
@@ -813,7 +813,7 @@ namespace IntelliTrader.Trading
             }
             catch (Exception ex)
             {
-                loggingService.Info($"Error calculating position size for {pair}: {ex.Message}. Using default BuyMaxCost.");
+                loggingService.Warning($"Error calculating position size for {pair}. Using default BuyMaxCost.", ex);
                 return null;
             }
         }
@@ -880,7 +880,7 @@ namespace IntelliTrader.Trading
             }
             catch (Exception ex)
             {
-                loggingService.Debug($"Error calculating trading statistics: {ex.Message}");
+                loggingService.Warning($"Error calculating trading statistics", ex);
                 return (null, null);
             }
         }
@@ -1183,13 +1183,13 @@ namespace IntelliTrader.Trading
                     }
                     catch (Exception ex)
                     {
-                        loggingService.Error($"Failed to dispatch domain event {domainEvent.GetType().Name}: {ex.Message}");
+                        loggingService.Error($"Failed to dispatch domain event {domainEvent.GetType().Name}", ex);
                     }
                 });
             }
             catch (Exception ex)
             {
-                loggingService.Error($"Failed to queue domain event {domainEvent.GetType().Name}: {ex.Message}");
+                loggingService.Error($"Failed to queue domain event {domainEvent.GetType().Name}", ex);
             }
         }
 

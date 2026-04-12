@@ -1,0 +1,27 @@
+{
+  "Resilience": {
+    "ReadTimeoutSeconds": 30,
+    "MaxConcurrentReads": 10,
+    "ReadQueueLimit": 20,
+    "ReadMaxRetryAttempts": 3,
+    "ReadInitialDelayMs": 1000,
+    "OrderTimeoutSeconds": 15,
+    "MaxConcurrentOrders": 3,
+    "OrderQueueLimit": 5,
+    "OrderMaxRetryAttempts": 0,
+    "OrderInitialDelayMs": 500,
+    "CircuitBreakerFailureRatio": 0.5,
+    "CircuitBreakerSamplingSeconds": 30,
+    "CircuitBreakerMinimumThroughput": 8,
+    "CircuitBreakerBreakDurationSeconds": 30,
+    "OrderCircuitBreakerFailureRatio": 0.3,
+    "OrderCircuitBreakerSamplingSeconds": 60,
+    "OrderCircuitBreakerMinimumThroughput": 5,
+    "OrderCircuitBreakerBreakDurationSeconds": 60,
+    "WebSocketConnectTimeoutSeconds": 30,
+    "WebSocketMaxReconnectAttempts": 5,
+    "WebSocketReconnectDelaySeconds": 5,
+    "RateLimitPermitsPerMinute": 1000,
+    "RateLimitQueueLimit": 50
+  }
+}

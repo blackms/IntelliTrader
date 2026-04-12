@@ -11,6 +11,7 @@
     "Web": "web.json",
     "Backtesting": "backtesting.json",
     "Alerting": "alerting.json",
-    "SecretRotation": "secret-rotation.json"
+    "SecretRotation": "secret-rotation.json",
+    "Resilience": "resilience.json"
   }
 }

@@ -473,7 +473,7 @@ namespace IntelliTrader.Exchange.Binance
             }
             catch (JsonException ex)
             {
-                _loggingService.Debug($"Failed to parse WebSocket message: {ex.Message}");
+                _loggingService.Warning($"Failed to parse WebSocket message", ex);
             }
         }
 
@@ -508,7 +508,7 @@ namespace IntelliTrader.Exchange.Binance
             }
             catch (JsonException ex)
             {
-                _loggingService.Debug($"Failed to parse combined stream message: {ex.Message}");
+                _loggingService.Warning($"Failed to parse combined stream message", ex);
             }
         }
 
@@ -588,7 +588,7 @@ namespace IntelliTrader.Exchange.Binance
                 }
                 catch (Exception ex)
                 {
-                    _loggingService.Debug($"Ping error: {ex.Message}");
+                    _loggingService.Warning($"WebSocket ping error", ex);
                 }
             }
         }
@@ -635,7 +635,7 @@ namespace IntelliTrader.Exchange.Binance
                         }
                         catch (Exception ex)
                         {
-                            _loggingService.Warning($"Reconnection attempt failed: {ex.Message}");
+                            _loggingService.Warning($"Reconnection attempt failed", ex);
                             await Task.Delay(TimeSpan.FromSeconds(ReconnectDelaySeconds * _reconnectAttempts)).ConfigureAwait(false);
                         }
                     }
@@ -689,7 +689,7 @@ namespace IntelliTrader.Exchange.Binance
                 }
                 catch (Exception ex)
                 {
-                    _loggingService.Debug($"Error stopping REST polling: {ex.Message}");
+                    _loggingService.Warning($"Error stopping REST polling", ex);
                 }
                 _restPollingTask = null;
             }
@@ -711,7 +711,7 @@ namespace IntelliTrader.Exchange.Binance
                 }
                 catch (Exception ex)
                 {
-                    _loggingService.Warning($"REST polling error: {ex.Message}");
+                    _loggingService.Warning($"REST polling error", ex);
                     await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
                 }
             }

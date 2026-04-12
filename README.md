@@ -590,6 +590,9 @@ This works with `docker run -e`, `docker compose` environment blocks, Kubernetes
 | `GET` | `/api/health` | Health check endpoint |
 | `POST` | `/api/trading-pairs` | Active positions |
 | `POST` | `/api/market-pairs` | Market data + signals |
+| `POST` | `/api/market-pairs/filtered` | Filtered market data |
+| `GET` | `/health/live` | Kubernetes liveness probe |
+| `GET` | `/health/ready` | Kubernetes readiness probe |
 
 ### Trading Operations
 
@@ -631,7 +634,7 @@ connection.on("OrderPlaced", (order) => { /* ... */ });
 | `P2` | PostgreSQL persistence option | 🔲 Planned |
 | `P2` | Event sourcing for positions | 🔬 Research |
 | `P2` | ML-enhanced signal analysis | 🔬 Research |
-| `P3` | Kubernetes Helm chart | 📋 Backlog |
+| `P3` | ~~Kubernetes Helm chart~~ | ✅ Done |
 | `P3` | GraphQL API layer | 📋 Backlog |
 | `P3` | Strategy marketplace | 📋 Backlog |
 

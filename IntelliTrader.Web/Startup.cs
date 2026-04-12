@@ -15,6 +15,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi.Models;
 using System;
 using System.Collections.Generic;
@@ -246,6 +247,14 @@ namespace IntelliTrader.Web
             var enableSwagger = env.IsDevelopment() || Configuration.GetValue<bool>("Swagger:Enabled");
             if (enableSwagger)
             {
+                if (!env.IsDevelopment())
+                {
+                    var logger = app.ApplicationServices.GetRequiredService<ILoggerFactory>().CreateLogger<Startup>();
+                    logger.LogWarning(
+                        "Swagger UI is enabled in a non-Development environment. " +
+                        "This exposes API surface details publicly. Disable via Swagger:Enabled=false in configuration.");
+                }
+
                 app.UseSwagger();
                 app.UseSwaggerUI(c =>
                 {
@@ -254,8 +263,17 @@ namespace IntelliTrader.Web
                 });
             }
 
-            // Expose /metrics endpoint for Prometheus scraping
-            app.UseIntelliTraderPrometheusEndpoint();
+            // Expose /metrics endpoint for Prometheus scraping.
+            // NOTE: This endpoint is intentionally placed before UseAuthentication() because
+            // Prometheus scrapers typically cannot authenticate with cookie-based auth.
+            // The /metrics endpoint only exposes operational telemetry (request counts, latencies,
+            // runtime metrics) — no trading secrets or user data. This is standard practice
+            // for Prometheus integration. To disable metrics entirely, set Web:MetricsEnabled=false.
+            var metricsEnabled = Configuration.GetValue<bool?>("Web:MetricsEnabled") ?? true;
+            if (metricsEnabled)
+            {
+                app.UseIntelliTraderPrometheusEndpoint();
+            }
 
             app.UseRouting();
 

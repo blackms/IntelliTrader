@@ -4,10 +4,15 @@ using IntelliTrader.Application.Common;
 using IntelliTrader.Application.Ports.Driven;
 using IntelliTrader.Application.Trading.Commands;
 using IntelliTrader.Application.Trading.Handlers;
+using IntelliTrader.Domain.Events;
 using IntelliTrader.Domain.Trading.Aggregates;
 using IntelliTrader.Domain.Trading.Services;
 using IntelliTrader.Domain.Trading.ValueObjects;
 using IntelliTrader.Domain.SharedKernel;
+using DomainOrderSide = IntelliTrader.Domain.Events.OrderSide;
+using ExchangeOrderSide = IntelliTrader.Application.Ports.Driven.OrderSide;
+using ExchangeOrderStatus = IntelliTrader.Application.Ports.Driven.OrderStatus;
+using ExchangeOrderType = IntelliTrader.Application.Ports.Driven.OrderType;
 
 namespace IntelliTrader.Application.Tests.Trading.Handlers;
 
@@ -15,10 +20,11 @@ public class OpenPositionHandlerTests
 {
     private readonly Mock<IPortfolioRepository> _portfolioRepositoryMock;
     private readonly Mock<IPositionRepository> _positionRepositoryMock;
+    private readonly Mock<IOrderRepository> _orderRepositoryMock;
     private readonly Mock<IExchangePort> _exchangePortMock;
     private readonly Mock<IDomainEventDispatcher> _eventDispatcherMock;
     private readonly Mock<INotificationPort> _notificationPortMock;
-    private readonly Mock<IUnitOfWork> _unitOfWorkMock;
+    private readonly Mock<ITransactionalUnitOfWork> _unitOfWorkMock;
     private readonly TradingConstraintValidator _constraintValidator;
     private readonly OpenPositionHandler _handler;
 
@@ -26,20 +32,42 @@ public class OpenPositionHandlerTests
     {
         _portfolioRepositoryMock = new Mock<IPortfolioRepository>();
         _positionRepositoryMock = new Mock<IPositionRepository>();
+        _orderRepositoryMock = new Mock<IOrderRepository>();
         _exchangePortMock = new Mock<IExchangePort>();
         _eventDispatcherMock = new Mock<IDomainEventDispatcher>();
         _notificationPortMock = new Mock<INotificationPort>();
-        _unitOfWorkMock = new Mock<IUnitOfWork>();
+        _unitOfWorkMock = new Mock<ITransactionalUnitOfWork>();
         _constraintValidator = new TradingConstraintValidator();
 
         _handler = new OpenPositionHandler(
             _portfolioRepositoryMock.Object,
             _positionRepositoryMock.Object,
+            _orderRepositoryMock.Object,
             _exchangePortMock.Object,
             _eventDispatcherMock.Object,
             _constraintValidator,
             _unitOfWorkMock.Object,
             _notificationPortMock.Object);
+
+        _orderRepositoryMock
+            .Setup(x => x.SaveAsync(It.IsAny<IntelliTrader.Domain.Trading.Orders.OrderLifecycle>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _unitOfWorkMock
+            .SetupGet(x => x.HasActiveTransaction)
+            .Returns(false);
+
+        _unitOfWorkMock
+            .Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _unitOfWorkMock
+            .Setup(x => x.CommitAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        _unitOfWorkMock
+            .Setup(x => x.RollbackAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
     }
 
     private static Portfolio CreateTestPortfolio(
@@ -78,9 +106,9 @@ public class OpenPositionHandlerTests
         {
             OrderId = Guid.NewGuid().ToString(),
             Pair = pair,
-            Side = OrderSide.Buy,
-            Type = OrderType.Market,
-            Status = OrderStatus.Filled,
+            Side = ExchangeOrderSide.Buy,
+            Type = ExchangeOrderType.Market,
+            Status = ExchangeOrderStatus.Filled,
             RequestedQuantity = Quantity.Create(quantity),
             FilledQuantity = Quantity.Create(quantity),
             Price = Price.Create(price),
@@ -168,6 +196,75 @@ public class OpenPositionHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_WhenOrderIsSubmitted_PersistsOrderAndReturnsFailure()
+    {
+        // Arrange
+        var portfolio = CreateTestPortfolio();
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var command = new OpenPositionCommand
+        {
+            Pair = pair,
+            Cost = Money.Create(1000m, "USDT")
+        };
+
+        var submittedOrder = CreateTestOrderResult(pair, quantity: 0.02m) with
+        {
+            Status = ExchangeOrderStatus.New,
+            FilledQuantity = Quantity.Zero,
+            AveragePrice = Price.Zero,
+            Cost = Money.Zero("USDT"),
+            Fees = Money.Zero("USDT")
+        };
+
+        _portfolioRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(portfolio);
+
+        _exchangePortMock
+            .Setup(x => x.GetTradingRulesAsync(pair, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<TradingPairRules>.Success(CreateTestRules(pair.Symbol)));
+
+        _exchangePortMock
+            .Setup(x => x.GetCurrentPriceAsync(pair, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Price>.Success(Price.Create(50000m)));
+
+        _exchangePortMock
+            .Setup(x => x.PlaceMarketBuyAsync(pair, It.IsAny<Money>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderResult>.Success(submittedOrder));
+
+        _unitOfWorkMock
+            .Setup(x => x.CommitAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        // Act
+        var result = await _handler.HandleAsync(command);
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Message.Should().Contain("not filled");
+
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<IntelliTrader.Domain.Trading.Orders.OrderLifecycle>(order =>
+                    order.Id.Value == submittedOrder.OrderId &&
+                    order.Status == IntelliTrader.Domain.Trading.Orders.OrderLifecycleStatus.Submitted),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _positionRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<Position>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        _eventDispatcherMock.Verify(
+            x => x.DispatchManyAsync(
+                It.Is<IEnumerable<IDomainEvent>>(events =>
+                    events.OfType<OrderPlacedEvent>().Count() == 1 &&
+                    !events.OfType<OrderFilledEvent>().Any()),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task HandleAsync_WithValidCommand_SavesPortfolio()
     {
         // Arrange
@@ -233,6 +330,88 @@ public class OpenPositionHandlerTests
         // Assert
         _eventDispatcherMock.Verify(
             x => x.DispatchManyAsync(It.IsAny<IEnumerable<IDomainEvent>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithFilledOrder_DispatchesOrderLifecycleEvents()
+    {
+        // Arrange
+        var portfolio = CreateTestPortfolio();
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var command = new OpenPositionCommand
+        {
+            Pair = pair,
+            Cost = Money.Create(1000m, "USDT"),
+            SignalRule = "MomentumBreakout"
+        };
+
+        SetupDefaultMocks(portfolio, pair);
+
+        // Act
+        await _handler.HandleAsync(command);
+
+        // Assert
+        _eventDispatcherMock.Verify(
+            x => x.DispatchManyAsync(
+                It.Is<IEnumerable<IDomainEvent>>(events =>
+                    HasOrderLifecycleEvents(events, pair.Symbol, DomainOrderSide.Buy, false, "MomentumBreakout")),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithPartiallyFilledOrder_DispatchesPartialFillEventAndReturnsSuccess()
+    {
+        // Arrange
+        var portfolio = CreateTestPortfolio();
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var command = new OpenPositionCommand
+        {
+            Pair = pair,
+            Cost = Money.Create(1000m, "USDT")
+        };
+
+        var partialOrder = CreateTestOrderResult(pair, quantity: 0.01m) with
+        {
+            Status = ExchangeOrderStatus.PartiallyFilled,
+            RequestedQuantity = Quantity.Create(0.02m)
+        };
+
+        _portfolioRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(portfolio);
+
+        _exchangePortMock
+            .Setup(x => x.GetTradingRulesAsync(pair, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<TradingPairRules>.Success(CreateTestRules(pair.Symbol)));
+
+        _exchangePortMock
+            .Setup(x => x.GetCurrentPriceAsync(pair, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Price>.Success(Price.Create(50000m)));
+
+        _exchangePortMock
+            .Setup(x => x.PlaceMarketBuyAsync(pair, It.IsAny<Money>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderResult>.Success(partialOrder));
+
+        _unitOfWorkMock
+            .Setup(x => x.CommitAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        _notificationPortMock
+            .Setup(x => x.SendAsync(It.IsAny<Notification>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        // Act
+        var result = await _handler.HandleAsync(command);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        _eventDispatcherMock.Verify(
+            x => x.DispatchManyAsync(
+                It.Is<IEnumerable<IDomainEvent>>(events =>
+                    HasOrderLifecycleEvents(events, pair.Symbol, DomainOrderSide.Buy, true, null)),
+                It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -677,4 +856,25 @@ public class OpenPositionHandlerTests
     }
 
     #endregion
+
+    private static bool HasOrderLifecycleEvents(
+        IEnumerable<IDomainEvent> events,
+        string pair,
+        DomainOrderSide side,
+        bool isPartialFill,
+        string? signalRule = null)
+    {
+        var eventList = events.ToList();
+        var placed = eventList.OfType<OrderPlacedEvent>().SingleOrDefault();
+        var filled = eventList.OfType<OrderFilledEvent>().SingleOrDefault();
+
+        return placed is not null &&
+               filled is not null &&
+               placed.Pair == pair &&
+               placed.Side == side &&
+               placed.SignalRule == signalRule &&
+               filled.Pair == pair &&
+               filled.Side == side &&
+               filled.IsPartialFill == isPartialFill;
+    }
 }

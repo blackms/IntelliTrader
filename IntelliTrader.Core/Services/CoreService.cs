@@ -19,6 +19,7 @@ namespace IntelliTrader.Core
         IWebService webService,
         IBacktestingService backtestingService,
         IAlertingService alertingService,
+        ISubmittedOrderRefreshService submittedOrderRefreshService,
         IApplicationContext applicationContext,
         IConfigProvider configProvider,
         Lazy<ISecretRotationService> secretRotationService) : ConfigurableServiceBase<CoreConfig>(configProvider), ICoreService
@@ -67,6 +68,7 @@ namespace IntelliTrader.Core
             if (tradingService.Config.Enabled)
             {
                 tradingService.Start();
+                submittedOrderRefreshService.Start();
             }
             if (notificationService.Config.Enabled)
             {
@@ -116,6 +118,7 @@ namespace IntelliTrader.Core
             loggingService.Info("Stop Core service...");
             if (tradingService.Config.Enabled)
             {
+                submittedOrderRefreshService.Stop();
                 tradingService.Stop();
             }
             if (notificationService.Config.Enabled)

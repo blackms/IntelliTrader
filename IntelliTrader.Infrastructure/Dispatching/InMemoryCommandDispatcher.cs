@@ -45,6 +45,12 @@ public sealed class InMemoryCommandDispatcher : ICommandDispatcher
 
         try
         {
+            var transactionalUnitOfWork = _serviceProvider.GetService(typeof(ITransactionalUnitOfWork)) as ITransactionalUnitOfWork;
+            if (transactionalUnitOfWork is not null)
+            {
+                await transactionalUnitOfWork.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             // Resolve the handler from DI
             var handlerType = typeof(ICommandHandler<,>).MakeGenericType(commandType, resultType);
             var handler = _serviceProvider.GetService(handlerType);
@@ -79,6 +85,11 @@ public sealed class InMemoryCommandDispatcher : ICommandDispatcher
 
             var result = await task.ConfigureAwait(false);
 
+            if (transactionalUnitOfWork?.HasActiveTransaction == true)
+            {
+                await transactionalUnitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             _logger.LogDebug(
                 "Command {CommandType} handled with success={IsSuccess}",
                 commandType.Name,
@@ -111,6 +122,12 @@ public sealed class InMemoryCommandDispatcher : ICommandDispatcher
 
         try
         {
+            var transactionalUnitOfWork = _serviceProvider.GetService(typeof(ITransactionalUnitOfWork)) as ITransactionalUnitOfWork;
+            if (transactionalUnitOfWork is not null)
+            {
+                await transactionalUnitOfWork.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             // Resolve the handler from DI
             var handlerType = typeof(ICommandHandler<>).MakeGenericType(commandType);
             var handler = _serviceProvider.GetService(handlerType);
@@ -144,6 +161,11 @@ public sealed class InMemoryCommandDispatcher : ICommandDispatcher
             }
 
             var result = await task.ConfigureAwait(false);
+
+            if (transactionalUnitOfWork?.HasActiveTransaction == true)
+            {
+                await transactionalUnitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            }
 
             _logger.LogDebug(
                 "Void command {CommandType} handled with success={IsSuccess}",

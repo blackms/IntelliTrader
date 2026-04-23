@@ -2,6 +2,7 @@ using IntelliTrader.Application.Common;
 using IntelliTrader.Application.Ports.Driven;
 using IntelliTrader.Application.Trading.Commands;
 using IntelliTrader.Domain.Trading.Aggregates;
+using IntelliTrader.Domain.Trading.Orders;
 using IntelliTrader.Domain.Trading.Services;
 using IntelliTrader.Domain.Trading.ValueObjects;
 
@@ -14,23 +15,26 @@ public sealed class OpenPositionHandler : ICommandHandler<OpenPositionCommand, O
 {
     private readonly IPortfolioRepository _portfolioRepository;
     private readonly IPositionRepository _positionRepository;
+    private readonly IOrderRepository _orderRepository;
     private readonly IExchangePort _exchangePort;
     private readonly IDomainEventDispatcher _eventDispatcher;
     private readonly INotificationPort? _notificationPort;
     private readonly TradingConstraintValidator _constraintValidator;
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ITransactionalUnitOfWork _unitOfWork;
 
     public OpenPositionHandler(
         IPortfolioRepository portfolioRepository,
         IPositionRepository positionRepository,
+        IOrderRepository orderRepository,
         IExchangePort exchangePort,
         IDomainEventDispatcher eventDispatcher,
         TradingConstraintValidator constraintValidator,
-        IUnitOfWork unitOfWork,
+        ITransactionalUnitOfWork unitOfWork,
         INotificationPort? notificationPort = null)
     {
         _portfolioRepository = portfolioRepository ?? throw new ArgumentNullException(nameof(portfolioRepository));
         _positionRepository = positionRepository ?? throw new ArgumentNullException(nameof(positionRepository));
+        _orderRepository = orderRepository ?? throw new ArgumentNullException(nameof(orderRepository));
         _exchangePort = exchangePort ?? throw new ArgumentNullException(nameof(exchangePort));
         _eventDispatcher = eventDispatcher ?? throw new ArgumentNullException(nameof(eventDispatcher));
         _constraintValidator = constraintValidator ?? throw new ArgumentNullException(nameof(constraintValidator));
@@ -130,31 +134,38 @@ public sealed class OpenPositionHandler : ICommandHandler<OpenPositionCommand, O
             orderResult = marketOrderResult.Value;
         }
 
-        // 7. Check if order was filled
-        if (!orderResult.IsFullyFilled && !orderResult.IsPartiallyFilled)
+        var orderLifecycle = ExchangeOrderLifecycleFactory.Create(
+            orderResult,
+            command.SignalRule,
+            OrderIntent.OpenPosition);
+
+        // 7. Check if order was filled enough to open a position
+        if (!orderLifecycle.CanAffectPosition)
         {
-            return Result<OpenPositionResult>.Failure(
-                Error.ExchangeError($"Order was not filled. Status: {orderResult.Status}"));
+            return await PersistPendingOrderFailureAsync(orderLifecycle, orderResult.Status, cancellationToken);
         }
 
         // 8. Create the Position aggregate
         var position = Position.Open(
             command.Pair,
-            OrderId.From(orderResult.OrderId),
-            orderResult.AveragePrice,
-            orderResult.FilledQuantity,
-            orderResult.Fees,
+            orderLifecycle.Id,
+            orderLifecycle.AveragePrice,
+            orderLifecycle.FilledQuantity,
+            orderLifecycle.Fees,
             command.SignalRule);
 
         // 9. Update the Portfolio aggregate
         portfolio.RecordPositionOpened(
             position.Id,
             command.Pair,
-            orderResult.Cost);
+            orderLifecycle.Cost);
+        orderLifecycle.MarkCurrentFillApplied();
 
         // 10. Save changes
         try
         {
+            await BeginTransactionIfSupportedAsync(cancellationToken);
+            await _orderRepository.SaveAsync(orderLifecycle, cancellationToken);
             await _positionRepository.SaveAsync(position, cancellationToken);
             await _portfolioRepository.SaveAsync(portfolio, cancellationToken);
 
@@ -172,7 +183,7 @@ public sealed class OpenPositionHandler : ICommandHandler<OpenPositionCommand, O
         }
 
         // 11. Dispatch domain events
-        await DispatchDomainEventsAsync(position, portfolio, cancellationToken);
+        await DispatchDomainEventsAsync(orderLifecycle, position, portfolio, cancellationToken);
 
         // 12. Send notification (non-blocking)
         await SendNotificationAsync(position, orderResult, cancellationToken);
@@ -182,11 +193,11 @@ public sealed class OpenPositionHandler : ICommandHandler<OpenPositionCommand, O
         {
             PositionId = position.Id,
             Pair = command.Pair,
-            OrderId = OrderId.From(orderResult.OrderId),
-            EntryPrice = orderResult.AveragePrice,
-            Quantity = orderResult.FilledQuantity,
-            Cost = orderResult.Cost,
-            Fees = orderResult.Fees,
+            OrderId = orderLifecycle.Id,
+            EntryPrice = orderLifecycle.AveragePrice,
+            Quantity = orderLifecycle.FilledQuantity,
+            Cost = orderLifecycle.Cost,
+            Fees = orderLifecycle.Fees,
             OpenedAt = position.OpenedAt
         });
     }
@@ -224,18 +235,65 @@ public sealed class OpenPositionHandler : ICommandHandler<OpenPositionCommand, O
         return Quantity.Create(rawQuantity);
     }
 
+    private async Task<Result<OpenPositionResult>> PersistPendingOrderFailureAsync(
+        OrderLifecycle orderLifecycle,
+        OrderStatus exchangeStatus,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await BeginTransactionIfSupportedAsync(cancellationToken);
+            await _orderRepository.SaveAsync(orderLifecycle, cancellationToken);
+
+            var commitResult = await _unitOfWork.CommitAsync(cancellationToken);
+            if (commitResult.IsFailure)
+            {
+                return Result<OpenPositionResult>.Failure(commitResult.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            await _unitOfWork.RollbackAsync(cancellationToken);
+            return Result<OpenPositionResult>.Failure(
+                Error.ExchangeError($"Failed to save order lifecycle: {ex.Message}"));
+        }
+
+        await DispatchOrderEventsAsync(orderLifecycle, cancellationToken);
+
+        return Result<OpenPositionResult>.Failure(
+            Error.ExchangeError($"Order was not filled. Status: {exchangeStatus}"));
+    }
+
+    private async Task BeginTransactionIfSupportedAsync(CancellationToken cancellationToken)
+    {
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+    }
+
+    private async Task DispatchOrderEventsAsync(
+        OrderLifecycle orderLifecycle,
+        CancellationToken cancellationToken)
+    {
+        var orderEvents = orderLifecycle.DomainEvents.ToList();
+        orderLifecycle.ClearDomainEvents();
+
+        await _eventDispatcher.DispatchManyAsync(orderEvents, cancellationToken);
+    }
+
     private async Task DispatchDomainEventsAsync(
+        OrderLifecycle orderLifecycle,
         Position position,
         Portfolio portfolio,
         CancellationToken cancellationToken)
     {
+        var orderEvents = orderLifecycle.DomainEvents.ToList();
         var positionEvents = position.DomainEvents.ToList();
         var portfolioEvents = portfolio.DomainEvents.ToList();
 
+        orderLifecycle.ClearDomainEvents();
         position.ClearDomainEvents();
         portfolio.ClearDomainEvents();
 
-        var allEvents = positionEvents.Concat(portfolioEvents);
+        var allEvents = orderEvents.Concat(positionEvents).Concat(portfolioEvents);
         await _eventDispatcher.DispatchManyAsync(allEvents, cancellationToken);
     }
 

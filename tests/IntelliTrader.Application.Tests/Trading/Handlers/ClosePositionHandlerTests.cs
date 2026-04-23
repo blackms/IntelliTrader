@@ -627,6 +627,68 @@ public class ClosePositionHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_WhenSellOrderPartiallyFilled_PersistsLifecycleWithoutClosingPosition()
+    {
+        // Arrange
+        var position = CreateTestPosition(quantity: 0.02m);
+        var portfolio = CreateTestPortfolio();
+        portfolio.RecordPositionOpened(position.Id, position.Pair, position.TotalCost);
+
+        var command = new ClosePositionCommand
+        {
+            PositionId = position.Id
+        };
+
+        var partialOrder = CreateTestSellOrderResult(position.Pair, quantity: 0.01m) with
+        {
+            Status = IntelliTrader.Application.Ports.Driven.OrderStatus.PartiallyFilled,
+            RequestedQuantity = position.TotalQuantity
+        };
+
+        _positionRepositoryMock
+            .Setup(x => x.GetByIdAsync(position.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(position);
+
+        _portfolioRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(portfolio);
+
+        _exchangePortMock
+            .Setup(x => x.GetCurrentPriceAsync(position.Pair, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Price>.Success(Price.Create(55000m)));
+
+        _exchangePortMock
+            .Setup(x => x.PlaceMarketSellAsync(position.Pair, position.TotalQuantity, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderResult>.Success(partialOrder));
+
+        // Act
+        var result = await _handler.HandleAsync(command);
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Message.Should().Contain("not filled");
+        position.IsClosed.Should().BeFalse();
+        portfolio.HasPositionFor(position.Pair).Should().BeTrue();
+
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<OrderLifecycle>(order =>
+                    order.Id.Value == partialOrder.OrderId &&
+                    order.Status == OrderLifecycleStatus.PartiallyFilled &&
+                    order.AppliedQuantity.IsZero),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _positionRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<Position>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        _portfolioRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<Portfolio>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task HandleAsync_WhenCommitFails_ReturnsFailure()
     {
         // Arrange

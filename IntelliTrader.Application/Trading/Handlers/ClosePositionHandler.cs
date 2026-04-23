@@ -132,8 +132,8 @@ public sealed class ClosePositionHandler : ICommandHandler<ClosePositionCommand,
             intent: OrderIntent.ClosePosition,
             relatedPositionId: position.Id);
 
-        // 7. Check if order was filled
-        if (!orderLifecycle.CanAffectPosition)
+        // 7. Check if order was fully filled
+        if (orderLifecycle.Status != OrderLifecycleStatus.Filled)
         {
             return await PersistPendingOrderFailureAsync(orderLifecycle, orderResult.Status, cancellationToken);
         }

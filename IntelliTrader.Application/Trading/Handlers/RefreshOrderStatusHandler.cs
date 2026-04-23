@@ -179,6 +179,11 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
         DateTimeOffset occurredAt,
         CancellationToken cancellationToken)
     {
+        if (order.Status != OrderLifecycleStatus.Filled)
+        {
+            return await PersistOrderOnlyAsync(order, previousStatus, cancellationToken);
+        }
+
         var positionId = order.RelatedPositionId;
         if (positionId is null)
         {

@@ -152,6 +152,62 @@ public sealed class RefreshOrderStatusHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_WhenExchangeReportsOverfilledOrder_ReturnsValidationFailureWithoutPersistence()
+    {
+        // Arrange
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var submittedOrder = CreateSubmittedOrder(
+            orderId: "refresh-open-overfill-1",
+            pair: pair,
+            side: DomainOrderSide.Buy,
+            intent: OrderIntent.OpenPosition,
+            signalRule: "MomentumBreakout",
+            requestedQuantity: 0.02m);
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(submittedOrder.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(submittedOrder);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, submittedOrder.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: submittedOrder.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Buy,
+                status: ExchangeOrderStatus.Filled,
+                price: 50000m,
+                quantity: 0.03m,
+                fees: 1.5m)));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = submittedOrder.Id
+        });
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Validation");
+        result.Error.Message.Should().Contain("cannot exceed requested quantity");
+
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<OrderLifecycle>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        _positionRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<Position>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        _portfolioRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<Portfolio>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        _eventDispatcherMock.Verify(
+            x => x.DispatchManyAsync(It.IsAny<IEnumerable<IDomainEvent>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task HandleAsync_WhenSubmittedCloseOrderBecomesFilled_ClosesPositionAndReleasesPortfolio()
     {
         // Arrange

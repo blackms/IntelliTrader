@@ -72,7 +72,20 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
         }
 
         var previousStatus = order.Status;
-        var changed = ExchangeOrderLifecycleFactory.Refresh(order, exchangeResult.Value);
+        bool changed;
+        try
+        {
+            changed = ExchangeOrderLifecycleFactory.Refresh(order, exchangeResult.Value);
+        }
+        catch (ArgumentException ex)
+        {
+            return Result<RefreshOrderStatusResult>.Failure(Error.Validation(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Result<RefreshOrderStatusResult>.Failure(Error.Validation(ex.Message));
+        }
+
         if (!changed && !order.HasUnappliedFill)
         {
             return Result<RefreshOrderStatusResult>.Success(CreateResult(

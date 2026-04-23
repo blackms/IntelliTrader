@@ -98,4 +98,25 @@ public class OrderLifecycleTests
         action.Should().Throw<InvalidOperationException>()
             .WithMessage("*Canceled*");
     }
+
+    [Fact]
+    public void LinkRelatedPosition_WithOpenPositionOrder_AssignsPositionId()
+    {
+        // Arrange
+        var order = OrderLifecycle.Submit(
+            CreateOrderId(),
+            CreatePair(),
+            OrderSide.Buy,
+            OrderType.Market,
+            CreateQuantity(),
+            CreatePrice(),
+            intent: OrderIntent.OpenPosition);
+        var positionId = PositionId.Create();
+
+        // Act
+        order.LinkRelatedPosition(positionId);
+
+        // Assert
+        order.RelatedPositionId.Should().Be(positionId);
+    }
 }

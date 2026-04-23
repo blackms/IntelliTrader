@@ -159,6 +159,7 @@ public sealed class OpenPositionHandler : ICommandHandler<OpenPositionCommand, O
             position.Id,
             command.Pair,
             orderLifecycle.Cost);
+        orderLifecycle.LinkRelatedPosition(position.Id);
         orderLifecycle.MarkCurrentFillApplied();
 
         // 10. Save changes

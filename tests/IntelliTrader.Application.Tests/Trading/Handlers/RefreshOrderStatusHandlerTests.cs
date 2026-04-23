@@ -410,6 +410,192 @@ public sealed class RefreshOrderStatusHandlerTests
             Times.Once);
     }
 
+    [Fact]
+    public async Task HandleAsync_WhenAppliedPartialOpenOrderBecomesFilled_AppliesOnlyFillDeltaToExistingPosition()
+    {
+        // Arrange
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var orderId = OrderId.From("refresh-open-partial-1");
+        var position = Position.Open(
+            pair,
+            orderId,
+            Price.Create(50000m),
+            Quantity.Create(0.02m),
+            Money.Create(1m, "USDT"),
+            "MomentumBreakout");
+        var portfolio = CreatePortfolioWithOpenPosition(position, 10000m);
+
+        var partialOrder = OrderLifecycle.Submit(
+            orderId,
+            pair,
+            DomainOrderSide.Buy,
+            DomainOrderType.Market,
+            Quantity.Create(0.05m),
+            Price.Create(50000m),
+            signalRule: "MomentumBreakout",
+            intent: OrderIntent.OpenPosition);
+        partialOrder.MarkPartiallyFilled(
+            Quantity.Create(0.02m),
+            Price.Create(50000m),
+            Money.Create(1000m, "USDT"),
+            Money.Create(1m, "USDT"));
+        partialOrder.LinkRelatedPosition(position.Id);
+        partialOrder.MarkCurrentFillApplied();
+        partialOrder.ClearDomainEvents();
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(partialOrder.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(partialOrder);
+
+        _positionRepositoryMock
+            .Setup(x => x.GetByIdAsync(position.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(position);
+
+        _portfolioRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(portfolio);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, partialOrder.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: partialOrder.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Buy,
+                status: ExchangeOrderStatus.Filled,
+                price: 50000m,
+                quantity: 0.05m,
+                fees: 2.5m)));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = partialOrder.Id
+        });
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.PositionId.Should().Be(position.Id);
+        result.Value.CurrentStatus.Should().Be(OrderLifecycleStatus.Filled);
+        result.Value.AppliedDomainEffects.Should().BeTrue();
+
+        _positionRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<Position>(savedPosition =>
+                    savedPosition.Id == position.Id &&
+                    savedPosition.DCALevel == 0 &&
+                    savedPosition.Entries.Count == 1 &&
+                    savedPosition.TotalQuantity.Value == 0.05m &&
+                    savedPosition.TotalCost.Amount == 2500m &&
+                    savedPosition.TotalFees.Amount == 2.5m &&
+                    savedPosition.GetEntryAtLevel(0)!.OrderId == partialOrder.Id),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _portfolioRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<Portfolio>(savedPortfolio =>
+                    savedPortfolio.GetPositionId(pair) == position.Id &&
+                    savedPortfolio.GetTotalInvestedCost().Amount == 2500m),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<OrderLifecycle>(order =>
+                    order.Id == partialOrder.Id &&
+                    order.Status == OrderLifecycleStatus.Filled &&
+                    order.RelatedPositionId == position.Id &&
+                    order.AppliedQuantity.Value == 0.05m &&
+                    order.AppliedCost.Amount == 2500m &&
+                    order.AppliedFees.Amount == 2.5m),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenLegacyAppliedPartialOpenOrderHasNoRelatedPosition_UsesActivePortfolioPosition()
+    {
+        // Arrange
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var orderId = OrderId.From("refresh-open-legacy-partial-1");
+        var position = Position.Open(
+            pair,
+            orderId,
+            Price.Create(50000m),
+            Quantity.Create(0.02m),
+            Money.Create(1m, "USDT"),
+            "MomentumBreakout");
+        var portfolio = CreatePortfolioWithOpenPosition(position, 10000m);
+
+        var partialOrder = OrderLifecycle.Submit(
+            orderId,
+            pair,
+            DomainOrderSide.Buy,
+            DomainOrderType.Market,
+            Quantity.Create(0.05m),
+            Price.Create(50000m),
+            signalRule: "MomentumBreakout",
+            intent: OrderIntent.OpenPosition);
+        partialOrder.MarkPartiallyFilled(
+            Quantity.Create(0.02m),
+            Price.Create(50000m),
+            Money.Create(1000m, "USDT"),
+            Money.Create(1m, "USDT"));
+        partialOrder.MarkCurrentFillApplied();
+        partialOrder.ClearDomainEvents();
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(partialOrder.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(partialOrder);
+
+        _positionRepositoryMock
+            .Setup(x => x.GetByIdAsync(position.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(position);
+
+        _portfolioRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(portfolio);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, partialOrder.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: partialOrder.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Buy,
+                status: ExchangeOrderStatus.Filled,
+                price: 50000m,
+                quantity: 0.05m,
+                fees: 2.5m)));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = partialOrder.Id
+        });
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.PositionId.Should().Be(position.Id);
+
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<OrderLifecycle>(order =>
+                    order.Id == partialOrder.Id &&
+                    order.RelatedPositionId == position.Id &&
+                    order.AppliedQuantity.Value == 0.05m),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _positionRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<Position>(savedPosition =>
+                    savedPosition.Id == position.Id &&
+                    savedPosition.TotalQuantity.Value == 0.05m &&
+                    savedPosition.GetEntryAtLevel(0)!.OrderId == partialOrder.Id),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
     private static Portfolio CreateTestPortfolio(
         decimal balance = 10000m,
         int maxPositions = 5,

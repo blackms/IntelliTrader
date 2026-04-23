@@ -6,6 +6,7 @@ using IntelliTrader.Application.Trading.Commands;
 using IntelliTrader.Application.Trading.Handlers;
 using IntelliTrader.Domain.Events;
 using IntelliTrader.Domain.Trading.Aggregates;
+using IntelliTrader.Domain.Trading.Orders;
 using IntelliTrader.Domain.Trading.Services;
 using IntelliTrader.Domain.Trading.ValueObjects;
 using IntelliTrader.Domain.SharedKernel;
@@ -193,6 +194,54 @@ public class OpenPositionHandlerTests
         _positionRepositoryMock.Verify(
             x => x.SaveAsync(It.IsAny<Position>(), It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithPartiallyFilledOrder_SavesLifecycleLinkedToOpenedPosition()
+    {
+        // Arrange
+        var portfolio = CreateTestPortfolio();
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var command = new OpenPositionCommand
+        {
+            Pair = pair,
+            Cost = Money.Create(1000m, "USDT")
+        };
+
+        var partialOrder = CreateTestOrderResult(pair, quantity: 0.01m) with
+        {
+            Status = ExchangeOrderStatus.PartiallyFilled,
+            RequestedQuantity = Quantity.Create(0.02m)
+        };
+        OrderLifecycle? savedOrder = null;
+        Position? savedPosition = null;
+
+        SetupDefaultMocks(portfolio, pair);
+
+        _exchangePortMock
+            .Setup(x => x.PlaceMarketBuyAsync(pair, It.IsAny<Money>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderResult>.Success(partialOrder));
+
+        _orderRepositoryMock
+            .Setup(x => x.SaveAsync(It.IsAny<OrderLifecycle>(), It.IsAny<CancellationToken>()))
+            .Callback<OrderLifecycle, CancellationToken>((order, _) => savedOrder = order)
+            .Returns(Task.CompletedTask);
+
+        _positionRepositoryMock
+            .Setup(x => x.SaveAsync(It.IsAny<Position>(), It.IsAny<CancellationToken>()))
+            .Callback<Position, CancellationToken>((position, _) => savedPosition = position)
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _handler.HandleAsync(command);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        savedOrder.Should().NotBeNull();
+        savedPosition.Should().NotBeNull();
+        savedOrder!.RelatedPositionId.Should().Be(savedPosition!.Id);
+        savedOrder.AppliedQuantity.Value.Should().Be(0.01m);
+        savedOrder.Status.Should().Be(OrderLifecycleStatus.PartiallyFilled);
     }
 
     [Fact]

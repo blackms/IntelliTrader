@@ -149,6 +149,28 @@ public sealed class OrderLifecycle : AggregateRoot<OrderId>
         AppliedFees = Fees;
     }
 
+    /// <summary>
+    /// Links an open-position order to the position created from its first applied fill.
+    /// </summary>
+    public void LinkRelatedPosition(PositionId positionId)
+    {
+        ArgumentNullException.ThrowIfNull(positionId);
+
+        if (Intent != OrderIntent.OpenPosition)
+        {
+            throw new InvalidOperationException(
+                $"Only open position orders can be linked after submission. Order {Id.Value} has intent {Intent}.");
+        }
+
+        if (RelatedPositionId is not null && RelatedPositionId != positionId)
+        {
+            throw new InvalidOperationException(
+                $"Order {Id.Value} is already linked to position {RelatedPositionId.Value}.");
+        }
+
+        RelatedPositionId = positionId;
+    }
+
     private void ApplyFill(
         OrderLifecycleStatus targetStatus,
         Quantity filledQuantity,

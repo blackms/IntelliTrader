@@ -268,6 +268,56 @@ public sealed class Position : AggregateRoot<PositionId>
     }
 
     /// <summary>
+    /// Reconciles the cumulative fill for the opening order without creating a DCA entry.
+    /// </summary>
+    public void ApplyOpeningFillDelta(
+        OrderId orderId,
+        Price averagePrice,
+        Quantity cumulativeQuantity,
+        Money cumulativeFees,
+        DateTimeOffset? timestamp = null)
+    {
+        EnsureNotClosed();
+
+        ArgumentNullException.ThrowIfNull(orderId);
+        ArgumentNullException.ThrowIfNull(averagePrice);
+        ArgumentNullException.ThrowIfNull(cumulativeQuantity);
+        ArgumentNullException.ThrowIfNull(cumulativeFees);
+
+        if (averagePrice.IsZero)
+            throw new ArgumentException("Average price cannot be zero", nameof(averagePrice));
+
+        if (cumulativeQuantity.IsZero)
+            throw new ArgumentException("Cumulative quantity cannot be zero", nameof(cumulativeQuantity));
+
+        if (cumulativeFees.Currency != Currency)
+            throw new InvalidOperationException($"Fee currency mismatch. Expected {Currency}, got {cumulativeFees.Currency}");
+
+        var entryIndex = _entries.FindIndex(entry => entry.OrderId == orderId);
+        if (entryIndex != 0)
+            throw new InvalidOperationException($"No opening entry exists for order {orderId.Value}");
+
+        var existingEntry = _entries[entryIndex];
+        if (cumulativeQuantity < existingEntry.Quantity)
+            throw new InvalidOperationException("Cumulative quantity cannot be lower than the already applied quantity");
+
+        if (cumulativeQuantity == existingEntry.Quantity)
+            return;
+
+        var now = timestamp ?? DateTimeOffset.UtcNow;
+        var updatedEntry = PositionEntry.Create(
+            orderId,
+            averagePrice,
+            cumulativeQuantity,
+            cumulativeFees,
+            existingEntry.Timestamp,
+            existingEntry.IsMigrated);
+
+        _entries[entryIndex] = updatedEntry;
+        LastBuyAt = now;
+    }
+
+    /// <summary>
     /// Closes the position with a sell order.
     /// </summary>
     public void Close(

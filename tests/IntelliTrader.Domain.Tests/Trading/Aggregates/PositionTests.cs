@@ -110,6 +110,35 @@ public class PositionTests
         act.Should().Throw<ArgumentNullException>().WithParameterName("pair");
     }
 
+    [Fact]
+    public void ApplyOpeningFillDelta_WithHigherCumulativeQuantity_UpdatesInitialEntryWithoutIncreasingDcaLevel()
+    {
+        // Arrange
+        var orderId = CreateOrderId("open-partial-1");
+        var position = Position.Open(
+            CreatePair(),
+            orderId,
+            CreatePrice(50000m),
+            CreateQuantity(0.02m),
+            CreateFees(1m),
+            "buy_signal");
+
+        // Act
+        position.ApplyOpeningFillDelta(
+            orderId,
+            CreatePrice(50000m),
+            CreateQuantity(0.05m),
+            CreateFees(2.5m));
+
+        // Assert
+        position.DCALevel.Should().Be(0);
+        position.Entries.Should().ContainSingle();
+        position.TotalQuantity.Value.Should().Be(0.05m);
+        position.TotalCost.Amount.Should().Be(2500m);
+        position.TotalFees.Amount.Should().Be(2.5m);
+        position.GetEntryAtLevel(0)!.OrderId.Should().Be(orderId);
+    }
+
     #endregion
 
     #region DCA Entry

@@ -105,22 +105,64 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
         DateTimeOffset occurredAt,
         CancellationToken cancellationToken)
     {
+        if (!order.HasUnappliedFill)
+        {
+            return await PersistOrderOnlyAsync(order, previousStatus, cancellationToken);
+        }
+
         var portfolio = await _portfolioRepository.GetDefaultAsync(cancellationToken);
         if (portfolio is null)
         {
             return Result<RefreshOrderStatusResult>.Failure(Error.NotFound("Portfolio", "default"));
         }
 
-        var position = Position.Open(
-            order.Pair,
-            order.Id,
-            order.AveragePrice,
-            order.FilledQuantity,
-            order.Fees,
-            order.SignalRule,
-            occurredAt);
+        Position position;
+        var relatedPositionId = order.RelatedPositionId ?? portfolio.GetPositionId(order.Pair);
+        if (relatedPositionId is null)
+        {
+            position = Position.Open(
+                order.Pair,
+                order.Id,
+                order.AveragePrice,
+                order.FilledQuantity,
+                order.Fees,
+                order.SignalRule,
+                occurredAt);
 
-        portfolio.RecordPositionOpened(position.Id, order.Pair, order.Cost);
+            portfolio.RecordPositionOpened(position.Id, order.Pair, order.UnappliedCost);
+            order.LinkRelatedPosition(position.Id);
+        }
+        else
+        {
+            var existingPosition = await _positionRepository.GetByIdAsync(relatedPositionId, cancellationToken);
+            if (existingPosition is null)
+            {
+                return Result<RefreshOrderStatusResult>.Failure(
+                    Error.NotFound("Position", relatedPositionId.Value.ToString()));
+            }
+
+            position = existingPosition;
+            if (!position.Entries.Any(entry => entry.OrderId == order.Id))
+            {
+                return Result<RefreshOrderStatusResult>.Failure(
+                    Error.Validation($"Position {position.Id.Value} does not contain opening order {order.Id.Value}."));
+            }
+
+            if (order.RelatedPositionId is null)
+            {
+                order.LinkRelatedPosition(position.Id);
+            }
+
+            position.ApplyOpeningFillDelta(
+                order.Id,
+                order.AveragePrice,
+                order.FilledQuantity,
+                order.Fees,
+                occurredAt);
+
+            portfolio.RecordPositionCostIncreased(position.Id, position.Pair, order.UnappliedCost);
+        }
+
         order.MarkCurrentFillApplied();
 
         return await PersistOrderPositionPortfolioAsync(

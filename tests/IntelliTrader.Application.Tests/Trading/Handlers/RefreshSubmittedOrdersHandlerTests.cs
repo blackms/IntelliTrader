@@ -75,6 +75,50 @@ public sealed class RefreshSubmittedOrdersHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_WhenOrderIsPartiallyFilled_RefreshesItWithSubmittedOrders()
+    {
+        // Arrange
+        var partiallyFilled = CreatePartiallyFilledOrder("partial-oldest", DateTimeOffset.UtcNow.AddMinutes(-10));
+        var submitted = CreateSubmittedOrder("submitted-newest", DateTimeOffset.UtcNow.AddMinutes(-1));
+        var filledOrder = CreateFilledOrder("filled-order", DateTimeOffset.UtcNow.AddMinutes(-5));
+        var dispatchedOrderIds = new List<OrderId>();
+
+        _orderRepositoryMock
+            .Setup(x => x.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { submitted, filledOrder, partiallyFilled });
+
+        _commandDispatcherMock
+            .Setup(x => x.DispatchAsync<RefreshOrderStatusCommand, RefreshOrderStatusResult>(
+                It.IsAny<RefreshOrderStatusCommand>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((RefreshOrderStatusCommand command, CancellationToken _) =>
+            {
+                dispatchedOrderIds.Add(command.OrderId);
+
+                return Result<RefreshOrderStatusResult>.Success(new RefreshOrderStatusResult
+                {
+                    OrderId = command.OrderId,
+                    PreviousStatus = OrderLifecycleStatus.PartiallyFilled,
+                    CurrentStatus = OrderLifecycleStatus.Filled,
+                    AppliedDomainEffects = true
+                });
+            });
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshSubmittedOrdersCommand());
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.TotalSubmitted.Should().Be(2);
+        result.Value.AttemptedCount.Should().Be(2);
+        result.Value.RefreshedCount.Should().Be(2);
+        result.Value.AppliedDomainEffectsCount.Should().Be(2);
+        result.Value.FailedCount.Should().Be(0);
+
+        dispatchedOrderIds.Should().Equal(partiallyFilled.Id, submitted.Id);
+    }
+
+    [Fact]
     public async Task HandleAsync_WhenSomeRefreshesFail_AccumulatesFailureCountsWithoutStoppingBatch()
     {
         // Arrange
@@ -124,6 +168,18 @@ public sealed class RefreshSubmittedOrdersHandlerTests
             timestamp: submittedAt,
             intent: OrderIntent.OpenPosition);
 
+        order.ClearDomainEvents();
+        return order;
+    }
+
+    private static OrderLifecycle CreatePartiallyFilledOrder(string orderId, DateTimeOffset submittedAt)
+    {
+        var order = CreateSubmittedOrder(orderId, submittedAt);
+        order.MarkPartiallyFilled(
+            Quantity.Create(0.01m),
+            Price.Create(50000m),
+            Money.Create(500m, "USDT"),
+            Money.Create(0.5m, "USDT"));
         order.ClearDomainEvents();
         return order;
     }

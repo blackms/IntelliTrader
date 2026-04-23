@@ -7,7 +7,7 @@ using IntelliTrader.Domain.Trading.Orders;
 namespace IntelliTrader.Application.Trading.Handlers;
 
 /// <summary>
-/// Refreshes a batch of persisted submitted orders by delegating to the
+/// Refreshes a batch of persisted non-terminal orders by delegating to the
 /// single-order reconciliation use case.
 /// </summary>
 public sealed class RefreshSubmittedOrdersHandler
@@ -31,13 +31,13 @@ public sealed class RefreshSubmittedOrdersHandler
         ArgumentNullException.ThrowIfNull(command);
 
         var allOrders = await _orderRepository.GetAllAsync(cancellationToken);
-        var submittedOrders = allOrders
-            .Where(order => order.Status == OrderLifecycleStatus.Submitted)
+        var refreshableOrders = allOrders
+            .Where(order => !order.IsTerminal)
             .OrderBy(order => order.SubmittedAt)
             .ToList();
 
         var limit = command.Limit <= 0 ? 50 : command.Limit;
-        var batch = submittedOrders
+        var batch = refreshableOrders
             .Take(limit)
             .ToList();
 
@@ -69,7 +69,7 @@ public sealed class RefreshSubmittedOrdersHandler
 
         return Result<RefreshSubmittedOrdersResult>.Success(new RefreshSubmittedOrdersResult
         {
-            TotalSubmitted = submittedOrders.Count,
+            TotalSubmitted = refreshableOrders.Count,
             AttemptedCount = batch.Count,
             RefreshedCount = refreshedCount,
             AppliedDomainEffectsCount = appliedDomainEffectsCount,

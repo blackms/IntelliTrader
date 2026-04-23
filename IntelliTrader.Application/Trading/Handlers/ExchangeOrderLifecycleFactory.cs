@@ -78,6 +78,16 @@ internal static class ExchangeOrderLifecycleFactory
         var targetStatus = MapStatus(orderInfo.Status);
         if (targetStatus == lifecycle.Status)
         {
+            if (targetStatus == OrderLifecycleStatus.PartiallyFilled && HasFillChanged(lifecycle, orderInfo))
+            {
+                lifecycle.MarkPartiallyFilled(
+                    orderInfo.FilledQuantity,
+                    orderInfo.AveragePrice,
+                    CalculateCost(orderInfo),
+                    orderInfo.Fees);
+                return true;
+            }
+
             return false;
         }
 
@@ -159,5 +169,13 @@ internal static class ExchangeOrderLifecycleFactory
         return Money.Create(
             orderInfo.AveragePrice.Value * orderInfo.FilledQuantity.Value,
             orderInfo.Pair.QuoteCurrency);
+    }
+
+    private static bool HasFillChanged(OrderLifecycle lifecycle, ExchangeOrderInfo orderInfo)
+    {
+        return lifecycle.FilledQuantity != orderInfo.FilledQuantity ||
+               lifecycle.AveragePrice != orderInfo.AveragePrice ||
+               lifecycle.Cost != CalculateCost(orderInfo) ||
+               lifecycle.Fees != orderInfo.Fees;
     }
 }

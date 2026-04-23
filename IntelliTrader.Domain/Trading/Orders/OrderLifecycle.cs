@@ -190,7 +190,22 @@ public sealed class OrderLifecycle : AggregateRoot<OrderId>
         if (averagePrice.IsZero)
             throw new ArgumentException("Average price cannot be zero", nameof(averagePrice));
 
-        TransitionTo(targetStatus);
+        if (Status == OrderLifecycleStatus.PartiallyFilled &&
+            targetStatus is OrderLifecycleStatus.PartiallyFilled or OrderLifecycleStatus.Filled &&
+            filledQuantity < FilledQuantity)
+        {
+            throw new InvalidOperationException("Cumulative filled quantity cannot be lower than the current filled quantity.");
+        }
+
+        if (Status == targetStatus && targetStatus == OrderLifecycleStatus.PartiallyFilled)
+        {
+            if (filledQuantity == FilledQuantity && averagePrice == AveragePrice && cost == Cost && fees == Fees)
+                return;
+        }
+        else
+        {
+            TransitionTo(targetStatus);
+        }
 
         FilledQuantity = filledQuantity;
         AveragePrice = averagePrice;

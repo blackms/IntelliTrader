@@ -74,6 +74,40 @@ public class OrderLifecycleTests
     }
 
     [Fact]
+    public void MarkPartiallyFilled_WhenAlreadyPartiallyFilledWithHigherCumulativeQuantity_UpdatesFill()
+    {
+        // Arrange
+        var order = OrderLifecycle.Submit(
+            CreateOrderId(),
+            CreatePair(),
+            OrderSide.Buy,
+            OrderType.Market,
+            Quantity.Create(0.05m),
+            CreatePrice());
+        order.MarkPartiallyFilled(
+            Quantity.Create(0.02m),
+            Price.Create(50000m),
+            CreateMoney(1000m),
+            CreateMoney(1m));
+        order.ClearDomainEvents();
+
+        // Act
+        order.MarkPartiallyFilled(
+            Quantity.Create(0.03m),
+            Price.Create(50000m),
+            CreateMoney(1500m),
+            CreateMoney(1.5m));
+
+        // Assert
+        order.Status.Should().Be(OrderLifecycleStatus.PartiallyFilled);
+        order.FilledQuantity.Value.Should().Be(0.03m);
+        order.Cost.Amount.Should().Be(1500m);
+        order.Fees.Amount.Should().Be(1.5m);
+        order.DomainEvents.Should().ContainSingle()
+            .Which.Should().BeOfType<OrderFilledEvent>();
+    }
+
+    [Fact]
     public void MarkFilled_AfterCancellation_ThrowsInvalidOperationException()
     {
         // Arrange

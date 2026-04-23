@@ -187,6 +187,9 @@ public sealed class OrderLifecycle : AggregateRoot<OrderId>
         if (filledQuantity.IsZero)
             throw new ArgumentException("Filled quantity cannot be zero", nameof(filledQuantity));
 
+        if (filledQuantity > RequestedQuantity)
+            throw new ArgumentException("Filled quantity cannot exceed requested quantity.", nameof(filledQuantity));
+
         if (averagePrice.IsZero)
             throw new ArgumentException("Average price cannot be zero", nameof(averagePrice));
 

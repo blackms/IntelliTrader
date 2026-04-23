@@ -133,6 +133,47 @@ public class OrderLifecycleTests
             .WithMessage("*Canceled*");
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ApplyFill_WhenFilledQuantityExceedsRequestedQuantity_ThrowsArgumentException(bool isPartialFill)
+    {
+        // Arrange
+        var order = OrderLifecycle.Submit(
+            CreateOrderId(),
+            CreatePair(),
+            OrderSide.Buy,
+            OrderType.Market,
+            Quantity.Create(0.02m),
+            CreatePrice());
+
+        // Act
+        var action = () =>
+        {
+            if (isPartialFill)
+            {
+                order.MarkPartiallyFilled(
+                    Quantity.Create(0.03m),
+                    CreatePrice(),
+                    CreateMoney(1500m),
+                    CreateMoney(1.5m));
+            }
+            else
+            {
+                order.MarkFilled(
+                    Quantity.Create(0.03m),
+                    CreatePrice(),
+                    CreateMoney(1500m),
+                    CreateMoney(1.5m));
+            }
+        };
+
+        // Assert
+        action.Should().Throw<ArgumentException>()
+            .WithParameterName("filledQuantity")
+            .WithMessage("*cannot exceed requested quantity*");
+    }
+
     [Fact]
     public void LinkRelatedPosition_WithOpenPositionOrder_AssignsPositionId()
     {

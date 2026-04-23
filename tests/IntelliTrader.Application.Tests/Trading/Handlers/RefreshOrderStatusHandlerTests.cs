@@ -169,7 +169,8 @@ public sealed class RefreshOrderStatusHandlerTests
             pair: pair,
             side: DomainOrderSide.Sell,
             intent: OrderIntent.ClosePosition,
-            relatedPositionId: position.Id);
+            relatedPositionId: position.Id,
+            requestedQuantity: position.TotalQuantity.Value);
 
         _orderRepositoryMock
             .Setup(x => x.GetByIdAsync(submittedOrder.Id, It.IsAny<CancellationToken>()))
@@ -245,7 +246,8 @@ public sealed class RefreshOrderStatusHandlerTests
             pair: pair,
             side: DomainOrderSide.Sell,
             intent: OrderIntent.ClosePosition,
-            relatedPositionId: position.Id);
+            relatedPositionId: position.Id,
+            requestedQuantity: position.TotalQuantity.Value);
 
         _orderRepositoryMock
             .Setup(x => x.GetByIdAsync(submittedOrder.Id, It.IsAny<CancellationToken>()))
@@ -407,7 +409,8 @@ public sealed class RefreshOrderStatusHandlerTests
             pair: pair,
             side: DomainOrderSide.Buy,
             intent: OrderIntent.ExecuteDca,
-            relatedPositionId: position.Id);
+            relatedPositionId: position.Id,
+            requestedQuantity: 5m);
 
         _orderRepositoryMock
             .Setup(x => x.GetByIdAsync(submittedOrder.Id, It.IsAny<CancellationToken>()))
@@ -879,14 +882,15 @@ public sealed class RefreshOrderStatusHandlerTests
         DomainOrderSide side,
         OrderIntent intent,
         string? signalRule = null,
-        PositionId? relatedPositionId = null)
+        PositionId? relatedPositionId = null,
+        decimal requestedQuantity = 0.02m)
     {
         var order = OrderLifecycle.Submit(
             OrderId.From(orderId),
             pair,
             side,
             DomainOrderType.Market,
-            Quantity.Create(0.02m),
+            Quantity.Create(requestedQuantity),
             Price.Create(50000m),
             signalRule: signalRule,
             timestamp: DateTimeOffset.UtcNow,

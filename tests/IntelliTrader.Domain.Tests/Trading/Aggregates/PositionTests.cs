@@ -399,6 +399,37 @@ public class PositionTests
     }
 
     [Fact]
+    public void ApplyCloseFillDelta_WhenPartiallySold_ReducesPositionAndRaisesPartialCloseEvent()
+    {
+        // Arrange
+        var position = Position.Open(
+            CreatePair(),
+            CreateOrderId("buy1"),
+            CreatePrice(50000m),
+            CreateQuantity(0.1m),
+            CreateFees(5m));
+        position.ClearDomainEvents();
+
+        // Act
+        var result = position.ApplyCloseFillDelta(
+            CreateOrderId("sell1"),
+            CreatePrice(55000m),
+            CreateQuantity(0.04m),
+            CreateFees(2m));
+
+        // Assert
+        result.PositionClosed.Should().BeFalse();
+        result.ReleasedCost.Amount.Should().Be(2000m);
+        result.Proceeds.Amount.Should().Be(2200m);
+        position.IsClosed.Should().BeFalse();
+        position.TotalQuantity.Value.Should().Be(0.06m);
+        position.TotalCost.Amount.Should().Be(3000m);
+        position.TotalFees.Amount.Should().Be(3m);
+        position.DomainEvents.Should().ContainSingle()
+            .Which.Should().BeOfType<PositionPartiallyClosed>();
+    }
+
+    [Fact]
     public void Close_OnAlreadyClosedPosition_ThrowsInvalidOperationException()
     {
         // Arrange

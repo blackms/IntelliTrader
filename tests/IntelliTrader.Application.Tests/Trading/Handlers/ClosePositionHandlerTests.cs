@@ -631,7 +631,7 @@ public class ClosePositionHandlerTests
     }
 
     [Fact]
-    public async Task HandleAsync_WhenSellOrderPartiallyFilled_PersistsLifecycleWithoutClosingPosition()
+    public async Task HandleAsync_WhenSellOrderPartiallyFilled_AppliesPartialCloseWithoutClosingPosition()
     {
         // Arrange
         var position = CreateTestPosition(quantity: 0.02m);
@@ -679,17 +679,28 @@ public class ClosePositionHandlerTests
                 It.Is<OrderLifecycle>(order =>
                     order.Id.Value == partialOrder.OrderId &&
                     order.Status == OrderLifecycleStatus.PartiallyFilled &&
-                    order.AppliedQuantity.IsZero),
+                    order.AppliedQuantity.Value == 0.01m),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
         _positionRepositoryMock.Verify(
-            x => x.SaveAsync(It.IsAny<Position>(), It.IsAny<CancellationToken>()),
-            Times.Never);
+            x => x.SaveAsync(
+                It.Is<Position>(saved =>
+                    saved.Id == position.Id &&
+                    !saved.IsClosed &&
+                    saved.TotalQuantity.Value == 0.01m &&
+                    saved.TotalCost.Amount == 500m),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
 
         _portfolioRepositoryMock.Verify(
-            x => x.SaveAsync(It.IsAny<Portfolio>(), It.IsAny<CancellationToken>()),
-            Times.Never);
+            x => x.SaveAsync(
+                It.Is<Portfolio>(saved =>
+                    saved.HasPositionFor(position.Pair) &&
+                    saved.GetPositionCost(position.Id)!.Amount == 500m &&
+                    saved.Balance.Reserved.Amount == 500m),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]

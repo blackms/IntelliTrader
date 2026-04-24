@@ -756,7 +756,14 @@ public class OpenPositionHandlerTests
             Cost = Money.Create(1000m, "USDT")
         };
 
-        var orderResult = CreateTestOrderResult(pair) with { Status = OrderStatus.Canceled };
+        var orderResult = CreateTestOrderResult(pair) with
+        {
+            Status = OrderStatus.Canceled,
+            FilledQuantity = Quantity.Zero,
+            AveragePrice = Price.Zero,
+            Cost = Money.Zero("USDT"),
+            Fees = Money.Zero("USDT")
+        };
 
         _portfolioRepositoryMock
             .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))

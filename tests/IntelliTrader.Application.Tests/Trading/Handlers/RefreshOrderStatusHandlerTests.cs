@@ -1205,6 +1205,170 @@ public sealed class RefreshOrderStatusHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_WhenSubmittedOpenOrderIsCanceledWithExecutedQuantity_AppliesFillBeforeTerminalState()
+    {
+        // Arrange
+        var portfolio = CreateTestPortfolio();
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var order = CreateSubmittedOrder(
+            orderId: "refresh-canceled-open-partial-1",
+            pair: pair,
+            side: DomainOrderSide.Buy,
+            intent: OrderIntent.OpenPosition,
+            signalRule: "MomentumBreakout");
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+
+        _portfolioRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(portfolio);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, order.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: order.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Buy,
+                status: ExchangeOrderStatus.Canceled,
+                price: 50000m,
+                quantity: 0.01m,
+                fees: 0.5m)));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = order.Id
+        });
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.CurrentStatus.Should().Be(OrderLifecycleStatus.Canceled);
+        result.Value.AppliedDomainEffects.Should().BeTrue();
+        var openedPositionId = result.Value.PositionId;
+        openedPositionId.Should().NotBeNull();
+
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<OrderLifecycle>(saved =>
+                    saved.Id == order.Id &&
+                    saved.Status == OrderLifecycleStatus.Canceled &&
+                    saved.FilledQuantity.Value == 0.01m &&
+                    saved.AppliedQuantity.Value == 0.01m),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _positionRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<Position>(saved =>
+                    saved.Pair == pair &&
+                    saved.TotalQuantity.Value == 0.01m &&
+                    saved.Entries.Single().OrderId == order.Id),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _portfolioRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<Portfolio>(saved =>
+                    saved.HasPositionFor(pair) &&
+                    saved.GetPositionCost(openedPositionId!)!.Amount == 500m),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _eventDispatcherMock.Verify(
+            x => x.DispatchManyAsync(
+                It.Is<IEnumerable<IDomainEvent>>(events =>
+                    events.OfType<OrderFilledEvent>().Any(e => e.FilledAmount == 0.01m && e.IsPartialFill) &&
+                    events.OfType<PositionOpened>().Any()),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenDcaOrderIsCanceledWithExecutedQuantity_AppliesFillDeltaBeforeTerminalState()
+    {
+        // Arrange
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var position = Position.Open(
+            pair,
+            OrderId.From("seed-dca-canceled-partial-1"),
+            Price.Create(50000m),
+            Quantity.Create(0.02m),
+            Money.Create(1m, "USDT"),
+            "MomentumBreakout");
+        var portfolio = CreatePortfolioWithOpenPosition(position, 10000m);
+        var order = CreateSubmittedOrder(
+            orderId: "refresh-canceled-dca-partial-1",
+            pair: pair,
+            side: DomainOrderSide.Buy,
+            intent: OrderIntent.ExecuteDca,
+            relatedPositionId: position.Id,
+            requestedQuantity: 0.02m);
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+
+        _positionRepositoryMock
+            .Setup(x => x.GetByIdAsync(position.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(position);
+
+        _portfolioRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(portfolio);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, order.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: order.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Buy,
+                status: ExchangeOrderStatus.PendingCancel,
+                price: 49000m,
+                quantity: 0.01m,
+                fees: 0.49m)));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = order.Id
+        });
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.CurrentStatus.Should().Be(OrderLifecycleStatus.Canceled);
+        result.Value.AppliedDomainEffects.Should().BeTrue();
+        result.Value.PositionId.Should().Be(position.Id);
+
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<OrderLifecycle>(saved =>
+                    saved.Id == order.Id &&
+                    saved.Status == OrderLifecycleStatus.Canceled &&
+                    saved.FilledQuantity.Value == 0.01m &&
+                    saved.AppliedQuantity.Value == 0.01m),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _positionRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<Position>(saved =>
+                    saved.Id == position.Id &&
+                    saved.TotalQuantity.Value == 0.03m &&
+                    saved.Entries.Any(entry => entry.OrderId == order.Id && entry.Quantity.Value == 0.01m)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _portfolioRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<Portfolio>(saved =>
+                    saved.GetPositionCost(position.Id)!.Amount == 1490m),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task HandleAsync_WhenPartiallyFilledOpenOrderHasNoPortfolio_ReturnsNotFound()
     {
         // Arrange

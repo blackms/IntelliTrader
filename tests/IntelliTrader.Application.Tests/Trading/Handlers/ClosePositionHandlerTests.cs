@@ -579,7 +579,11 @@ public class ClosePositionHandlerTests
 
         var canceledOrder = CreateTestSellOrderResult(position.Pair) with
         {
-            Status = IntelliTrader.Application.Ports.Driven.OrderStatus.Canceled
+            Status = IntelliTrader.Application.Ports.Driven.OrderStatus.Canceled,
+            FilledQuantity = Quantity.Zero,
+            AveragePrice = Price.Zero,
+            Cost = Money.Zero("USDT"),
+            Fees = Money.Zero("USDT")
         };
 
         _positionRepositoryMock

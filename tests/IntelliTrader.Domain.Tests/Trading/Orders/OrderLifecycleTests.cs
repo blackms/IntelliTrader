@@ -338,7 +338,7 @@ public class OrderLifecycleTests
     }
 
     [Fact]
-    public void Cancel_FromPartiallyFilled_MarksOrderAsTerminalWithoutUnappliedFillCapability()
+    public void Cancel_FromPartiallyFilled_PreservesUnappliedBuyFillUntilApplied()
     {
         // Arrange
         var order = OrderLifecycle.Submit(
@@ -361,7 +361,11 @@ public class OrderLifecycleTests
         // Assert
         order.Status.Should().Be(OrderLifecycleStatus.Canceled);
         order.IsTerminal.Should().BeTrue();
-        order.CanAffectPosition.Should().BeFalse();
+        order.CanAffectPosition.Should().BeTrue();
+        order.HasUnappliedFill.Should().BeTrue();
+
+        order.MarkCurrentFillApplied();
+
         order.HasUnappliedFill.Should().BeFalse();
     }
 

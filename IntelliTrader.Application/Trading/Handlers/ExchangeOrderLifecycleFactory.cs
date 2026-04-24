@@ -56,6 +56,12 @@ internal static class ExchangeOrderLifecycleFactory
                 break;
 
             case OrderLifecycleStatus.Canceled:
+                ApplyCanceledFillIfPresent(
+                    lifecycle,
+                    orderResult.FilledQuantity,
+                    orderResult.AveragePrice,
+                    orderResult.Cost,
+                    orderResult.Fees);
                 lifecycle.Cancel();
                 break;
 
@@ -113,6 +119,12 @@ internal static class ExchangeOrderLifecycleFactory
                 return true;
 
             case OrderLifecycleStatus.Canceled:
+                ApplyCanceledFillIfPresent(
+                    lifecycle,
+                    orderInfo.FilledQuantity,
+                    orderInfo.AveragePrice,
+                    CalculateCost(orderInfo),
+                    orderInfo.Fees);
                 lifecycle.Cancel();
                 return true;
 
@@ -169,6 +181,21 @@ internal static class ExchangeOrderLifecycleFactory
         return Money.Create(
             orderInfo.AveragePrice.Value * orderInfo.FilledQuantity.Value,
             orderInfo.Pair.QuoteCurrency);
+    }
+
+    private static void ApplyCanceledFillIfPresent(
+        OrderLifecycle lifecycle,
+        Quantity filledQuantity,
+        Price averagePrice,
+        Money cost,
+        Money fees)
+    {
+        if (filledQuantity.IsZero)
+        {
+            return;
+        }
+
+        lifecycle.MarkPartiallyFilled(filledQuantity, averagePrice, cost, fees);
     }
 
     private static bool HasFillChanged(OrderLifecycle lifecycle, ExchangeOrderInfo orderInfo)

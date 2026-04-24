@@ -32,7 +32,8 @@ public sealed class OrderLifecycle : AggregateRoot<OrderId>
     public OrderLifecycleStatus Status { get; private set; }
 
     public bool CanAffectPosition =>
-        Status is OrderLifecycleStatus.PartiallyFilled or OrderLifecycleStatus.Filled;
+        Status is OrderLifecycleStatus.PartiallyFilled or OrderLifecycleStatus.Filled ||
+        Status == OrderLifecycleStatus.Canceled && Side == OrderSide.Buy && !FilledQuantity.IsZero;
 
     public bool HasUnappliedFill =>
         CanAffectPosition && FilledQuantity > AppliedQuantity;
@@ -138,7 +139,7 @@ public sealed class OrderLifecycle : AggregateRoot<OrderId>
 
     public void MarkCurrentFillApplied()
     {
-        if (!CanAffectPosition)
+        if (FilledQuantity.IsZero)
         {
             throw new InvalidOperationException(
                 $"Cannot mark order {Id.Value} as applied because status {Status} has no fill.");

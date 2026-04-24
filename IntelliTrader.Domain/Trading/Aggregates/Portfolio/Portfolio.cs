@@ -260,6 +260,47 @@ public sealed class Portfolio : AggregateRoot<PortfolioId>
         }
     }
 
+    public void RecordPositionCostReduced(
+        PositionId positionId,
+        TradingPair pair,
+        Money releasedCost,
+        Money proceeds)
+    {
+        ArgumentNullException.ThrowIfNull(positionId);
+        ArgumentNullException.ThrowIfNull(pair);
+        ArgumentNullException.ThrowIfNull(releasedCost);
+        ArgumentNullException.ThrowIfNull(proceeds);
+        EnsureSameCurrency(releasedCost);
+        EnsureSameCurrency(proceeds);
+
+        lock (_positionLock)
+        {
+            if (!HasPositionFor(pair))
+                throw new InvalidOperationException($"No position exists for {pair}");
+
+            if (_activePositions[pair] != positionId)
+                throw new InvalidOperationException($"Position ID mismatch for {pair}");
+
+            var currentCost = _positionCosts[positionId];
+            if (releasedCost > currentCost)
+                throw new InvalidOperationException("Cannot reduce more than tracked position cost.");
+
+            var pnl = proceeds - releasedCost;
+            var previousBalance = Balance;
+            Balance = Balance.Release(releasedCost);
+            Balance = Balance.RecordPnL(pnl);
+            _positionCosts[positionId] = currentCost - releasedCost;
+
+            AddDomainEvent(new PortfolioBalanceChanged(
+                Id,
+                previousBalance.Total,
+                Balance.Total,
+                previousBalance.Available,
+                Balance.Available,
+                $"Position partially closed for {pair}, PnL: {pnl}"));
+        }
+    }
+
     /// <summary>
     /// Updates the portfolio configuration.
     /// </summary>

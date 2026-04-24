@@ -386,6 +386,48 @@ public class PortfolioTests
 
     #endregion
 
+    #region Record Position Cost Reduced
+
+    [Fact]
+    public void RecordPositionCostReduced_WithPartialClose_UpdatesReservedCostAndRealizedPnL()
+    {
+        // Arrange
+        var portfolio = Portfolio.Create("Main", "USDT", 10000m, 10, 100m);
+        var positionId = CreatePositionId();
+        var pair = CreatePair();
+        portfolio.RecordPositionOpened(positionId, pair, CreateMoney(1000m));
+        portfolio.ClearDomainEvents();
+
+        // Act
+        portfolio.RecordPositionCostReduced(positionId, pair, CreateMoney(400m), CreateMoney(450m));
+
+        // Assert
+        portfolio.HasPositionFor(pair).Should().BeTrue();
+        portfolio.GetPositionCost(positionId)!.Amount.Should().Be(600m);
+        portfolio.Balance.Reserved.Amount.Should().Be(600m);
+        portfolio.Balance.Available.Amount.Should().Be(9450m);
+        portfolio.Balance.Total.Amount.Should().Be(10050m);
+        portfolio.DomainEvents.Should().Contain(e => e is PortfolioBalanceChanged);
+    }
+
+    [Fact]
+    public void RecordPositionCostReduced_WhenReleasedCostExceedsTrackedCost_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var portfolio = Portfolio.Create("Main", "USDT", 10000m, 10, 100m);
+        var positionId = CreatePositionId();
+        var pair = CreatePair();
+        portfolio.RecordPositionOpened(positionId, pair, CreateMoney(1000m));
+
+        // Act
+        var act = () => portfolio.RecordPositionCostReduced(positionId, pair, CreateMoney(1001m), CreateMoney(1200m));
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Cannot reduce more than tracked position cost*");
+    }
+
+    #endregion
+
     #region CanOpenNewPosition
 
     [Fact]

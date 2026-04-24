@@ -18,6 +18,13 @@ Thumbs.db
 # Claude Code
 .claude/
 
+# Local agent tooling
+.agents/
+.dev-prompts/
+.claude-flow/
+AGENTS.md
+.gitmodules
+
 # Secrets/keys
 *.bin
 keys.bin

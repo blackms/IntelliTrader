@@ -3,6 +3,7 @@ using System.Text.Json;
 using IntelliTrader.Application.Ports.Driven;
 using IntelliTrader.Domain.Trading.Aggregates;
 using IntelliTrader.Domain.Trading.ValueObjects;
+using IntelliTrader.Infrastructure.Transactions;
 
 namespace IntelliTrader.Infrastructure.Adapters.Persistence.Json;
 
@@ -10,11 +11,12 @@ namespace IntelliTrader.Infrastructure.Adapters.Persistence.Json;
 /// JSON file-based repository for Position aggregates.
 /// Thread-safe implementation using file locking and in-memory cache.
 /// </summary>
-public sealed class JsonPositionRepository : IPositionRepository, IDisposable
+public sealed class JsonPositionRepository : IPositionRepository, IJsonTransactionalResource, IDisposable
 {
     private readonly string _filePath;
     private readonly SemaphoreSlim _fileLock = new(1, 1);
     private readonly JsonSerializerOptions _jsonOptions;
+    private readonly JsonTransactionCoordinator _transactionCoordinator;
     private ConcurrentDictionary<Guid, PositionDto> _cache = new();
     private bool _cacheLoaded;
     private bool _disposed;
@@ -23,12 +25,13 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
     /// Creates a new JsonPositionRepository.
     /// </summary>
     /// <param name="filePath">The path to the JSON file for position storage.</param>
-    public JsonPositionRepository(string filePath)
+    public JsonPositionRepository(string filePath, JsonTransactionCoordinator? transactionCoordinator = null)
     {
         if (string.IsNullOrWhiteSpace(filePath))
             throw new ArgumentException("File path cannot be null or empty", nameof(filePath));
 
         _filePath = filePath;
+        _transactionCoordinator = transactionCoordinator ?? JsonTransactionCoordinator.Shared;
         _jsonOptions = new JsonSerializerOptions
         {
             WriteIndented = true,
@@ -42,7 +45,8 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
         ArgumentNullException.ThrowIfNull(id);
         await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
 
-        return _cache.TryGetValue(id.Value, out var dto) ? PositionMapper.FromDto(dto) : null;
+        var cache = GetReadCache();
+        return cache.TryGetValue(id.Value, out var dto) ? PositionMapper.FromDto(dto) : null;
     }
 
     /// <inheritdoc />
@@ -51,7 +55,7 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
         ArgumentNullException.ThrowIfNull(pair);
         await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
 
-        var dto = _cache.Values
+        var dto = GetReadCache().Values
             .FirstOrDefault(p => !p.IsClosed &&
                                  p.Pair.Symbol.Equals(pair.Symbol, StringComparison.OrdinalIgnoreCase));
 
@@ -63,7 +67,7 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
     {
         await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
 
-        return _cache.Values
+        return GetReadCache().Values
             .Where(p => !p.IsClosed)
             .Select(PositionMapper.FromDto)
             .ToList();
@@ -77,7 +81,7 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
         ArgumentNullException.ThrowIfNull(portfolioId);
         await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
 
-        return _cache.Values
+        return GetReadCache().Values
             .Where(p => p.PortfolioId == portfolioId.Value)
             .Select(PositionMapper.FromDto)
             .ToList();
@@ -91,7 +95,7 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
     {
         await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
 
-        return _cache.Values
+        return GetReadCache().Values
             .Where(p => p.IsClosed &&
                         p.ClosedAt.HasValue &&
                         p.ClosedAt.Value >= from &&
@@ -106,17 +110,22 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
         ArgumentNullException.ThrowIfNull(position);
         await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
 
+        var cache = GetWriteCache();
+
         // Preserve existing portfolio association if present
         PortfolioId? portfolioId = null;
-        if (_cache.TryGetValue(position.Id.Value, out var existingDto))
+        if (cache.TryGetValue(position.Id.Value, out var existingDto))
         {
             portfolioId = PositionMapper.GetPortfolioId(existingDto);
         }
 
         var dto = PositionMapper.ToDto(position, portfolioId);
-        _cache[position.Id.Value] = dto;
+        cache[position.Id.Value] = dto;
 
-        await PersistCacheAsync(cancellationToken).ConfigureAwait(false);
+        if (!_transactionCoordinator.HasActiveTransaction)
+        {
+            await PersistCacheAsync(cache, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc />
@@ -125,19 +134,23 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
         ArgumentNullException.ThrowIfNull(positions);
         await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
 
+        var cache = GetWriteCache();
         foreach (var position in positions)
         {
             PortfolioId? portfolioId = null;
-            if (_cache.TryGetValue(position.Id.Value, out var existingDto))
+            if (cache.TryGetValue(position.Id.Value, out var existingDto))
             {
                 portfolioId = PositionMapper.GetPortfolioId(existingDto);
             }
 
             var dto = PositionMapper.ToDto(position, portfolioId);
-            _cache[position.Id.Value] = dto;
+            cache[position.Id.Value] = dto;
         }
 
-        await PersistCacheAsync(cancellationToken).ConfigureAwait(false);
+        if (!_transactionCoordinator.HasActiveTransaction)
+        {
+            await PersistCacheAsync(cache, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc />
@@ -146,9 +159,10 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
         ArgumentNullException.ThrowIfNull(id);
         await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
 
-        if (_cache.TryRemove(id.Value, out _))
+        var cache = GetWriteCache();
+        if (cache.TryRemove(id.Value, out _) && !_transactionCoordinator.HasActiveTransaction)
         {
-            await PersistCacheAsync(cancellationToken).ConfigureAwait(false);
+            await PersistCacheAsync(cache, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -158,15 +172,15 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
         ArgumentNullException.ThrowIfNull(pair);
         await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
 
-        return _cache.Values.Any(p => !p.IsClosed &&
-                                      p.Pair.Symbol.Equals(pair.Symbol, StringComparison.OrdinalIgnoreCase));
+        return GetReadCache().Values.Any(p => !p.IsClosed &&
+                                              p.Pair.Symbol.Equals(pair.Symbol, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <inheritdoc />
     public async Task<int> GetActiveCountAsync(CancellationToken cancellationToken = default)
     {
         await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
-        return _cache.Values.Count(p => !p.IsClosed);
+        return GetReadCache().Values.Count(p => !p.IsClosed);
     }
 
     /// <summary>
@@ -181,10 +195,15 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
         ArgumentNullException.ThrowIfNull(portfolioId);
         await EnsureCacheLoadedAsync(cancellationToken).ConfigureAwait(false);
 
-        if (_cache.TryGetValue(positionId.Value, out var dto))
+        var cache = GetWriteCache();
+        if (cache.TryGetValue(positionId.Value, out var dto))
         {
             dto.PortfolioId = portfolioId.Value;
-            await PersistCacheAsync(cancellationToken).ConfigureAwait(false);
+
+            if (!_transactionCoordinator.HasActiveTransaction)
+            {
+                await PersistCacheAsync(cache, cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 
@@ -246,7 +265,37 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
         _cacheLoaded = true;
     }
 
-    private async Task PersistCacheAsync(CancellationToken cancellationToken)
+    private ConcurrentDictionary<Guid, PositionDto> GetReadCache()
+    {
+        if (_transactionCoordinator.TryGetState(this, out ConcurrentDictionary<Guid, PositionDto>? stagedCache))
+        {
+            return stagedCache;
+        }
+
+        return _cache;
+    }
+
+    private ConcurrentDictionary<Guid, PositionDto> GetWriteCache()
+    {
+        if (!_transactionCoordinator.HasActiveTransaction)
+        {
+            return _cache;
+        }
+
+        return _transactionCoordinator.GetOrCreateState(this, CloneCache);
+    }
+
+    private ConcurrentDictionary<Guid, PositionDto> CloneCache()
+    {
+        var json = JsonSerializer.Serialize(_cache.Values.ToList(), _jsonOptions);
+        var dtos = JsonSerializer.Deserialize<List<PositionDto>>(json, _jsonOptions) ?? new List<PositionDto>();
+
+        return new ConcurrentDictionary<Guid, PositionDto>(dtos.ToDictionary(d => d.Id));
+    }
+
+    private async Task PersistCacheAsync(
+        ConcurrentDictionary<Guid, PositionDto> cache,
+        CancellationToken cancellationToken)
     {
         await _fileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -257,7 +306,7 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
                 Directory.CreateDirectory(directory);
             }
 
-            var dtos = _cache.Values.ToList();
+            var dtos = cache.Values.ToList();
             var json = JsonSerializer.Serialize(dtos, _jsonOptions);
             await File.WriteAllTextAsync(_filePath, json, cancellationToken).ConfigureAwait(false);
         }
@@ -265,6 +314,47 @@ public sealed class JsonPositionRepository : IPositionRepository, IDisposable
         {
             _fileLock.Release();
         }
+    }
+
+    Task<JsonPreparedWrite?> IJsonTransactionalResource.PrepareCommitAsync(
+        JsonTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (!transaction.TryGetState(this, out ConcurrentDictionary<Guid, PositionDto>? stagedCache))
+        {
+            return Task.FromResult<JsonPreparedWrite?>(null);
+        }
+
+        var json = JsonSerializer.Serialize(stagedCache.Values.ToList(), _jsonOptions);
+        return Task.FromResult<JsonPreparedWrite?>(new JsonPreparedWrite(_filePath, json));
+    }
+
+    async Task IJsonTransactionalResource.AcceptCommitAsync(
+        JsonTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (!transaction.TryGetState(this, out ConcurrentDictionary<Guid, PositionDto>? stagedCache))
+        {
+            return;
+        }
+
+        await _fileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            _cache = stagedCache;
+            _cacheLoaded = true;
+        }
+        finally
+        {
+            _fileLock.Release();
+        }
+    }
+
+    Task IJsonTransactionalResource.RollbackAsync(
+        JsonTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
     }
 
     public void Dispose()

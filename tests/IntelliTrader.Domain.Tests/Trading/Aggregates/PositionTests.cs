@@ -110,6 +110,35 @@ public class PositionTests
         act.Should().Throw<ArgumentNullException>().WithParameterName("pair");
     }
 
+    [Fact]
+    public void ApplyOpeningFillDelta_WithHigherCumulativeQuantity_UpdatesInitialEntryWithoutIncreasingDcaLevel()
+    {
+        // Arrange
+        var orderId = CreateOrderId("open-partial-1");
+        var position = Position.Open(
+            CreatePair(),
+            orderId,
+            CreatePrice(50000m),
+            CreateQuantity(0.02m),
+            CreateFees(1m),
+            "buy_signal");
+
+        // Act
+        position.ApplyOpeningFillDelta(
+            orderId,
+            CreatePrice(50000m),
+            CreateQuantity(0.05m),
+            CreateFees(2.5m));
+
+        // Assert
+        position.DCALevel.Should().Be(0);
+        position.Entries.Should().ContainSingle();
+        position.TotalQuantity.Value.Should().Be(0.05m);
+        position.TotalCost.Amount.Should().Be(2500m);
+        position.TotalFees.Amount.Should().Be(2.5m);
+        position.GetEntryAtLevel(0)!.OrderId.Should().Be(orderId);
+    }
+
     #endregion
 
     #region DCA Entry
@@ -241,6 +270,54 @@ public class PositionTests
     }
 
     [Fact]
+    public void AddDCAEntry_WithZeroPrice_ThrowsArgumentException()
+    {
+        // Arrange
+        var position = Position.Open(
+            CreatePair(),
+            CreateOrderId("order1"),
+            CreatePrice(50000m),
+            CreateQuantity(0.1m),
+            CreateFees(5m));
+
+        // Act
+        var act = () => position.AddDCAEntry(
+            CreateOrderId("order2"),
+            Price.Zero,
+            CreateQuantity(0.15m),
+            CreateFees(6m));
+
+        // Assert
+        act.Should().Throw<ArgumentException>()
+            .WithParameterName("price")
+            .WithMessage("*Price cannot be zero*");
+    }
+
+    [Fact]
+    public void AddDCAEntry_WithZeroQuantity_ThrowsArgumentException()
+    {
+        // Arrange
+        var position = Position.Open(
+            CreatePair(),
+            CreateOrderId("order1"),
+            CreatePrice(50000m),
+            CreateQuantity(0.1m),
+            CreateFees(5m));
+
+        // Act
+        var act = () => position.AddDCAEntry(
+            CreateOrderId("order2"),
+            CreatePrice(45000m),
+            Quantity.Zero,
+            CreateFees(6m));
+
+        // Assert
+        act.Should().Throw<ArgumentException>()
+            .WithParameterName("quantity")
+            .WithMessage("*Quantity cannot be zero*");
+    }
+
+    [Fact]
     public void MultipleDCAEntries_CalculatesCorrectDCALevel()
     {
         // Arrange
@@ -322,6 +399,37 @@ public class PositionTests
     }
 
     [Fact]
+    public void ApplyCloseFillDelta_WhenPartiallySold_ReducesPositionAndRaisesPartialCloseEvent()
+    {
+        // Arrange
+        var position = Position.Open(
+            CreatePair(),
+            CreateOrderId("buy1"),
+            CreatePrice(50000m),
+            CreateQuantity(0.1m),
+            CreateFees(5m));
+        position.ClearDomainEvents();
+
+        // Act
+        var result = position.ApplyCloseFillDelta(
+            CreateOrderId("sell1"),
+            CreatePrice(55000m),
+            CreateQuantity(0.04m),
+            CreateFees(2m));
+
+        // Assert
+        result.PositionClosed.Should().BeFalse();
+        result.ReleasedCost.Amount.Should().Be(2000m);
+        result.Proceeds.Amount.Should().Be(2200m);
+        position.IsClosed.Should().BeFalse();
+        position.TotalQuantity.Value.Should().Be(0.06m);
+        position.TotalCost.Amount.Should().Be(3000m);
+        position.TotalFees.Amount.Should().Be(3m);
+        position.DomainEvents.Should().ContainSingle()
+            .Which.Should().BeOfType<PositionPartiallyClosed>();
+    }
+
+    [Fact]
     public void Close_OnAlreadyClosedPosition_ThrowsInvalidOperationException()
     {
         // Arrange
@@ -343,6 +451,29 @@ public class PositionTests
         // Assert
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*closed*");
+    }
+
+    [Fact]
+    public void Close_WithZeroSellPrice_ThrowsArgumentException()
+    {
+        // Arrange
+        var position = Position.Open(
+            CreatePair(),
+            CreateOrderId("buy1"),
+            CreatePrice(50000m),
+            CreateQuantity(0.1m),
+            CreateFees(5m));
+
+        // Act
+        var act = () => position.Close(
+            CreateOrderId("sell1"),
+            Price.Zero,
+            CreateFees(5m));
+
+        // Assert
+        act.Should().Throw<ArgumentException>()
+            .WithParameterName("sellPrice")
+            .WithMessage("*Sell price cannot be zero*");
     }
 
     #endregion
@@ -478,6 +609,26 @@ public class PositionTests
         pnl.IsNegative.Should().BeTrue();
     }
 
+    [Fact]
+    public void CalculateUnrealizedPnL_WithEstimatedSellFees_AccountsForAdditionalFees()
+    {
+        // Arrange
+        var position = Position.Open(
+            CreatePair(),
+            CreateOrderId(),
+            CreatePrice(50000m),
+            CreateQuantity(0.1m),
+            CreateFees(50m));
+
+        // Act
+        var pnl = position.CalculateUnrealizedPnL(
+            CreatePrice(55000m),
+            CreateFees(25m));
+
+        // Assert
+        pnl.Amount.Should().Be(425m); // 5500 - (5000 + 50 + 25)
+    }
+
     #endregion
 
     #region DCA Conditions
@@ -602,6 +753,24 @@ public class PositionTests
     }
 
     [Fact]
+    public void GetEntryAtLevel_WithNegativeLevel_ReturnsNull()
+    {
+        // Arrange
+        var position = Position.Open(
+            CreatePair(),
+            CreateOrderId("order1"),
+            CreatePrice(50000m),
+            CreateQuantity(0.1m),
+            CreateFees(5m));
+
+        // Act
+        var entry = position.GetEntryAtLevel(-1);
+
+        // Assert
+        entry.Should().BeNull();
+    }
+
+    [Fact]
     public void GetLastBuyMargin_ReturnsMarginForLastEntry()
     {
         // Arrange
@@ -679,6 +848,261 @@ public class PositionTests
 
         // Assert
         timeSinceLastBuy.TotalMinutes.Should().BeApproximately(30, 1);
+    }
+
+    #endregion
+
+    #region Fill Delta
+
+    [Fact]
+    public void ApplyDCAFillDelta_WithHigherCumulativeQuantity_UpdatesExistingEntryWithDeltaEvent()
+    {
+        // Arrange
+        var openOrderId = CreateOrderId("order1");
+        var dcaOrderId = CreateOrderId("order2");
+        var position = Position.Open(
+            CreatePair(),
+            openOrderId,
+            CreatePrice(50000m),
+            CreateQuantity(0.1m),
+            CreateFees(5m));
+        position.AddDCAEntry(
+            dcaOrderId,
+            CreatePrice(45000m),
+            CreateQuantity(0.1m),
+            CreateFees(4m));
+        position.ClearDomainEvents();
+
+        // Act
+        position.ApplyDCAFillDelta(
+            dcaOrderId,
+            CreatePrice(44000m),
+            CreateQuantity(0.15m),
+            CreateFees(6m));
+
+        // Assert
+        position.DCALevel.Should().Be(1);
+        position.TotalQuantity.Value.Should().Be(0.25m);
+        position.TotalCost.Amount.Should().Be(11600m); // 5000 + 6600
+        position.TotalFees.Amount.Should().Be(11m); // 5 + 6
+        position.GetEntryAtLevel(1)!.Quantity.Value.Should().Be(0.15m);
+
+        position.DomainEvents.Should().ContainSingle()
+            .Which.Should().BeOfType<DCAExecuted>();
+
+        var evt = (DCAExecuted)position.DomainEvents.Single();
+        evt.Quantity.Value.Should().Be(0.05m);
+        evt.Fees.Amount.Should().Be(2m);
+        evt.Cost.Amount.Should().Be(2100m);
+    }
+
+    [Fact]
+    public void ApplyDCAFillDelta_WithMissingEntry_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var position = Position.Open(
+            CreatePair(),
+            CreateOrderId("order1"),
+            CreatePrice(50000m),
+            CreateQuantity(0.1m),
+            CreateFees(5m));
+
+        // Act
+        var act = () => position.ApplyDCAFillDelta(
+            CreateOrderId("missing"),
+            CreatePrice(44000m),
+            CreateQuantity(0.15m),
+            CreateFees(6m));
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*No DCA entry exists*");
+    }
+
+    [Fact]
+    public void ApplyDCAFillDelta_WithLowerCumulativeQuantity_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var dcaOrderId = CreateOrderId("order2");
+        var position = Position.Open(
+            CreatePair(),
+            CreateOrderId("order1"),
+            CreatePrice(50000m),
+            CreateQuantity(0.1m),
+            CreateFees(5m));
+        position.AddDCAEntry(
+            dcaOrderId,
+            CreatePrice(45000m),
+            CreateQuantity(0.1m),
+            CreateFees(4m));
+
+        // Act
+        var act = () => position.ApplyDCAFillDelta(
+            dcaOrderId,
+            CreatePrice(44000m),
+            CreateQuantity(0.05m),
+            CreateFees(3m));
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*cannot be lower than the already applied quantity*");
+    }
+
+    [Fact]
+    public void ApplyDCAFillDelta_WithSameCumulativeQuantity_DoesNothing()
+    {
+        // Arrange
+        var dcaOrderId = CreateOrderId("order2");
+        var position = Position.Open(
+            CreatePair(),
+            CreateOrderId("order1"),
+            CreatePrice(50000m),
+            CreateQuantity(0.1m),
+            CreateFees(5m));
+        position.AddDCAEntry(
+            dcaOrderId,
+            CreatePrice(45000m),
+            CreateQuantity(0.1m),
+            CreateFees(4m));
+        position.ClearDomainEvents();
+
+        // Act
+        position.ApplyDCAFillDelta(
+            dcaOrderId,
+            CreatePrice(45000m),
+            CreateQuantity(0.1m),
+            CreateFees(4m));
+
+        // Assert
+        position.TotalQuantity.Value.Should().Be(0.2m);
+        position.TotalFees.Amount.Should().Be(9m);
+        position.DomainEvents.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ApplyDCAFillDelta_WithDifferentCurrency_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var dcaOrderId = CreateOrderId("order2");
+        var position = Position.Open(
+            CreatePair(),
+            CreateOrderId("order1"),
+            CreatePrice(50000m),
+            CreateQuantity(0.1m),
+            CreateFees(5m));
+        position.AddDCAEntry(
+            dcaOrderId,
+            CreatePrice(45000m),
+            CreateQuantity(0.1m),
+            CreateFees(4m));
+
+        // Act
+        var act = () => position.ApplyDCAFillDelta(
+            dcaOrderId,
+            CreatePrice(44000m),
+            CreateQuantity(0.15m),
+            Money.Create(6m, "BTC"));
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Fee currency mismatch*");
+    }
+
+    [Fact]
+    public void ApplyOpeningFillDelta_WithDifferentCurrency_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var orderId = CreateOrderId("order1");
+        var position = Position.Open(
+            CreatePair(),
+            orderId,
+            CreatePrice(50000m),
+            CreateQuantity(0.1m),
+            CreateFees(5m));
+
+        // Act
+        var act = () => position.ApplyOpeningFillDelta(
+            orderId,
+            CreatePrice(50000m),
+            CreateQuantity(0.15m),
+            Money.Create(6m, "BTC"));
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Fee currency mismatch*");
+    }
+
+    [Fact]
+    public void ApplyOpeningFillDelta_WithMissingOpeningEntry_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var position = Position.Open(
+            CreatePair(),
+            CreateOrderId("order1"),
+            CreatePrice(50000m),
+            CreateQuantity(0.1m),
+            CreateFees(5m));
+
+        // Act
+        var act = () => position.ApplyOpeningFillDelta(
+            CreateOrderId("missing"),
+            CreatePrice(50000m),
+            CreateQuantity(0.15m),
+            CreateFees(6m));
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*No opening entry exists*");
+    }
+
+    [Fact]
+    public void ApplyOpeningFillDelta_WithLowerCumulativeQuantity_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var orderId = CreateOrderId("order1");
+        var position = Position.Open(
+            CreatePair(),
+            orderId,
+            CreatePrice(50000m),
+            CreateQuantity(0.1m),
+            CreateFees(5m));
+
+        // Act
+        var act = () => position.ApplyOpeningFillDelta(
+            orderId,
+            CreatePrice(50000m),
+            CreateQuantity(0.05m),
+            CreateFees(4m));
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*cannot be lower than the already applied quantity*");
+    }
+
+    [Fact]
+    public void ApplyOpeningFillDelta_WithSameCumulativeQuantity_DoesNothing()
+    {
+        // Arrange
+        var orderId = CreateOrderId("order1");
+        var position = Position.Open(
+            CreatePair(),
+            orderId,
+            CreatePrice(50000m),
+            CreateQuantity(0.1m),
+            CreateFees(5m));
+        position.ClearDomainEvents();
+
+        // Act
+        position.ApplyOpeningFillDelta(
+            orderId,
+            CreatePrice(50000m),
+            CreateQuantity(0.1m),
+            CreateFees(5m));
+
+        // Assert
+        position.TotalQuantity.Value.Should().Be(0.1m);
+        position.TotalFees.Amount.Should().Be(5m);
+        position.DomainEvents.Should().BeEmpty();
     }
 
     #endregion

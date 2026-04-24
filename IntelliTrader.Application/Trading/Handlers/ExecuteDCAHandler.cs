@@ -2,6 +2,7 @@ using IntelliTrader.Application.Common;
 using IntelliTrader.Application.Ports.Driven;
 using IntelliTrader.Application.Trading.Commands;
 using IntelliTrader.Domain.Trading.Aggregates;
+using IntelliTrader.Domain.Trading.Orders;
 using IntelliTrader.Domain.Trading.Services;
 using IntelliTrader.Domain.Trading.ValueObjects;
 
@@ -14,23 +15,26 @@ public sealed class ExecuteDCAHandler : ICommandHandler<ExecuteDCACommand, Execu
 {
     private readonly IPortfolioRepository _portfolioRepository;
     private readonly IPositionRepository _positionRepository;
+    private readonly IOrderRepository _orderRepository;
     private readonly IExchangePort _exchangePort;
     private readonly IDomainEventDispatcher _eventDispatcher;
     private readonly INotificationPort? _notificationPort;
     private readonly TradingConstraintValidator _constraintValidator;
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ITransactionalUnitOfWork _unitOfWork;
 
     public ExecuteDCAHandler(
         IPortfolioRepository portfolioRepository,
         IPositionRepository positionRepository,
+        IOrderRepository orderRepository,
         IExchangePort exchangePort,
         IDomainEventDispatcher eventDispatcher,
         TradingConstraintValidator constraintValidator,
-        IUnitOfWork unitOfWork,
+        ITransactionalUnitOfWork unitOfWork,
         INotificationPort? notificationPort = null)
     {
         _portfolioRepository = portfolioRepository ?? throw new ArgumentNullException(nameof(portfolioRepository));
         _positionRepository = positionRepository ?? throw new ArgumentNullException(nameof(positionRepository));
+        _orderRepository = orderRepository ?? throw new ArgumentNullException(nameof(orderRepository));
         _exchangePort = exchangePort ?? throw new ArgumentNullException(nameof(exchangePort));
         _eventDispatcher = eventDispatcher ?? throw new ArgumentNullException(nameof(eventDispatcher));
         _constraintValidator = constraintValidator ?? throw new ArgumentNullException(nameof(constraintValidator));
@@ -146,29 +150,36 @@ public sealed class ExecuteDCAHandler : ICommandHandler<ExecuteDCACommand, Execu
             orderResult = marketOrderResult.Value;
         }
 
+        var orderLifecycle = ExchangeOrderLifecycleFactory.Create(
+            orderResult,
+            intent: OrderIntent.ExecuteDca,
+            relatedPositionId: position.Id);
+
         // 9. Check if order was filled
-        if (!orderResult.IsFullyFilled && !orderResult.IsPartiallyFilled)
+        if (!orderLifecycle.CanAffectPosition)
         {
-            return Result<ExecuteDCAResult>.Failure(
-                Error.ExchangeError($"DCA order was not filled. Status: {orderResult.Status}"));
+            return await PersistPendingOrderFailureAsync(orderLifecycle, orderResult.Status, cancellationToken);
         }
 
         // 10. Add DCA entry to position
         position.AddDCAEntry(
-            OrderId.From(orderResult.OrderId),
-            orderResult.AveragePrice,
-            orderResult.FilledQuantity,
-            orderResult.Fees);
+            orderLifecycle.Id,
+            orderLifecycle.AveragePrice,
+            orderLifecycle.FilledQuantity,
+            orderLifecycle.Fees);
 
         // 11. Update portfolio - record the additional cost
         portfolio.RecordPositionCostIncreased(
             position.Id,
             position.Pair,
-            orderResult.Cost);
+            orderLifecycle.Cost);
+        orderLifecycle.MarkCurrentFillApplied();
 
         // 12. Save changes
         try
         {
+            await BeginTransactionIfSupportedAsync(cancellationToken);
+            await _orderRepository.SaveAsync(orderLifecycle, cancellationToken);
             await _positionRepository.SaveAsync(position, cancellationToken);
             await _portfolioRepository.SaveAsync(portfolio, cancellationToken);
 
@@ -186,7 +197,7 @@ public sealed class ExecuteDCAHandler : ICommandHandler<ExecuteDCACommand, Execu
         }
 
         // 13. Dispatch domain events
-        await DispatchDomainEventsAsync(position, portfolio, cancellationToken);
+        await DispatchDomainEventsAsync(orderLifecycle, position, portfolio, cancellationToken);
 
         // 14. Send notification
         await SendNotificationAsync(position, orderResult, cancellationToken);
@@ -196,11 +207,11 @@ public sealed class ExecuteDCAHandler : ICommandHandler<ExecuteDCACommand, Execu
         {
             PositionId = position.Id,
             Pair = position.Pair,
-            OrderId = OrderId.From(orderResult.OrderId),
-            EntryPrice = orderResult.AveragePrice,
-            Quantity = orderResult.FilledQuantity,
-            Cost = orderResult.Cost,
-            Fees = orderResult.Fees,
+            OrderId = orderLifecycle.Id,
+            EntryPrice = orderLifecycle.AveragePrice,
+            Quantity = orderLifecycle.FilledQuantity,
+            Cost = orderLifecycle.Cost,
+            Fees = orderLifecycle.Fees,
             NewDCALevel = position.DCALevel,
             NewAveragePrice = position.AveragePrice,
             NewTotalQuantity = position.TotalQuantity,
@@ -231,18 +242,65 @@ public sealed class ExecuteDCAHandler : ICommandHandler<ExecuteDCACommand, Execu
         return Quantity.Create(rawQuantity);
     }
 
+    private async Task<Result<ExecuteDCAResult>> PersistPendingOrderFailureAsync(
+        OrderLifecycle orderLifecycle,
+        OrderStatus exchangeStatus,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await BeginTransactionIfSupportedAsync(cancellationToken);
+            await _orderRepository.SaveAsync(orderLifecycle, cancellationToken);
+
+            var commitResult = await _unitOfWork.CommitAsync(cancellationToken);
+            if (commitResult.IsFailure)
+            {
+                return Result<ExecuteDCAResult>.Failure(commitResult.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            await _unitOfWork.RollbackAsync(cancellationToken);
+            return Result<ExecuteDCAResult>.Failure(
+                Error.ExchangeError($"Failed to save order lifecycle: {ex.Message}"));
+        }
+
+        await DispatchOrderEventsAsync(orderLifecycle, cancellationToken);
+
+        return Result<ExecuteDCAResult>.Failure(
+            Error.ExchangeError($"DCA order was not filled. Status: {exchangeStatus}"));
+    }
+
+    private async Task BeginTransactionIfSupportedAsync(CancellationToken cancellationToken)
+    {
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+    }
+
+    private async Task DispatchOrderEventsAsync(
+        OrderLifecycle orderLifecycle,
+        CancellationToken cancellationToken)
+    {
+        var orderEvents = orderLifecycle.DomainEvents.ToList();
+        orderLifecycle.ClearDomainEvents();
+
+        await _eventDispatcher.DispatchManyAsync(orderEvents, cancellationToken);
+    }
+
     private async Task DispatchDomainEventsAsync(
+        OrderLifecycle orderLifecycle,
         Position position,
         Portfolio portfolio,
         CancellationToken cancellationToken)
     {
+        var orderEvents = orderLifecycle.DomainEvents.ToList();
         var positionEvents = position.DomainEvents.ToList();
         var portfolioEvents = portfolio.DomainEvents.ToList();
 
+        orderLifecycle.ClearDomainEvents();
         position.ClearDomainEvents();
         portfolio.ClearDomainEvents();
 
-        var allEvents = positionEvents.Concat(portfolioEvents);
+        var allEvents = orderEvents.Concat(positionEvents).Concat(portfolioEvents);
         await _eventDispatcher.DispatchManyAsync(allEvents, cancellationToken);
     }
 

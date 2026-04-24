@@ -2,11 +2,17 @@ using Autofac;
 using IntelliTrader.Application.Common;
 using IntelliTrader.Application.Ports.Driven;
 using IntelliTrader.Application.Ports.Driving;
-using IntelliTrader.Application.Trading.Commands;
+using IntelliTrader.Application.Trading;
 using IntelliTrader.Application.Trading.Handlers;
+using IntelliTrader.Core;
+using IntelliTrader.Domain.Trading.Services;
+using IntelliTrader.Infrastructure.Adapters.Exchange;
 using IntelliTrader.Infrastructure.Adapters.Legacy;
+using IntelliTrader.Infrastructure.Adapters.Persistence.Json;
+using IntelliTrader.Infrastructure.BackgroundServices;
 using IntelliTrader.Infrastructure.Dispatching;
 using IntelliTrader.Infrastructure.Events;
+using IntelliTrader.Infrastructure.Transactions;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace IntelliTrader.Infrastructure;
@@ -19,34 +25,44 @@ public class AppModule : Module
 {
     protected override void Load(ContainerBuilder builder)
     {
+        builder.RegisterType<JsonTransactionCoordinator>()
+            .SingleInstance();
+
+        RegisterServiceProviderAdapter(builder);
         // Register domain event dispatcher
         RegisterDomainEventDispatcher(builder);
 
         // Register CQRS dispatchers
         RegisterDispatchers(builder);
 
+        // Register infrastructure adapters required by Application handlers
+        RegisterPersistence(builder);
+        RegisterPorts(builder);
+
         // Register legacy service adapters
         RegisterLegacyAdapters(builder);
 
-        // Register command handlers
-        RegisterCommandHandlers(builder);
+        // Register application services and handlers
+        RegisterApplicationServices(builder);
+    }
+
+    private static void RegisterServiceProviderAdapter(ContainerBuilder builder)
+    {
+        builder.Register(c =>
+            {
+                var scope = c.Resolve<ILifetimeScope>();
+                return (IServiceProvider)new AutofacServiceProviderAdapter(scope);
+            })
+            .As<IServiceProvider>()
+            .SingleInstance();
     }
 
     private static void RegisterDomainEventDispatcher(ContainerBuilder builder)
     {
-        // InMemoryDomainEventDispatcher's constructor expects Microsoft DI
-        // primitives (System.IServiceProvider, ILogger<T>) that are not
-        // part of the Autofac root container. We adapt them manually here:
-        //   * IServiceProvider is satisfied by a tiny adapter wrapping the
-        //     active Autofac lifetime scope (no extra package required).
-        //   * ILogger<InMemoryDomainEventDispatcher> falls back to
-        //     NullLogger because IntelliTrader uses its own ILoggingService
-        //     and does not configure Microsoft.Extensions.Logging.
         builder.Register(c =>
             {
-                var scope = c.Resolve<ILifetimeScope>();
                 return new InMemoryDomainEventDispatcher(
-                    new AutofacServiceProviderAdapter(scope),
+                    c.Resolve<IServiceProvider>(),
                     NullLogger<InMemoryDomainEventDispatcher>.Instance);
             })
             .As<IDomainEventDispatcher>()
@@ -75,14 +91,64 @@ public class AppModule : Module
 
     private static void RegisterDispatchers(ContainerBuilder builder)
     {
-        // Command dispatcher - singleton, stateless
-        builder.RegisterType<InMemoryCommandDispatcher>()
+        builder.Register(c =>
+            new InMemoryCommandDispatcher(
+                c.Resolve<IServiceProvider>(),
+                NullLogger<InMemoryCommandDispatcher>.Instance))
             .As<ICommandDispatcher>()
             .SingleInstance();
 
-        // Query dispatcher - singleton, stateless
-        builder.RegisterType<InMemoryQueryDispatcher>()
+        builder.Register(c =>
+            new InMemoryQueryDispatcher(
+                c.Resolve<IServiceProvider>(),
+                NullLogger<InMemoryQueryDispatcher>.Instance))
             .As<IQueryDispatcher>()
+            .SingleInstance();
+    }
+
+    private static void RegisterPersistence(ContainerBuilder builder)
+    {
+        builder.Register(_ =>
+            new JsonPositionRepository(CreateDataFilePath("positions.json"), _.Resolve<JsonTransactionCoordinator>()))
+            .As<IPositionRepository>()
+            .AsSelf()
+            .SingleInstance();
+
+        builder.Register(_ =>
+            new JsonPortfolioRepository(CreateDataFilePath("portfolios.json"), _.Resolve<JsonTransactionCoordinator>()))
+            .As<IPortfolioRepository>()
+            .AsSelf()
+            .SingleInstance();
+
+        builder.Register(_ =>
+            new JsonOrderRepository(CreateDataFilePath("orders.json"), _.Resolve<JsonTransactionCoordinator>()))
+            .As<IOrderRepository>()
+            .AsSelf()
+            .SingleInstance();
+
+        builder.Register(c => new JsonTransactionalUnitOfWork(c.Resolve<JsonTransactionCoordinator>()))
+            .As<IUnitOfWork>()
+            .As<ITransactionalUnitOfWork>()
+            .SingleInstance();
+    }
+
+    private static void RegisterPorts(ContainerBuilder builder)
+    {
+        builder.Register(c =>
+            {
+                var exchange =
+                    c.ResolveOptionalNamed<IExchangeService>("Binance") ??
+                    c.ResolveOptional<IExchangeService>() ??
+                    throw new InvalidOperationException("No exchange service is registered for IExchangePort.");
+
+                return new BinanceExchangeAdapter(exchange);
+            })
+            .As<IExchangePort>()
+            .SingleInstance();
+
+        builder.RegisterType<ActiveOrderRefreshService>()
+            .As<IActiveOrderRefreshService>()
+            .As<ISubmittedOrderRefreshService>()
             .SingleInstance();
     }
 
@@ -94,21 +160,41 @@ public class AppModule : Module
             .SingleInstance();
     }
 
-    private static void RegisterCommandHandlers(ContainerBuilder builder)
+    private static void RegisterApplicationServices(ContainerBuilder builder)
     {
-        // PlaceBuyOrderHandler
-        builder.RegisterType<PlaceBuyOrderHandler>()
-            .As<ICommandHandler<PlaceBuyOrderCommand, PlaceBuyOrderResult>>()
+        var applicationAssembly = typeof(OpenPositionHandler).Assembly;
+
+        builder.RegisterType<TradingConstraintValidator>()
+            .AsSelf()
+            .SingleInstance();
+
+        builder.RegisterType<TradingUseCase>()
+            .As<ITradingUseCase>()
+            .SingleInstance();
+
+        builder.RegisterAssemblyTypes(applicationAssembly)
+            .AsClosedTypesOf(typeof(ICommandHandler<,>))
+            .AsImplementedInterfaces()
             .InstancePerDependency();
 
-        // PlaceSellOrderHandler
-        builder.RegisterType<PlaceSellOrderHandler>()
-            .As<ICommandHandler<PlaceSellOrderCommand, PlaceSellOrderResult>>()
+        builder.RegisterAssemblyTypes(applicationAssembly)
+            .AsClosedTypesOf(typeof(ICommandHandler<>))
+            .AsImplementedInterfaces()
             .InstancePerDependency();
 
-        // PlaceSwapOrderHandler
-        builder.RegisterType<PlaceSwapOrderHandler>()
-            .As<ICommandHandler<PlaceSwapOrderCommand, PlaceSwapOrderResult>>()
+        builder.RegisterAssemblyTypes(applicationAssembly)
+            .AsClosedTypesOf(typeof(IQueryHandler<,>))
+            .AsImplementedInterfaces()
             .InstancePerDependency();
+
+        builder.RegisterAssemblyTypes(typeof(AppModule).Assembly)
+            .AsClosedTypesOf(typeof(IDomainEventHandler<>))
+            .AsImplementedInterfaces()
+            .SingleInstance();
+    }
+
+    private static string CreateDataFilePath(string fileName)
+    {
+        return Path.Combine(Directory.GetCurrentDirectory(), "data", fileName);
     }
 }

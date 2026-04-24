@@ -3,6 +3,7 @@ using Moq;
 using Xunit;
 using IntelliTrader.Core;
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Configuration;
 
 #pragma warning disable CS0612 // Type or member is obsolete
 using System.Reflection;
@@ -18,6 +19,7 @@ public class CoreServiceTests
     private readonly Mock<IWebService> _webServiceMock;
     private readonly Mock<IBacktestingService> _backtestingServiceMock;
     private readonly Mock<IAlertingService> _alertingServiceMock;
+    private readonly Mock<IActiveOrderRefreshService> _activeOrderRefreshServiceMock;
     private readonly Mock<IApplicationContext> _applicationContextMock;
     private readonly Mock<IConfigProvider> _configProviderMock;
     private readonly Mock<ISecretRotationService> _secretRotationServiceMock;
@@ -32,6 +34,7 @@ public class CoreServiceTests
         _webServiceMock = new Mock<IWebService>();
         _backtestingServiceMock = new Mock<IBacktestingService>();
         _alertingServiceMock = new Mock<IAlertingService>();
+        _activeOrderRefreshServiceMock = new Mock<IActiveOrderRefreshService>();
         _applicationContextMock = new Mock<IApplicationContext>();
         _applicationContextMock.Setup(x => x.Speed).Returns(1.0);
         _configProviderMock = new Mock<IConfigProvider>();
@@ -44,6 +47,21 @@ public class CoreServiceTests
 
     private void SetupDefaultMocks()
     {
+        var coreConfig = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"{Constants.ServiceNames.CoreService}:InstanceName"] = "TestInstance",
+                [$"{Constants.ServiceNames.CoreService}:HealthCheckEnabled"] = "true",
+                [$"{Constants.ServiceNames.CoreService}:HealthCheckInterval"] = "10",
+                [$"{Constants.ServiceNames.CoreService}:HealthCheckSuspendTradingTimeout"] = "0",
+                [$"{Constants.ServiceNames.CoreService}:HealthCheckFailuresToRestartServices"] = "0"
+            })
+            .Build();
+
+        _configProviderMock
+            .Setup(x => x.GetSection(Constants.ServiceNames.CoreService, It.IsAny<Action<IConfigurationSection>>()))
+            .Returns(coreConfig.GetSection(Constants.ServiceNames.CoreService));
+
         // Setup backtesting config (disabled by default)
         var backtestingConfigMock = new Mock<IBacktestingConfig>();
         backtestingConfigMock.Setup(x => x.Enabled).Returns(false);
@@ -91,6 +109,7 @@ public class CoreServiceTests
             _webServiceMock.Object,
             _backtestingServiceMock.Object,
             _alertingServiceMock.Object,
+            _activeOrderRefreshServiceMock.Object,
             _applicationContextMock.Object,
             _configProviderMock.Object,
             new Lazy<ISecretRotationService>(() => _secretRotationServiceMock.Object)
@@ -351,6 +370,69 @@ public class CoreServiceTests
 
         // Assert
         act.Should().NotThrow();
+    }
+
+    #endregion
+
+    #region Runtime Service Wiring Tests
+
+    [Fact]
+    public void Start_WhenTradingEnabled_StartsActiveOrderRefreshService()
+    {
+        // Arrange
+        var tradingConfigMock = new Mock<ITradingConfig>();
+        tradingConfigMock.Setup(x => x.Enabled).Returns(true);
+        _tradingServiceMock.Setup(x => x.Config).Returns(tradingConfigMock.Object);
+
+        // Act
+        _sut.Start();
+        _sut.Stop();
+
+        // Assert
+        _activeOrderRefreshServiceMock.Verify(x => x.Start(), Times.Once);
+        _activeOrderRefreshServiceMock.Verify(x => x.Stop(), Times.Once);
+    }
+
+    [Fact]
+    public void Start_WhenTradingDisabled_DoesNotStartActiveOrderRefreshService()
+    {
+        // Act
+        _sut.Start();
+        _sut.Stop();
+
+        // Assert
+        _activeOrderRefreshServiceMock.Verify(x => x.Start(), Times.Never);
+        _activeOrderRefreshServiceMock.Verify(x => x.Stop(), Times.Never);
+    }
+
+    [Fact]
+    public void StartAndStop_WhenTradingEnabled_StartsAndStopsActiveRefreshAroundTrading()
+    {
+        // Arrange
+        var tradingConfigMock = new Mock<ITradingConfig>();
+        tradingConfigMock.Setup(x => x.Enabled).Returns(true);
+        _tradingServiceMock.Setup(x => x.Config).Returns(tradingConfigMock.Object);
+
+        var lifecycleCalls = new List<string>();
+        _tradingServiceMock.Setup(x => x.Start())
+            .Callback(() => lifecycleCalls.Add("trading-start"));
+        _activeOrderRefreshServiceMock.Setup(x => x.Start())
+            .Callback(() => lifecycleCalls.Add("refresh-start"));
+        _activeOrderRefreshServiceMock.Setup(x => x.Stop())
+            .Callback(() => lifecycleCalls.Add("refresh-stop"));
+        _tradingServiceMock.Setup(x => x.Stop())
+            .Callback(() => lifecycleCalls.Add("trading-stop"));
+
+        // Act
+        _sut.Start();
+        _sut.Stop();
+
+        // Assert
+        lifecycleCalls.Should().ContainInOrder(
+            "trading-start",
+            "refresh-start",
+            "refresh-stop",
+            "trading-stop");
     }
 
     #endregion

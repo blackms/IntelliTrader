@@ -5,9 +5,12 @@ using IntelliTrader.Application.Ports.Driven;
 using IntelliTrader.Application.Trading.Commands;
 using IntelliTrader.Application.Trading.Handlers;
 using IntelliTrader.Domain.Trading.Aggregates;
+using IntelliTrader.Domain.Trading.Orders;
 using IntelliTrader.Domain.Trading.Services;
 using IntelliTrader.Domain.Trading.ValueObjects;
 using IntelliTrader.Domain.SharedKernel;
+using OrderFilledDomainEvent = IntelliTrader.Domain.Events.OrderFilledEvent;
+using OrderPlacedDomainEvent = IntelliTrader.Domain.Events.OrderPlacedEvent;
 
 namespace IntelliTrader.Application.Tests.Trading.Handlers;
 
@@ -15,10 +18,11 @@ public class ClosePositionHandlerTests
 {
     private readonly Mock<IPortfolioRepository> _portfolioRepositoryMock;
     private readonly Mock<IPositionRepository> _positionRepositoryMock;
+    private readonly Mock<IOrderRepository> _orderRepositoryMock;
     private readonly Mock<IExchangePort> _exchangePortMock;
     private readonly Mock<IDomainEventDispatcher> _eventDispatcherMock;
     private readonly Mock<INotificationPort> _notificationPortMock;
-    private readonly Mock<IUnitOfWork> _unitOfWorkMock;
+    private readonly Mock<ITransactionalUnitOfWork> _unitOfWorkMock;
     private readonly TradingConstraintValidator _constraintValidator;
     private readonly ClosePositionHandler _handler;
 
@@ -26,20 +30,42 @@ public class ClosePositionHandlerTests
     {
         _portfolioRepositoryMock = new Mock<IPortfolioRepository>();
         _positionRepositoryMock = new Mock<IPositionRepository>();
+        _orderRepositoryMock = new Mock<IOrderRepository>();
         _exchangePortMock = new Mock<IExchangePort>();
         _eventDispatcherMock = new Mock<IDomainEventDispatcher>();
         _notificationPortMock = new Mock<INotificationPort>();
-        _unitOfWorkMock = new Mock<IUnitOfWork>();
+        _unitOfWorkMock = new Mock<ITransactionalUnitOfWork>();
         _constraintValidator = new TradingConstraintValidator();
 
         _handler = new ClosePositionHandler(
             _portfolioRepositoryMock.Object,
             _positionRepositoryMock.Object,
+            _orderRepositoryMock.Object,
             _exchangePortMock.Object,
             _eventDispatcherMock.Object,
             _constraintValidator,
             _unitOfWorkMock.Object,
             _notificationPortMock.Object);
+
+        _orderRepositoryMock
+            .Setup(x => x.SaveAsync(It.IsAny<OrderLifecycle>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _unitOfWorkMock
+            .SetupGet(x => x.HasActiveTransaction)
+            .Returns(false);
+
+        _unitOfWorkMock
+            .Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _unitOfWorkMock
+            .Setup(x => x.CommitAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        _unitOfWorkMock
+            .Setup(x => x.RollbackAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
     }
 
     private static Portfolio CreateTestPortfolio(decimal balance = 10000m)
@@ -72,9 +98,9 @@ public class ClosePositionHandlerTests
         {
             OrderId = Guid.NewGuid().ToString(),
             Pair = pair,
-            Side = OrderSide.Sell,
-            Type = OrderType.Market,
-            Status = OrderStatus.Filled,
+            Side = IntelliTrader.Application.Ports.Driven.OrderSide.Sell,
+            Type = IntelliTrader.Application.Ports.Driven.OrderType.Market,
+            Status = IntelliTrader.Application.Ports.Driven.OrderStatus.Filled,
             RequestedQuantity = Quantity.Create(quantity),
             FilledQuantity = Quantity.Create(quantity),
             Price = Price.Create(price),
@@ -282,6 +308,34 @@ public class ClosePositionHandlerTests
         // Assert
         _eventDispatcherMock.Verify(
             x => x.DispatchManyAsync(It.IsAny<IEnumerable<IDomainEvent>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithValidCommand_SavesOrderLifecycle()
+    {
+        // Arrange
+        var position = CreateTestPosition();
+        var portfolio = CreateTestPortfolio();
+        portfolio.RecordPositionOpened(position.Id, position.Pair, position.TotalCost);
+
+        var command = new ClosePositionCommand
+        {
+            PositionId = position.Id
+        };
+
+        SetupDefaultMocks(position, portfolio);
+
+        // Act
+        await _handler.HandleAsync(command);
+
+        // Assert
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<OrderLifecycle>(order =>
+                    order.Pair == position.Pair &&
+                    order.Status == OrderLifecycleStatus.Filled),
+                It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -523,7 +577,14 @@ public class ClosePositionHandlerTests
             PositionId = position.Id
         };
 
-        var canceledOrder = CreateTestSellOrderResult(position.Pair) with { Status = OrderStatus.Canceled };
+        var canceledOrder = CreateTestSellOrderResult(position.Pair) with
+        {
+            Status = IntelliTrader.Application.Ports.Driven.OrderStatus.Canceled,
+            FilledQuantity = Quantity.Zero,
+            AveragePrice = Price.Zero,
+            Cost = Money.Zero("USDT"),
+            Fees = Money.Zero("USDT")
+        };
 
         _positionRepositoryMock
             .Setup(x => x.GetByIdAsync(position.Id, It.IsAny<CancellationToken>()))
@@ -547,6 +608,99 @@ public class ClosePositionHandlerTests
         // Assert
         result.IsFailure.Should().BeTrue();
         result.Error.Message.Should().Contain("not filled");
+
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<OrderLifecycle>(order =>
+                    order.Id.Value == canceledOrder.OrderId &&
+                    order.Status == OrderLifecycleStatus.Canceled),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _positionRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<Position>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        _eventDispatcherMock.Verify(
+            x => x.DispatchManyAsync(
+                It.Is<IEnumerable<IDomainEvent>>(events =>
+                    events.OfType<OrderPlacedDomainEvent>().Count() == 1 &&
+                    !events.OfType<OrderFilledDomainEvent>().Any()),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenSellOrderPartiallyFilled_AppliesPartialCloseWithoutClosingPosition()
+    {
+        // Arrange
+        var position = CreateTestPosition(quantity: 0.02m);
+        var portfolio = CreateTestPortfolio();
+        portfolio.RecordPositionOpened(position.Id, position.Pair, position.TotalCost);
+
+        var command = new ClosePositionCommand
+        {
+            PositionId = position.Id
+        };
+
+        var partialOrder = CreateTestSellOrderResult(position.Pair, quantity: 0.01m) with
+        {
+            Status = IntelliTrader.Application.Ports.Driven.OrderStatus.PartiallyFilled,
+            RequestedQuantity = position.TotalQuantity
+        };
+
+        _positionRepositoryMock
+            .Setup(x => x.GetByIdAsync(position.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(position);
+
+        _portfolioRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(portfolio);
+
+        _exchangePortMock
+            .Setup(x => x.GetCurrentPriceAsync(position.Pair, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Price>.Success(Price.Create(55000m)));
+
+        _exchangePortMock
+            .Setup(x => x.PlaceMarketSellAsync(position.Pair, position.TotalQuantity, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderResult>.Success(partialOrder));
+
+        // Act
+        var result = await _handler.HandleAsync(command);
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Message.Should().Contain("not filled");
+        position.IsClosed.Should().BeFalse();
+        portfolio.HasPositionFor(position.Pair).Should().BeTrue();
+
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<OrderLifecycle>(order =>
+                    order.Id.Value == partialOrder.OrderId &&
+                    order.Status == OrderLifecycleStatus.PartiallyFilled &&
+                    order.AppliedQuantity.Value == 0.01m),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _positionRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<Position>(saved =>
+                    saved.Id == position.Id &&
+                    !saved.IsClosed &&
+                    saved.TotalQuantity.Value == 0.01m &&
+                    saved.TotalCost.Amount == 500m),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _portfolioRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<Portfolio>(saved =>
+                    saved.HasPositionFor(position.Pair) &&
+                    saved.GetPositionCost(position.Id)!.Amount == 500m &&
+                    saved.Balance.Reserved.Amount == 500m),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -679,9 +833,10 @@ public class ClosePositionByPairHandlerTests
 {
     private readonly Mock<IPositionRepository> _positionRepositoryMock;
     private readonly Mock<IPortfolioRepository> _portfolioRepositoryMock;
+    private readonly Mock<IOrderRepository> _orderRepositoryMock;
     private readonly Mock<IExchangePort> _exchangePortMock;
     private readonly Mock<IDomainEventDispatcher> _eventDispatcherMock;
-    private readonly Mock<IUnitOfWork> _unitOfWorkMock;
+    private readonly Mock<ITransactionalUnitOfWork> _unitOfWorkMock;
     private readonly TradingConstraintValidator _constraintValidator;
     private readonly ClosePositionHandler _closePositionHandler;
 
@@ -689,14 +844,16 @@ public class ClosePositionByPairHandlerTests
     {
         _positionRepositoryMock = new Mock<IPositionRepository>();
         _portfolioRepositoryMock = new Mock<IPortfolioRepository>();
+        _orderRepositoryMock = new Mock<IOrderRepository>();
         _exchangePortMock = new Mock<IExchangePort>();
         _eventDispatcherMock = new Mock<IDomainEventDispatcher>();
-        _unitOfWorkMock = new Mock<IUnitOfWork>();
+        _unitOfWorkMock = new Mock<ITransactionalUnitOfWork>();
         _constraintValidator = new TradingConstraintValidator();
 
         _closePositionHandler = new ClosePositionHandler(
             _portfolioRepositoryMock.Object,
             _positionRepositoryMock.Object,
+            _orderRepositoryMock.Object,
             _exchangePortMock.Object,
             _eventDispatcherMock.Object,
             _constraintValidator,
@@ -772,9 +929,9 @@ public class ClosePositionByPairHandlerTests
             {
                 OrderId = "sell-order-123",
                 Pair = pair,
-                Side = OrderSide.Sell,
-                Type = OrderType.Market,
-                Status = OrderStatus.Filled,
+                Side = IntelliTrader.Application.Ports.Driven.OrderSide.Sell,
+                Type = IntelliTrader.Application.Ports.Driven.OrderType.Market,
+                Status = IntelliTrader.Application.Ports.Driven.OrderStatus.Filled,
                 RequestedQuantity = Quantity.Create(0.1m),
                 FilledQuantity = Quantity.Create(0.1m),
                 Price = Price.Create(55000m),
@@ -783,6 +940,14 @@ public class ClosePositionByPairHandlerTests
                 Fees = Money.Create(5.5m, "USDT"),
                 Timestamp = DateTimeOffset.UtcNow
             }));
+
+        _unitOfWorkMock
+            .SetupGet(x => x.HasActiveTransaction)
+            .Returns(false);
+
+        _unitOfWorkMock
+            .Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         _unitOfWorkMock
             .Setup(x => x.CommitAsync(It.IsAny<CancellationToken>()))

@@ -5,9 +5,12 @@ using IntelliTrader.Application.Trading.Commands;
 using IntelliTrader.Application.Trading.Handlers;
 using IntelliTrader.Domain.SharedKernel;
 using IntelliTrader.Domain.Trading.Aggregates;
+using IntelliTrader.Domain.Trading.Orders;
 using IntelliTrader.Domain.Trading.Services;
 using IntelliTrader.Domain.Trading.ValueObjects;
 using Moq;
+using OrderFilledDomainEvent = IntelliTrader.Domain.Events.OrderFilledEvent;
+using OrderPlacedDomainEvent = IntelliTrader.Domain.Events.OrderPlacedEvent;
 
 namespace IntelliTrader.Application.Tests.Trading.Handlers;
 
@@ -15,10 +18,11 @@ public class ExecuteDCAHandlerTests
 {
     private readonly Mock<IPortfolioRepository> _portfolioRepositoryMock;
     private readonly Mock<IPositionRepository> _positionRepositoryMock;
+    private readonly Mock<IOrderRepository> _orderRepositoryMock;
     private readonly Mock<IExchangePort> _exchangePortMock;
     private readonly Mock<IDomainEventDispatcher> _eventDispatcherMock;
     private readonly Mock<INotificationPort> _notificationPortMock;
-    private readonly Mock<IUnitOfWork> _unitOfWorkMock;
+    private readonly Mock<ITransactionalUnitOfWork> _unitOfWorkMock;
     private readonly TradingConstraintValidator _constraintValidator;
     private readonly ExecuteDCAHandler _handler;
 
@@ -26,20 +30,42 @@ public class ExecuteDCAHandlerTests
     {
         _portfolioRepositoryMock = new Mock<IPortfolioRepository>();
         _positionRepositoryMock = new Mock<IPositionRepository>();
+        _orderRepositoryMock = new Mock<IOrderRepository>();
         _exchangePortMock = new Mock<IExchangePort>();
         _eventDispatcherMock = new Mock<IDomainEventDispatcher>();
         _notificationPortMock = new Mock<INotificationPort>();
-        _unitOfWorkMock = new Mock<IUnitOfWork>();
+        _unitOfWorkMock = new Mock<ITransactionalUnitOfWork>();
         _constraintValidator = new TradingConstraintValidator();
 
         _handler = new ExecuteDCAHandler(
             _portfolioRepositoryMock.Object,
             _positionRepositoryMock.Object,
+            _orderRepositoryMock.Object,
             _exchangePortMock.Object,
             _eventDispatcherMock.Object,
             _constraintValidator,
             _unitOfWorkMock.Object,
             _notificationPortMock.Object);
+
+        _orderRepositoryMock
+            .Setup(x => x.SaveAsync(It.IsAny<OrderLifecycle>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _unitOfWorkMock
+            .SetupGet(x => x.HasActiveTransaction)
+            .Returns(false);
+
+        _unitOfWorkMock
+            .Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _unitOfWorkMock
+            .Setup(x => x.CommitAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        _unitOfWorkMock
+            .Setup(x => x.RollbackAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
     }
 
     #region Helper Methods
@@ -75,9 +101,9 @@ public class ExecuteDCAHandlerTests
         {
             OrderId = Guid.NewGuid().ToString(),
             Pair = pair,
-            Side = OrderSide.Buy,
-            Type = OrderType.Market,
-            Status = OrderStatus.Filled,
+            Side = IntelliTrader.Application.Ports.Driven.OrderSide.Buy,
+            Type = IntelliTrader.Application.Ports.Driven.OrderType.Market,
+            Status = IntelliTrader.Application.Ports.Driven.OrderStatus.Filled,
             RequestedQuantity = Quantity.Create(quantity),
             FilledQuantity = Quantity.Create(quantity),
             Price = Price.Create(price),
@@ -339,6 +365,36 @@ public class ExecuteDCAHandlerTests
         // Assert
         _eventDispatcherMock.Verify(
             x => x.DispatchManyAsync(It.IsAny<IEnumerable<IDomainEvent>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithValidCommand_SavesOrderLifecycle()
+    {
+        // Arrange
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var position = CreateOpenPosition(pair, 50000m, 0.1m);
+        var portfolio = CreatePortfolio(10000m);
+        portfolio.RecordPositionOpened(position.Id, pair, Money.Create(5000m, "USDT"));
+
+        var command = new ExecuteDCACommand
+        {
+            PositionId = position.Id,
+            Cost = Money.Create(500m, "USDT")
+        };
+
+        SetupDefaultMocks(position, portfolio, 45000m, 500m);
+
+        // Act
+        await _handler.HandleAsync(command);
+
+        // Assert
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<OrderLifecycle>(order =>
+                    order.Pair == pair &&
+                    order.Status == OrderLifecycleStatus.Filled),
+                It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -677,9 +733,9 @@ public class ExecuteDCAHandlerTests
         {
             OrderId = Guid.NewGuid().ToString(),
             Pair = pair,
-            Side = OrderSide.Buy,
-            Type = OrderType.Market,
-            Status = OrderStatus.Rejected,
+            Side = IntelliTrader.Application.Ports.Driven.OrderSide.Buy,
+            Type = IntelliTrader.Application.Ports.Driven.OrderType.Market,
+            Status = IntelliTrader.Application.Ports.Driven.OrderStatus.Rejected,
             RequestedQuantity = Quantity.Create(0.01m),
             FilledQuantity = Quantity.Zero,
             Price = Price.Create(45000m),
@@ -700,6 +756,26 @@ public class ExecuteDCAHandlerTests
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("ExchangeError");
         result.Error.Message.Should().Contain("not filled");
+
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<OrderLifecycle>(order =>
+                    order.Id.Value == unfilledOrder.OrderId &&
+                    order.Status == OrderLifecycleStatus.Rejected),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _positionRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<Position>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        _eventDispatcherMock.Verify(
+            x => x.DispatchManyAsync(
+                It.Is<IEnumerable<IDomainEvent>>(events =>
+                    events.OfType<OrderPlacedDomainEvent>().Count() == 1 &&
+                    !events.OfType<OrderFilledDomainEvent>().Any()),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -781,6 +857,7 @@ public class ExecuteDCAHandlerTests
         var handlerWithoutNotification = new ExecuteDCAHandler(
             _portfolioRepositoryMock.Object,
             _positionRepositoryMock.Object,
+            _orderRepositoryMock.Object,
             _exchangePortMock.Object,
             _eventDispatcherMock.Object,
             _constraintValidator,
@@ -868,9 +945,10 @@ public class ExecuteDCAByPairHandlerTests
 {
     private readonly Mock<IPositionRepository> _positionRepositoryMock;
     private readonly Mock<IPortfolioRepository> _portfolioRepositoryMock;
+    private readonly Mock<IOrderRepository> _orderRepositoryMock;
     private readonly Mock<IExchangePort> _exchangePortMock;
     private readonly Mock<IDomainEventDispatcher> _eventDispatcherMock;
-    private readonly Mock<IUnitOfWork> _unitOfWorkMock;
+    private readonly Mock<ITransactionalUnitOfWork> _unitOfWorkMock;
     private readonly TradingConstraintValidator _constraintValidator;
     private readonly ExecuteDCAHandler _executeDCAHandler;
 
@@ -878,14 +956,16 @@ public class ExecuteDCAByPairHandlerTests
     {
         _positionRepositoryMock = new Mock<IPositionRepository>();
         _portfolioRepositoryMock = new Mock<IPortfolioRepository>();
+        _orderRepositoryMock = new Mock<IOrderRepository>();
         _exchangePortMock = new Mock<IExchangePort>();
         _eventDispatcherMock = new Mock<IDomainEventDispatcher>();
-        _unitOfWorkMock = new Mock<IUnitOfWork>();
+        _unitOfWorkMock = new Mock<ITransactionalUnitOfWork>();
         _constraintValidator = new TradingConstraintValidator();
 
         _executeDCAHandler = new ExecuteDCAHandler(
             _portfolioRepositoryMock.Object,
             _positionRepositoryMock.Object,
+            _orderRepositoryMock.Object,
             _exchangePortMock.Object,
             _eventDispatcherMock.Object,
             _constraintValidator,
@@ -978,9 +1058,9 @@ public class ExecuteDCAByPairHandlerTests
             {
                 OrderId = "dca-order-123",
                 Pair = pair,
-                Side = OrderSide.Buy,
-                Type = OrderType.Market,
-                Status = OrderStatus.Filled,
+                Side = IntelliTrader.Application.Ports.Driven.OrderSide.Buy,
+                Type = IntelliTrader.Application.Ports.Driven.OrderType.Market,
+                Status = IntelliTrader.Application.Ports.Driven.OrderStatus.Filled,
                 RequestedQuantity = Quantity.Create(0.011m),
                 FilledQuantity = Quantity.Create(0.011m),
                 Price = Price.Create(45000m),
@@ -989,6 +1069,14 @@ public class ExecuteDCAByPairHandlerTests
                 Fees = Money.Create(0.5m, "USDT"),
                 Timestamp = DateTimeOffset.UtcNow
             }));
+
+        _unitOfWorkMock
+            .SetupGet(x => x.HasActiveTransaction)
+            .Returns(false);
+
+        _unitOfWorkMock
+            .Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         _unitOfWorkMock
             .Setup(x => x.CommitAsync(It.IsAny<CancellationToken>()))

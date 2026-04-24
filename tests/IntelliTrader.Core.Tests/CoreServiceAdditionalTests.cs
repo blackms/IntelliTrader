@@ -21,6 +21,7 @@ public class CoreServiceAdditionalTests
     private readonly Mock<IWebService> _webServiceMock;
     private readonly Mock<IBacktestingService> _backtestingServiceMock;
     private readonly Mock<IAlertingService> _alertingServiceMock;
+    private readonly Mock<IActiveOrderRefreshService> _activeOrderRefreshServiceMock;
     private readonly Mock<IApplicationContext> _applicationContextMock;
     private readonly Mock<IConfigProvider> _configProviderMock;
     private readonly Mock<ISecretRotationService> _secretRotationServiceMock;
@@ -35,6 +36,7 @@ public class CoreServiceAdditionalTests
         _webServiceMock = new Mock<IWebService>();
         _backtestingServiceMock = new Mock<IBacktestingService>();
         _alertingServiceMock = new Mock<IAlertingService>();
+        _activeOrderRefreshServiceMock = new Mock<IActiveOrderRefreshService>();
         _applicationContextMock = new Mock<IApplicationContext>();
         _applicationContextMock.Setup(x => x.Speed).Returns(1.0);
         _configProviderMock = new Mock<IConfigProvider>();
@@ -88,6 +90,7 @@ public class CoreServiceAdditionalTests
             _webServiceMock.Object,
             _backtestingServiceMock.Object,
             _alertingServiceMock.Object,
+            _activeOrderRefreshServiceMock.Object,
             _applicationContextMock.Object,
             _configProviderMock.Object,
             new Lazy<ISecretRotationService>(() => _secretRotationServiceMock.Object)

@@ -145,7 +145,8 @@ public class AppModule : Module
             .As<IExchangePort>()
             .SingleInstance();
 
-        builder.RegisterType<SubmittedOrderRefreshService>()
+        builder.RegisterType<ActiveOrderRefreshService>()
+            .As<IActiveOrderRefreshService>()
             .As<ISubmittedOrderRefreshService>()
             .SingleInstance();
     }

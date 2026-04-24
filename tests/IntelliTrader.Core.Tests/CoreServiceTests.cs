@@ -19,7 +19,7 @@ public class CoreServiceTests
     private readonly Mock<IWebService> _webServiceMock;
     private readonly Mock<IBacktestingService> _backtestingServiceMock;
     private readonly Mock<IAlertingService> _alertingServiceMock;
-    private readonly Mock<ISubmittedOrderRefreshService> _submittedOrderRefreshServiceMock;
+    private readonly Mock<IActiveOrderRefreshService> _activeOrderRefreshServiceMock;
     private readonly Mock<IApplicationContext> _applicationContextMock;
     private readonly Mock<IConfigProvider> _configProviderMock;
     private readonly Mock<ISecretRotationService> _secretRotationServiceMock;
@@ -34,7 +34,7 @@ public class CoreServiceTests
         _webServiceMock = new Mock<IWebService>();
         _backtestingServiceMock = new Mock<IBacktestingService>();
         _alertingServiceMock = new Mock<IAlertingService>();
-        _submittedOrderRefreshServiceMock = new Mock<ISubmittedOrderRefreshService>();
+        _activeOrderRefreshServiceMock = new Mock<IActiveOrderRefreshService>();
         _applicationContextMock = new Mock<IApplicationContext>();
         _applicationContextMock.Setup(x => x.Speed).Returns(1.0);
         _configProviderMock = new Mock<IConfigProvider>();
@@ -109,7 +109,7 @@ public class CoreServiceTests
             _webServiceMock.Object,
             _backtestingServiceMock.Object,
             _alertingServiceMock.Object,
-            _submittedOrderRefreshServiceMock.Object,
+            _activeOrderRefreshServiceMock.Object,
             _applicationContextMock.Object,
             _configProviderMock.Object,
             new Lazy<ISecretRotationService>(() => _secretRotationServiceMock.Object)
@@ -377,7 +377,7 @@ public class CoreServiceTests
     #region Runtime Service Wiring Tests
 
     [Fact]
-    public void Start_WhenTradingEnabled_StartsSubmittedOrderRefreshService()
+    public void Start_WhenTradingEnabled_StartsActiveOrderRefreshService()
     {
         // Arrange
         var tradingConfigMock = new Mock<ITradingConfig>();
@@ -389,20 +389,50 @@ public class CoreServiceTests
         _sut.Stop();
 
         // Assert
-        _submittedOrderRefreshServiceMock.Verify(x => x.Start(), Times.Once);
-        _submittedOrderRefreshServiceMock.Verify(x => x.Stop(), Times.Once);
+        _activeOrderRefreshServiceMock.Verify(x => x.Start(), Times.Once);
+        _activeOrderRefreshServiceMock.Verify(x => x.Stop(), Times.Once);
     }
 
     [Fact]
-    public void Start_WhenTradingDisabled_DoesNotStartSubmittedOrderRefreshService()
+    public void Start_WhenTradingDisabled_DoesNotStartActiveOrderRefreshService()
     {
         // Act
         _sut.Start();
         _sut.Stop();
 
         // Assert
-        _submittedOrderRefreshServiceMock.Verify(x => x.Start(), Times.Never);
-        _submittedOrderRefreshServiceMock.Verify(x => x.Stop(), Times.Never);
+        _activeOrderRefreshServiceMock.Verify(x => x.Start(), Times.Never);
+        _activeOrderRefreshServiceMock.Verify(x => x.Stop(), Times.Never);
+    }
+
+    [Fact]
+    public void StartAndStop_WhenTradingEnabled_StartsAndStopsActiveRefreshAroundTrading()
+    {
+        // Arrange
+        var tradingConfigMock = new Mock<ITradingConfig>();
+        tradingConfigMock.Setup(x => x.Enabled).Returns(true);
+        _tradingServiceMock.Setup(x => x.Config).Returns(tradingConfigMock.Object);
+
+        var lifecycleCalls = new List<string>();
+        _tradingServiceMock.Setup(x => x.Start())
+            .Callback(() => lifecycleCalls.Add("trading-start"));
+        _activeOrderRefreshServiceMock.Setup(x => x.Start())
+            .Callback(() => lifecycleCalls.Add("refresh-start"));
+        _activeOrderRefreshServiceMock.Setup(x => x.Stop())
+            .Callback(() => lifecycleCalls.Add("refresh-stop"));
+        _tradingServiceMock.Setup(x => x.Stop())
+            .Callback(() => lifecycleCalls.Add("trading-stop"));
+
+        // Act
+        _sut.Start();
+        _sut.Stop();
+
+        // Assert
+        lifecycleCalls.Should().ContainInOrder(
+            "trading-start",
+            "refresh-start",
+            "refresh-stop",
+            "trading-stop");
     }
 
     #endregion

@@ -916,6 +916,932 @@ public sealed class RefreshOrderStatusHandlerTests
             Times.Once);
     }
 
+    [Fact]
+    public async Task HandleAsync_WhenOrderDoesNotExist_ReturnsNotFoundWithoutExchangeLookup()
+    {
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = OrderId.From("missing-order-1")
+        });
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("NotFound");
+        result.Error.Message.Should().Contain("missing-order-1");
+
+        _exchangePortMock.Verify(
+            x => x.GetOrderAsync(It.IsAny<TradingPair>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<OrderLifecycle>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenOrderIntentIsUnknown_ReturnsValidationFailureWithoutExchangeLookup()
+    {
+        // Arrange
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var order = CreateSubmittedOrder(
+            orderId: "refresh-unknown-intent-1",
+            pair: pair,
+            side: DomainOrderSide.Buy,
+            intent: OrderIntent.Unknown);
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = order.Id
+        });
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Validation");
+        result.Error.Message.Should().Contain("does not contain refreshable intent metadata");
+
+        _exchangePortMock.Verify(
+            x => x.GetOrderAsync(It.IsAny<TradingPair>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<OrderLifecycle>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenTerminalOrderHasNoUnappliedFill_ReturnsCurrentStateWithoutExchangeLookup()
+    {
+        // Arrange
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var order = CreateSubmittedOrder(
+            orderId: "refresh-terminal-noop-1",
+            pair: pair,
+            side: DomainOrderSide.Buy,
+            intent: OrderIntent.OpenPosition,
+            signalRule: "MomentumBreakout");
+        order.MarkFilled(
+            Quantity.Create(0.02m),
+            Price.Create(50000m),
+            Money.Create(1000m, "USDT"),
+            Money.Create(1m, "USDT"));
+        order.MarkCurrentFillApplied();
+        order.ClearDomainEvents();
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = order.Id
+        });
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.PreviousStatus.Should().Be(OrderLifecycleStatus.Filled);
+        result.Value.CurrentStatus.Should().Be(OrderLifecycleStatus.Filled);
+        result.Value.AppliedDomainEffects.Should().BeFalse();
+
+        _exchangePortMock.Verify(
+            x => x.GetOrderAsync(It.IsAny<TradingPair>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<OrderLifecycle>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _eventDispatcherMock.Verify(
+            x => x.DispatchManyAsync(It.IsAny<IEnumerable<IDomainEvent>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenExchangeLookupFails_ReturnsFailureWithoutPersistence()
+    {
+        // Arrange
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var order = CreateSubmittedOrder(
+            orderId: "refresh-exchange-failure-1",
+            pair: pair,
+            side: DomainOrderSide.Buy,
+            intent: OrderIntent.OpenPosition,
+            signalRule: "MomentumBreakout");
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, order.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Failure(Error.ExchangeError("exchange unavailable")));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = order.Id
+        });
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Be(Error.ExchangeError("exchange unavailable"));
+
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<OrderLifecycle>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _positionRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<Position>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _portfolioRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<Portfolio>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenExchangeStatusWouldBreakLifecycleTransition_ReturnsValidationFailure()
+    {
+        // Arrange
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var order = CreateSubmittedOrder(
+            orderId: "refresh-invalid-transition-1",
+            pair: pair,
+            side: DomainOrderSide.Buy,
+            intent: OrderIntent.OpenPosition,
+            signalRule: "MomentumBreakout",
+            requestedQuantity: 0.05m);
+        order.MarkPartiallyFilled(
+            Quantity.Create(0.02m),
+            Price.Create(50000m),
+            Money.Create(1000m, "USDT"),
+            Money.Create(1m, "USDT"));
+        order.ClearDomainEvents();
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, order.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: order.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Buy,
+                status: ExchangeOrderStatus.Rejected,
+                price: 50000m,
+                quantity: 0.02m,
+                fees: 1m)));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = order.Id
+        });
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Validation");
+        result.Error.Message.Should().Contain("Cannot transition order");
+
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<OrderLifecycle>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenExchangeStatusIsStillSubmitted_ReturnsNoopWithoutPersistence()
+    {
+        // Arrange
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var order = CreateSubmittedOrder(
+            orderId: "refresh-submitted-noop-1",
+            pair: pair,
+            side: DomainOrderSide.Buy,
+            intent: OrderIntent.OpenPosition,
+            signalRule: "MomentumBreakout");
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, order.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: order.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Buy,
+                status: ExchangeOrderStatus.New,
+                price: 50000m,
+                quantity: 0m,
+                fees: 0m)));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = order.Id
+        });
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.PreviousStatus.Should().Be(OrderLifecycleStatus.Submitted);
+        result.Value.CurrentStatus.Should().Be(OrderLifecycleStatus.Submitted);
+        result.Value.AppliedDomainEffects.Should().BeFalse();
+
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<OrderLifecycle>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenSubmittedOrderIsCanceled_PersistsOrderOnlyWithoutDispatchingEvents()
+    {
+        // Arrange
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var order = CreateSubmittedOrder(
+            orderId: "refresh-canceled-order-only-1",
+            pair: pair,
+            side: DomainOrderSide.Buy,
+            intent: OrderIntent.OpenPosition,
+            signalRule: "MomentumBreakout");
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, order.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: order.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Buy,
+                status: ExchangeOrderStatus.Canceled,
+                price: 50000m,
+                quantity: 0m,
+                fees: 0m)));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = order.Id
+        });
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.CurrentStatus.Should().Be(OrderLifecycleStatus.Canceled);
+        result.Value.AppliedDomainEffects.Should().BeFalse();
+
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(
+                It.Is<OrderLifecycle>(saved =>
+                    saved.Id == order.Id &&
+                    saved.Status == OrderLifecycleStatus.Canceled),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _eventDispatcherMock.Verify(
+            x => x.DispatchManyAsync(It.IsAny<IEnumerable<IDomainEvent>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenPartiallyFilledOpenOrderHasNoPortfolio_ReturnsNotFound()
+    {
+        // Arrange
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var order = CreateSubmittedOrder(
+            orderId: "refresh-open-no-portfolio-1",
+            pair: pair,
+            side: DomainOrderSide.Buy,
+            intent: OrderIntent.OpenPosition,
+            signalRule: "MomentumBreakout");
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+
+        _portfolioRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Portfolio?)null);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, order.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: order.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Buy,
+                status: ExchangeOrderStatus.PartiallyFilled,
+                price: 50000m,
+                quantity: 0.01m,
+                fees: 0.5m)));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = order.Id
+        });
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("NotFound");
+        result.Error.Message.Should().Contain("Portfolio");
+
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<OrderLifecycle>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _positionRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<Position>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenPartiallyFilledOpenOrderReferencesMissingPosition_ReturnsNotFound()
+    {
+        // Arrange
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var missingPositionId = PositionId.Create();
+        var order = CreateSubmittedOrder(
+            orderId: "refresh-open-missing-position-1",
+            pair: pair,
+            side: DomainOrderSide.Buy,
+            intent: OrderIntent.OpenPosition,
+            signalRule: "MomentumBreakout",
+            requestedQuantity: 0.05m);
+        order.MarkPartiallyFilled(
+            Quantity.Create(0.02m),
+            Price.Create(50000m),
+            Money.Create(1000m, "USDT"),
+            Money.Create(1m, "USDT"));
+        order.LinkRelatedPosition(missingPositionId);
+        order.MarkCurrentFillApplied();
+        order.ClearDomainEvents();
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+
+        _portfolioRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CreateTestPortfolio());
+
+        _positionRepositoryMock
+            .Setup(x => x.GetByIdAsync(missingPositionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Position?)null);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, order.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: order.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Buy,
+                status: ExchangeOrderStatus.Filled,
+                price: 50000m,
+                quantity: 0.05m,
+                fees: 2.5m)));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = order.Id
+        });
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("NotFound");
+        result.Error.Message.Should().Contain(missingPositionId.Value.ToString());
+
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<OrderLifecycle>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _portfolioRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<Portfolio>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenOpenOrderResolvesPositionWithoutOpeningEntry_ReturnsValidationFailure()
+    {
+        // Arrange
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var existingPosition = Position.Open(
+            pair,
+            OrderId.From("different-opening-order"),
+            Price.Create(50000m),
+            Quantity.Create(0.02m),
+            Money.Create(1m, "USDT"),
+            "MomentumBreakout");
+        var portfolio = CreatePortfolioWithOpenPosition(existingPosition, 10000m);
+        var order = CreateSubmittedOrder(
+            orderId: "refresh-open-missing-opening-entry-1",
+            pair: pair,
+            side: DomainOrderSide.Buy,
+            intent: OrderIntent.OpenPosition,
+            signalRule: "MomentumBreakout",
+            requestedQuantity: 0.05m);
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+
+        _portfolioRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(portfolio);
+
+        _positionRepositoryMock
+            .Setup(x => x.GetByIdAsync(existingPosition.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existingPosition);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, order.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: order.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Buy,
+                status: ExchangeOrderStatus.PartiallyFilled,
+                price: 50000m,
+                quantity: 0.03m,
+                fees: 1.5m)));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = order.Id
+        });
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Validation");
+        result.Error.Message.Should().Contain("does not contain opening order");
+
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<OrderLifecycle>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenFilledCloseOrderReferencesMissingPosition_ReturnsNotFound()
+    {
+        // Arrange
+        var pair = TradingPair.Create("ETHUSDT", "USDT");
+        var missingPositionId = PositionId.Create();
+        var order = CreateSubmittedOrder(
+            orderId: "refresh-close-missing-position-1",
+            pair: pair,
+            side: DomainOrderSide.Sell,
+            intent: OrderIntent.ClosePosition,
+            relatedPositionId: missingPositionId,
+            requestedQuantity: 0.4m);
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+
+        _positionRepositoryMock
+            .Setup(x => x.GetByIdAsync(missingPositionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Position?)null);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, order.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: order.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Sell,
+                status: ExchangeOrderStatus.Filled,
+                price: 2600m,
+                quantity: 0.4m,
+                fees: 1m)));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = order.Id
+        });
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("NotFound");
+        result.Error.Message.Should().Contain(missingPositionId.Value.ToString());
+
+        _portfolioRepositoryMock.Verify(
+            x => x.GetDefaultAsync(It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenFilledCloseOrderHasNoPortfolio_ReturnsNotFound()
+    {
+        // Arrange
+        var pair = TradingPair.Create("ETHUSDT", "USDT");
+        var position = Position.Open(
+            pair,
+            OrderId.From("seed-buy-close-no-portfolio-1"),
+            Price.Create(2500m),
+            Quantity.Create(0.4m),
+            Money.Create(1m, "USDT"),
+            "ExitRule");
+        var order = CreateSubmittedOrder(
+            orderId: "refresh-close-no-portfolio-1",
+            pair: pair,
+            side: DomainOrderSide.Sell,
+            intent: OrderIntent.ClosePosition,
+            relatedPositionId: position.Id,
+            requestedQuantity: position.TotalQuantity.Value);
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+
+        _positionRepositoryMock
+            .Setup(x => x.GetByIdAsync(position.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(position);
+
+        _portfolioRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Portfolio?)null);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, order.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: order.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Sell,
+                status: ExchangeOrderStatus.Filled,
+                price: 2600m,
+                quantity: position.TotalQuantity.Value,
+                fees: 1m)));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = order.Id
+        });
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("NotFound");
+        result.Error.Message.Should().Contain("Portfolio");
+
+        _positionRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<Position>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenFilledDcaOrderReferencesMissingPosition_ReturnsNotFound()
+    {
+        // Arrange
+        var pair = TradingPair.Create("SOLUSDT", "USDT");
+        var missingPositionId = PositionId.Create();
+        var order = CreateSubmittedOrder(
+            orderId: "refresh-dca-missing-position-1",
+            pair: pair,
+            side: DomainOrderSide.Buy,
+            intent: OrderIntent.ExecuteDca,
+            relatedPositionId: missingPositionId,
+            requestedQuantity: 5m);
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+
+        _positionRepositoryMock
+            .Setup(x => x.GetByIdAsync(missingPositionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Position?)null);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, order.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: order.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Buy,
+                status: ExchangeOrderStatus.Filled,
+                price: 90m,
+                quantity: 5m,
+                fees: 0.5m)));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = order.Id
+        });
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("NotFound");
+        result.Error.Message.Should().Contain(missingPositionId.Value.ToString());
+
+        _portfolioRepositoryMock.Verify(
+            x => x.GetDefaultAsync(It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenFilledDcaOrderHasNoPortfolio_ReturnsNotFound()
+    {
+        // Arrange
+        var pair = TradingPair.Create("SOLUSDT", "USDT");
+        var position = Position.Open(
+            pair,
+            OrderId.From("seed-buy-dca-no-portfolio-1"),
+            Price.Create(100m),
+            Quantity.Create(10m),
+            Money.Create(1m, "USDT"),
+            "DipBuy");
+        var order = CreateSubmittedOrder(
+            orderId: "refresh-dca-no-portfolio-1",
+            pair: pair,
+            side: DomainOrderSide.Buy,
+            intent: OrderIntent.ExecuteDca,
+            relatedPositionId: position.Id,
+            requestedQuantity: 5m);
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+
+        _positionRepositoryMock
+            .Setup(x => x.GetByIdAsync(position.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(position);
+
+        _portfolioRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Portfolio?)null);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, order.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: order.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Buy,
+                status: ExchangeOrderStatus.Filled,
+                price: 90m,
+                quantity: 5m,
+                fees: 0.5m)));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = order.Id
+        });
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("NotFound");
+        result.Error.Message.Should().Contain("Portfolio");
+
+        _positionRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<Position>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenOrderIntentIsUnsupported_ReturnsValidationFailure()
+    {
+        // Arrange
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var order = CreateSubmittedOrder(
+            orderId: "refresh-unsupported-intent-1",
+            pair: pair,
+            side: DomainOrderSide.Buy,
+            intent: (OrderIntent)999,
+            signalRule: "MomentumBreakout");
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, order.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: order.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Buy,
+                status: ExchangeOrderStatus.Filled,
+                price: 50000m,
+                quantity: 0.02m,
+                fees: 1m)));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = order.Id
+        });
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Validation");
+        result.Error.Message.Should().Contain("Unsupported order intent");
+
+        _orderRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<OrderLifecycle>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenOrderOnlyPersistenceThrows_RollsBackAndReturnsExchangeError()
+    {
+        // Arrange
+        var pair = TradingPair.Create("ETHUSDT", "USDT");
+        var positionId = PositionId.Create();
+        var order = CreateSubmittedOrder(
+            orderId: "refresh-order-only-persist-failure-1",
+            pair: pair,
+            side: DomainOrderSide.Sell,
+            intent: OrderIntent.ClosePosition,
+            relatedPositionId: positionId,
+            requestedQuantity: 0.4m);
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, order.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: order.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Sell,
+                status: ExchangeOrderStatus.PartiallyFilled,
+                price: 2600m,
+                quantity: 0.2m,
+                fees: 0.5m)));
+
+        _orderRepositoryMock
+            .Setup(x => x.SaveAsync(It.Is<OrderLifecycle>(saved => saved.Id == order.Id), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("storage down"));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = order.Id
+        });
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("ExchangeError");
+        result.Error.Message.Should().Contain("Failed to persist refreshed order");
+        result.Error.Message.Should().Contain("storage down");
+
+        _unitOfWorkMock.Verify(x => x.RollbackAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _eventDispatcherMock.Verify(
+            x => x.DispatchManyAsync(It.IsAny<IEnumerable<IDomainEvent>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenOrderOnlyCommitFails_ReturnsCommitFailureWithoutDispatchingEvents()
+    {
+        // Arrange
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var order = CreateSubmittedOrder(
+            orderId: "refresh-order-only-commit-failure-1",
+            pair: pair,
+            side: DomainOrderSide.Buy,
+            intent: OrderIntent.OpenPosition,
+            signalRule: "MomentumBreakout");
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, order.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: order.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Buy,
+                status: ExchangeOrderStatus.Canceled,
+                price: 50000m,
+                quantity: 0m,
+                fees: 0m)));
+
+        _unitOfWorkMock
+            .Setup(x => x.CommitAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.ExchangeError("commit failed")));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = order.Id
+        });
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Be(Error.ExchangeError("commit failed"));
+
+        _eventDispatcherMock.Verify(
+            x => x.DispatchManyAsync(It.IsAny<IEnumerable<IDomainEvent>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenOrderEffectsPersistenceThrows_RollsBackAndReturnsExchangeError()
+    {
+        // Arrange
+        var portfolio = CreateTestPortfolio();
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var order = CreateSubmittedOrder(
+            orderId: "refresh-effects-persist-failure-1",
+            pair: pair,
+            side: DomainOrderSide.Buy,
+            intent: OrderIntent.OpenPosition,
+            signalRule: "MomentumBreakout");
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+
+        _portfolioRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(portfolio);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, order.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: order.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Buy,
+                status: ExchangeOrderStatus.Filled,
+                price: 50000m,
+                quantity: 0.02m,
+                fees: 1m)));
+
+        _positionRepositoryMock
+            .Setup(x => x.SaveAsync(It.IsAny<Position>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("write conflict"));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = order.Id
+        });
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("ExchangeError");
+        result.Error.Message.Should().Contain("Failed to persist refreshed order effects");
+        result.Error.Message.Should().Contain("write conflict");
+
+        _unitOfWorkMock.Verify(x => x.RollbackAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _portfolioRepositoryMock.Verify(
+            x => x.SaveAsync(It.IsAny<Portfolio>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _eventDispatcherMock.Verify(
+            x => x.DispatchManyAsync(It.IsAny<IEnumerable<IDomainEvent>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenOrderEffectsCommitFails_ReturnsCommitFailureWithoutDispatchingEvents()
+    {
+        // Arrange
+        var portfolio = CreateTestPortfolio();
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var order = CreateSubmittedOrder(
+            orderId: "refresh-effects-commit-failure-1",
+            pair: pair,
+            side: DomainOrderSide.Buy,
+            intent: OrderIntent.OpenPosition,
+            signalRule: "MomentumBreakout");
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+
+        _portfolioRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(portfolio);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, order.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: order.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Buy,
+                status: ExchangeOrderStatus.Filled,
+                price: 50000m,
+                quantity: 0.02m,
+                fees: 1m)));
+
+        _unitOfWorkMock
+            .Setup(x => x.CommitAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.ExchangeError("commit failed")));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = order.Id
+        });
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Be(Error.ExchangeError("commit failed"));
+
+        _eventDispatcherMock.Verify(
+            x => x.DispatchManyAsync(It.IsAny<IEnumerable<IDomainEvent>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     private static Portfolio CreateTestPortfolio(
         decimal balance = 10000m,
         int maxPositions = 5,

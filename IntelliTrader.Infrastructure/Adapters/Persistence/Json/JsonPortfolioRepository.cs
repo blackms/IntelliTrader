@@ -328,7 +328,12 @@ public sealed class JsonPortfolioRepository : IPortfolioRepository, IJsonTransac
         JsonTransaction transaction,
         CancellationToken cancellationToken)
     {
-        return Task.CompletedTask;
+        if (!transaction.TryGetState(this, out ConcurrentDictionary<Guid, PortfolioDto>? _))
+        {
+            return Task.CompletedTask;
+        }
+
+        return ReloadAsync(cancellationToken);
     }
 
     public void Dispose()

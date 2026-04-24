@@ -227,6 +227,52 @@ public sealed class OpenPositionCommandDispatchIntegrationTests : IClassFixture<
     }
 
     [Fact]
+    public async Task DispatchAsync_WhenOrderIsPartiallyFilled_ExposesItThroughActiveOrdersQuery()
+    {
+        // Given
+        var pair = TradingPair.Create("SOLUSDT", "USDT");
+        var command = new OpenPositionCommand
+        {
+            Pair = pair,
+            Cost = Money.Create(500m, "USDT"),
+            SignalRule = "DipBuy"
+        };
+
+        _exchangePortMock
+            .Setup(x => x.GetTradingRulesAsync(pair, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<TradingPairRules>.Success(CreateTradingRules(pair)));
+
+        _exchangePortMock
+            .Setup(x => x.GetCurrentPriceAsync(pair, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Price>.Success(Price.Create(2500m)));
+
+        _exchangePortMock
+            .Setup(x => x.PlaceMarketBuyAsync(pair, command.Cost, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderResult>.Success(CreatePartiallyFilledOrder(pair)));
+
+        var dispatcher = _container.Resolve<ICommandDispatcher>();
+        var queryDispatcher = _container.Resolve<IQueryDispatcher>();
+
+        // When
+        var result = await dispatcher.DispatchAsync<OpenPositionCommand, OpenPositionResult>(command);
+        var activeOrders = await queryDispatcher.DispatchAsync<GetActiveOrdersQuery, IReadOnlyList<OrderView>>(
+            new GetActiveOrdersQuery
+            {
+                Pair = pair,
+                Limit = 10
+            });
+
+        // Then
+        result.IsSuccess.Should().BeTrue();
+        activeOrders.IsSuccess.Should().BeTrue();
+        activeOrders.Value.Should().ContainSingle();
+        activeOrders.Value[0].Id.Should().Be(OrderId.From("order-open-position-partial-1"));
+        activeOrders.Value[0].Status.Should().Be(OrderLifecycleStatus.PartiallyFilled);
+        activeOrders.Value[0].CanAffectPosition.Should().BeTrue();
+        activeOrders.Value[0].IsTerminal.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task DispatchAsync_WhenPersistenceFails_DoesNotLeaveOrderPersistedOnDisk()
     {
         // Given
@@ -375,6 +421,25 @@ public sealed class OpenPositionCommandDispatchIntegrationTests : IClassFixture<
             AveragePrice = Price.Zero,
             Cost = Money.Zero("USDT"),
             Fees = Money.Zero("USDT"),
+            Timestamp = DateTimeOffset.UtcNow
+        };
+    }
+
+    private static ExchangeOrderResult CreatePartiallyFilledOrder(TradingPair pair)
+    {
+        return new ExchangeOrderResult
+        {
+            OrderId = "order-open-position-partial-1",
+            Pair = pair,
+            Side = IntelliTrader.Application.Ports.Driven.OrderSide.Buy,
+            Type = IntelliTrader.Application.Ports.Driven.OrderType.Market,
+            Status = IntelliTrader.Application.Ports.Driven.OrderStatus.PartiallyFilled,
+            RequestedQuantity = Quantity.Create(0.2m),
+            FilledQuantity = Quantity.Create(0.1m),
+            Price = Price.Create(2500m),
+            AveragePrice = Price.Create(2500m),
+            Cost = Money.Create(250m, "USDT"),
+            Fees = Money.Create(0.25m, "USDT"),
             Timestamp = DateTimeOffset.UtcNow
         };
     }

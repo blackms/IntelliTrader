@@ -12,6 +12,71 @@ namespace IntelliTrader.Infrastructure.Tests.Integration;
 public sealed class JsonTransactionalUnitOfWorkIntegrationTests
 {
     [Fact]
+    public async Task CommitAsync_WhenNoTransactionIsActive_ReturnsSuccess()
+    {
+        var unitOfWork = new JsonTransactionalUnitOfWork(new JsonTransactionCoordinator());
+
+        var result = await unitOfWork.CommitAsync();
+
+        result.IsSuccess.Should().BeTrue();
+        unitOfWork.HasActiveTransaction.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RollbackAsync_WhenNoTransactionIsActive_CompletesWithoutChangingState()
+    {
+        var unitOfWork = new JsonTransactionalUnitOfWork(new JsonTransactionCoordinator());
+
+        await unitOfWork.RollbackAsync();
+
+        unitOfWork.HasActiveTransaction.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CommitAsync_WhenTargetDirectoryDoesNotExist_CreatesDirectoryAndPersistsStagedWrite()
+    {
+        // Given
+        var rootDirectory = Path.Combine(Path.GetTempPath(), $"json_uow_nested_{Guid.NewGuid():N}");
+        var ordersPath = Path.Combine(rootDirectory, "data", "orders.json");
+        var transactionCoordinator = new JsonTransactionCoordinator();
+
+        using var orderRepository = new JsonOrderRepository(ordersPath, transactionCoordinator);
+        var unitOfWork = new JsonTransactionalUnitOfWork(transactionCoordinator);
+        var pair = TradingPair.Create("ADAUSDT", "USDT");
+        var order = OrderLifecycle.Submit(
+            OrderId.From("json-uow-nested-order-1"),
+            pair,
+            OrderSide.Buy,
+            OrderType.Market,
+            Quantity.Create(10m),
+            Price.Create(1m),
+            signalRule: "NestedCommit");
+
+        try
+        {
+            // When
+            await unitOfWork.BeginTransactionAsync();
+            await orderRepository.SaveAsync(order);
+            var result = await unitOfWork.CommitAsync();
+
+            // Then
+            result.IsSuccess.Should().BeTrue();
+            File.Exists(ordersPath).Should().BeTrue();
+
+            using var reloadedOrders = new JsonOrderRepository(ordersPath);
+            var persistedOrder = await reloadedOrders.GetByIdAsync(order.Id);
+            persistedOrder.Should().NotBeNull();
+        }
+        finally
+        {
+            if (Directory.Exists(rootDirectory))
+            {
+                Directory.Delete(rootDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task CommitAsync_WhenOneResourceFails_RestoresPreviouslyAppliedFiles()
     {
         // Given

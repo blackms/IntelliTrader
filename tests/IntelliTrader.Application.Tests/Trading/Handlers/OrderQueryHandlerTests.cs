@@ -76,6 +76,41 @@ public class OrderQueryHandlerTests
         result.Value[0].Status.Should().Be(OrderLifecycleStatus.Submitted);
     }
 
+    [Fact]
+    public async Task HandleAsync_WithActiveOrdersQuery_ReturnsOnlyNonTerminalOrders()
+    {
+        // Arrange
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var newestPartial = CreatePartiallyFilledOrder("order-5", pair, DateTimeOffset.UtcNow);
+        var olderSubmitted = CreateSubmittedOrder("order-6", pair, DateTimeOffset.UtcNow.AddMinutes(-1));
+        var filled = CreateFilledOrder("order-7", pair, DateTimeOffset.UtcNow.AddMinutes(-2));
+        var otherPair = CreateSubmittedOrder(
+            "order-8",
+            TradingPair.Create("ETHUSDT", "USDT"),
+            DateTimeOffset.UtcNow.AddMinutes(-3));
+
+        var handler = new GetActiveOrdersHandler(_orderRepositoryMock.Object);
+
+        _orderRepositoryMock
+            .Setup(x => x.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { olderSubmitted, otherPair, filled, newestPartial });
+
+        var query = new GetActiveOrdersQuery
+        {
+            Pair = pair,
+            Side = DomainOrderSide.Buy,
+            Limit = 10
+        };
+
+        // Act
+        var result = await handler.HandleAsync(query);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Select(order => order.Id).Should().Equal(newestPartial.Id, olderSubmitted.Id);
+        result.Value.Should().OnlyContain(order => !order.IsTerminal);
+    }
+
     private static OrderLifecycle CreateSubmittedOrder(
         string orderId,
         TradingPair? pair = null,
@@ -106,6 +141,21 @@ public class OrderQueryHandlerTests
             Price.Create(50000m),
             Money.Create(1000m, "USDT"),
             Money.Create(1m, "USDT"));
+        order.ClearDomainEvents();
+        return order;
+    }
+
+    private static OrderLifecycle CreatePartiallyFilledOrder(
+        string orderId,
+        TradingPair? pair = null,
+        DateTimeOffset? submittedAt = null)
+    {
+        var order = CreateSubmittedOrder(orderId, pair, submittedAt);
+        order.MarkPartiallyFilled(
+            Quantity.Create(0.01m),
+            Price.Create(50000m),
+            Money.Create(500m, "USDT"),
+            Money.Create(0.5m, "USDT"));
         order.ClearDomainEvents();
         return order;
     }

@@ -20,13 +20,13 @@ public sealed class OrderStatusRefreshOptions
     public TimeSpan StartDelay { get; set; } = TimeSpan.Zero;
 
     /// <summary>
-    /// Maximum number of submitted orders to refresh per cycle.
+    /// Maximum number of active orders to refresh per cycle.
     /// </summary>
     public int MaxOrdersPerCycle { get; set; } = 50;
 }
 
 /// <summary>
-/// Background service that periodically refreshes submitted orders.
+/// Background service that periodically refreshes active, non-terminal orders.
 /// </summary>
 public sealed class OrderStatusRefreshService : TimedBackgroundService
 {
@@ -47,8 +47,8 @@ public sealed class OrderStatusRefreshService : TimedBackgroundService
 
     protected override async Task ExecuteWorkAsync(CancellationToken stoppingToken)
     {
-        var result = await _commandDispatcher.DispatchAsync<RefreshSubmittedOrdersCommand, RefreshSubmittedOrdersResult>(
-            new RefreshSubmittedOrdersCommand
+        var result = await _commandDispatcher.DispatchAsync<RefreshActiveOrdersCommand, RefreshActiveOrdersResult>(
+            new RefreshActiveOrdersCommand
             {
                 Limit = _options.MaxOrdersPerCycle
             },
@@ -57,15 +57,15 @@ public sealed class OrderStatusRefreshService : TimedBackgroundService
         if (result.IsFailure)
         {
             _logger.LogWarning(
-                "Failed to refresh submitted orders: {ErrorCode} {ErrorMessage}",
+                "Failed to refresh active orders: {ErrorCode} {ErrorMessage}",
                 result.Error.Code,
                 result.Error.Message);
             return;
         }
 
         _logger.LogDebug(
-            "Refreshed submitted orders. Submitted={TotalSubmitted}, Attempted={Attempted}, Refreshed={Refreshed}, Applied={Applied}, Failed={Failed}",
-            result.Value.TotalSubmitted,
+            "Refreshed active orders. Active={TotalActive}, Attempted={Attempted}, Refreshed={Refreshed}, Applied={Applied}, Failed={Failed}",
+            result.Value.TotalActive,
             result.Value.AttemptedCount,
             result.Value.RefreshedCount,
             result.Value.AppliedDomainEffectsCount,

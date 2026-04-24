@@ -4,8 +4,10 @@ using IntelliTrader.Application.Common;
 using IntelliTrader.Application.Ports.Driven;
 using IntelliTrader.Application.Ports.Driving;
 using IntelliTrader.Application.Trading.Commands;
+using IntelliTrader.Application.Trading.Queries;
 using IntelliTrader.Core;
 using IntelliTrader.Domain.Trading.Aggregates;
+using IntelliTrader.Domain.Trading.Orders;
 using IntelliTrader.Domain.Trading.ValueObjects;
 using IntelliTrader.Infrastructure.Adapters.Persistence.Json;
 using Moq;
@@ -112,6 +114,91 @@ public sealed class RefreshSubmittedOrdersCommandDispatchIntegrationTests : ICla
         position.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task DispatchAsync_WhenPartiallyFilledOpenOrderCompletes_RefreshesItInBatchAndAppliesOnlyRemainingFill()
+    {
+        // Given
+        var pair = TradingPair.Create("ETHUSDT", "USDT");
+        var orderId = "batch-refresh-partial-open-1";
+        var openCommand = new OpenPositionCommand
+        {
+            Pair = pair,
+            Cost = Money.Create(1000m, "USDT"),
+            SignalRule = "MomentumBreakout"
+        };
+
+        _exchangePortMock
+            .Setup(x => x.GetTradingRulesAsync(pair, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<TradingPairRules>.Success(CreateTradingRules(pair)));
+
+        _exchangePortMock
+            .Setup(x => x.GetCurrentPriceAsync(pair, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Price>.Success(Price.Create(50000m)));
+
+        _exchangePortMock
+            .Setup(x => x.PlaceMarketBuyAsync(pair, openCommand.Cost, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderResult>.Success(CreatePartiallyFilledOrder(pair, orderId)));
+
+        var dispatcher = _container.Resolve<ICommandDispatcher>();
+        var queryDispatcher = _container.Resolve<IQueryDispatcher>();
+        var positionRepository = _container.Resolve<IPositionRepository>();
+        var portfolioRepository = _container.Resolve<IPortfolioRepository>();
+
+        var openResult = await dispatcher.DispatchAsync<OpenPositionCommand, OpenPositionResult>(openCommand);
+        openResult.IsSuccess.Should().BeTrue();
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, orderId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateFilledOrderInfo(pair, orderId)));
+
+        // When
+        var refreshResult = await dispatcher.DispatchAsync<RefreshActiveOrdersCommand, RefreshActiveOrdersResult>(
+            new RefreshActiveOrdersCommand { Limit = 10 });
+
+        // Then
+        refreshResult.IsSuccess.Should().BeTrue();
+        refreshResult.Value.TotalActive.Should().Be(1);
+        refreshResult.Value.AttemptedCount.Should().Be(1);
+        refreshResult.Value.RefreshedCount.Should().Be(1);
+        refreshResult.Value.AppliedDomainEffectsCount.Should().Be(1);
+        refreshResult.Value.FailedCount.Should().Be(0);
+
+        var persistedOrder = await queryDispatcher.DispatchAsync<GetOrderQuery, OrderView>(
+            new GetOrderQuery { OrderId = OrderId.From(orderId) });
+
+        persistedOrder.IsSuccess.Should().BeTrue();
+        persistedOrder.Value.Status.Should().Be(OrderLifecycleStatus.Filled);
+
+        var position = await positionRepository.GetByPairAsync(pair);
+        position.Should().NotBeNull();
+        position!.Id.Should().Be(openResult.Value.PositionId);
+        position.TotalQuantity.Value.Should().Be(0.02m);
+        position.TotalCost.Amount.Should().Be(1000m);
+        position.TotalFees.Amount.Should().Be(1m);
+        position.Entries.Should().ContainSingle();
+
+        var portfolio = await portfolioRepository.GetDefaultAsync();
+        portfolio.Should().NotBeNull();
+        portfolio!.GetPositionId(pair).Should().Be(position.Id);
+        portfolio.GetTotalInvestedCost().Amount.Should().Be(1000m);
+
+        _auditServiceMock.Verify(
+            x => x.LogAudit(
+                "OrderFilled",
+                It.Is<string>(details => details.Contains(orderId, StringComparison.Ordinal)),
+                It.IsAny<string>(),
+                It.IsAny<string>()),
+            Times.Exactly(2));
+
+        _auditServiceMock.Verify(
+            x => x.LogAudit(
+                "PositionOpened",
+                It.Is<string>(details => details.Contains(pair.Symbol, StringComparison.Ordinal)),
+                It.IsAny<string>(),
+                It.IsAny<string>()),
+            Times.Once);
+    }
+
     private async Task SeedDefaultPortfolioAsync()
     {
         var portfolioRepository = _container.Resolve<IPortfolioRepository>();
@@ -150,6 +237,25 @@ public sealed class RefreshSubmittedOrdersCommandDispatchIntegrationTests : ICla
             AveragePrice = Price.Zero,
             Cost = Money.Zero("USDT"),
             Fees = Money.Zero("USDT"),
+            Timestamp = DateTimeOffset.UtcNow
+        };
+    }
+
+    private static ExchangeOrderResult CreatePartiallyFilledOrder(TradingPair pair, string orderId)
+    {
+        return new ExchangeOrderResult
+        {
+            OrderId = orderId,
+            Pair = pair,
+            Side = IntelliTrader.Application.Ports.Driven.OrderSide.Buy,
+            Type = IntelliTrader.Application.Ports.Driven.OrderType.Market,
+            Status = IntelliTrader.Application.Ports.Driven.OrderStatus.PartiallyFilled,
+            RequestedQuantity = Quantity.Create(0.02m),
+            FilledQuantity = Quantity.Create(0.01m),
+            Price = Price.Create(50000m),
+            AveragePrice = Price.Create(50000m),
+            Cost = Money.Create(500m, "USDT"),
+            Fees = Money.Create(0.5m, "USDT"),
             Timestamp = DateTimeOffset.UtcNow
         };
     }

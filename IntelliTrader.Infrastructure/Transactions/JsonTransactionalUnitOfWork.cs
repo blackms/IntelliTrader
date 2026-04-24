@@ -37,14 +37,35 @@ public sealed class JsonTransactionCoordinator
 {
     public static JsonTransactionCoordinator Shared { get; } = new();
 
-    private readonly AsyncLocal<JsonTransaction?> _currentTransaction = new();
+    private readonly AsyncLocal<JsonTransactionHolder?> _currentTransaction = new();
     private readonly SemaphoreSlim _commitLock = new(1, 1);
 
-    public bool HasActiveTransaction => _currentTransaction.Value is not null;
+    public bool HasActiveTransaction => CurrentTransaction is not null;
+
+    private JsonTransaction? CurrentTransaction
+    {
+        get => _currentTransaction.Value?.Transaction;
+        set
+        {
+            var holder = _currentTransaction.Value;
+            if (holder is null)
+            {
+                if (value is null)
+                {
+                    return;
+                }
+
+                holder = new JsonTransactionHolder();
+                _currentTransaction.Value = holder;
+            }
+
+            holder.Transaction = value;
+        }
+    }
 
     public void BeginTransaction()
     {
-        _currentTransaction.Value ??= new JsonTransaction();
+        CurrentTransaction ??= new JsonTransaction();
     }
 
     internal TState GetOrCreateState<TState>(
@@ -56,7 +77,7 @@ public sealed class JsonTransactionCoordinator
         ArgumentNullException.ThrowIfNull(stateFactory);
 
         BeginTransaction();
-        return _currentTransaction.Value!.GetOrCreateState(resource, stateFactory);
+        return CurrentTransaction!.GetOrCreateState(resource, stateFactory);
     }
 
     internal bool TryGetState<TState>(
@@ -65,18 +86,19 @@ public sealed class JsonTransactionCoordinator
         where TState : class
     {
         state = null;
-        return _currentTransaction.Value is not null &&
-               _currentTransaction.Value.TryGetState(resource, out state);
+        return CurrentTransaction is not null &&
+               CurrentTransaction.TryGetState(resource, out state);
     }
 
     public async Task<Result> CommitAsync(CancellationToken cancellationToken = default)
     {
-        var transaction = _currentTransaction.Value;
+        var transaction = CurrentTransaction;
         if (transaction is null)
         {
             return Result.Success();
         }
 
+        CurrentTransaction = null;
         await _commitLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         var preparedWrites = new List<JsonPreparedWrite>();
 
@@ -133,25 +155,28 @@ public sealed class JsonTransactionCoordinator
                 preparedWrite.Cleanup();
             }
 
-            _currentTransaction.Value = null;
             _commitLock.Release();
         }
     }
 
     public async Task RollbackAsync(CancellationToken cancellationToken = default)
     {
-        var transaction = _currentTransaction.Value;
+        var transaction = CurrentTransaction;
         if (transaction is null)
         {
             return;
         }
 
+        CurrentTransaction = null;
         foreach (var resource in transaction.EnlistedResources)
         {
             await resource.RollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
         }
+    }
 
-        _currentTransaction.Value = null;
+    private sealed class JsonTransactionHolder
+    {
+        public JsonTransaction? Transaction { get; set; }
     }
 }
 

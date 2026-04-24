@@ -1,18 +1,10 @@
 namespace IntelliTrader.Core
 {
     /// <summary>
-    /// Manages the lifecycle of background submitted-order reconciliation.
+    /// Compatibility alias for the legacy submitted-order refresh contract.
+    /// Prefer <see cref="IActiveOrderRefreshService"/>.
     /// </summary>
-    public interface ISubmittedOrderRefreshService
+    public interface ISubmittedOrderRefreshService : IActiveOrderRefreshService
     {
-        /// <summary>
-        /// Starts background refresh of submitted orders.
-        /// </summary>
-        void Start();
-
-        /// <summary>
-        /// Stops background refresh of submitted orders.
-        /// </summary>
-        void Stop();
     }
 }

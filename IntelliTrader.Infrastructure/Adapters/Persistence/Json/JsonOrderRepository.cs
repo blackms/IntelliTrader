@@ -226,7 +226,12 @@ public sealed class JsonOrderRepository : IOrderRepository, IJsonTransactionalRe
         JsonTransaction transaction,
         CancellationToken cancellationToken)
     {
-        return Task.CompletedTask;
+        if (!transaction.TryGetState(this, out ConcurrentDictionary<string, OrderLifecycleDto>? _))
+        {
+            return Task.CompletedTask;
+        }
+
+        return ReloadAsync(cancellationToken);
     }
 
     public void Dispose()

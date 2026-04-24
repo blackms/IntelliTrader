@@ -1,6 +1,7 @@
 using IntelliTrader.Application.Common;
 using IntelliTrader.Application.Ports.Driving;
 using Microsoft.Extensions.Logging;
+using System.Reflection;
 
 namespace IntelliTrader.Infrastructure.Dispatching;
 
@@ -61,6 +62,7 @@ public sealed class InMemoryCommandDispatcher : ICommandDispatcher
                     "No handler registered for command {CommandType}",
                     commandType.Name);
 
+                await RollbackIfActiveAsync(transactionalUnitOfWork, cancellationToken).ConfigureAwait(false);
                 return Result<TResult>.Failure(
                     Error.NotFound("CommandHandler", commandType.Name));
             }
@@ -69,6 +71,7 @@ public sealed class InMemoryCommandDispatcher : ICommandDispatcher
             var handleMethod = handlerType.GetMethod("HandleAsync");
             if (handleMethod is null)
             {
+                await RollbackIfActiveAsync(transactionalUnitOfWork, cancellationToken).ConfigureAwait(false);
                 return Result<TResult>.Failure(
                     new Error("MethodNotFound", "HandleAsync method not found on handler"));
             }
@@ -79,16 +82,14 @@ public sealed class InMemoryCommandDispatcher : ICommandDispatcher
 
             if (task is null)
             {
+                await RollbackIfActiveAsync(transactionalUnitOfWork, cancellationToken).ConfigureAwait(false);
                 return Result<TResult>.Failure(
                     new Error("InvocationFailed", "Handler returned null"));
             }
 
             var result = await task.ConfigureAwait(false);
 
-            if (transactionalUnitOfWork?.HasActiveTransaction == true)
-            {
-                await transactionalUnitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            }
+            await RollbackIfActiveAsync(transactionalUnitOfWork, cancellationToken).ConfigureAwait(false);
 
             _logger.LogDebug(
                 "Command {CommandType} handled with success={IsSuccess}",
@@ -99,13 +100,20 @@ public sealed class InMemoryCommandDispatcher : ICommandDispatcher
         }
         catch (Exception ex)
         {
+            var dispatchException = ex is TargetInvocationException { InnerException: not null }
+                ? ex.InnerException
+                : ex;
+
+            var transactionalUnitOfWork = _serviceProvider.GetService(typeof(ITransactionalUnitOfWork)) as ITransactionalUnitOfWork;
+            await RollbackIfActiveAsync(transactionalUnitOfWork, cancellationToken).ConfigureAwait(false);
+
             _logger.LogError(
-                ex,
+                dispatchException,
                 "Exception while dispatching command {CommandType}",
                 commandType.Name);
 
             return Result<TResult>.Failure(
-                new Error("DispatchError", ex.Message));
+                new Error("DispatchError", dispatchException.Message));
         }
     }
 
@@ -138,6 +146,7 @@ public sealed class InMemoryCommandDispatcher : ICommandDispatcher
                     "No handler registered for command {CommandType}",
                     commandType.Name);
 
+                await RollbackIfActiveAsync(transactionalUnitOfWork, cancellationToken).ConfigureAwait(false);
                 return Result.Failure(
                     Error.NotFound("CommandHandler", commandType.Name));
             }
@@ -146,6 +155,7 @@ public sealed class InMemoryCommandDispatcher : ICommandDispatcher
             var handleMethod = handlerType.GetMethod("HandleAsync");
             if (handleMethod is null)
             {
+                await RollbackIfActiveAsync(transactionalUnitOfWork, cancellationToken).ConfigureAwait(false);
                 return Result.Failure(
                     new Error("MethodNotFound", "HandleAsync method not found on handler"));
             }
@@ -156,16 +166,14 @@ public sealed class InMemoryCommandDispatcher : ICommandDispatcher
 
             if (task is null)
             {
+                await RollbackIfActiveAsync(transactionalUnitOfWork, cancellationToken).ConfigureAwait(false);
                 return Result.Failure(
                     new Error("InvocationFailed", "Handler returned null"));
             }
 
             var result = await task.ConfigureAwait(false);
 
-            if (transactionalUnitOfWork?.HasActiveTransaction == true)
-            {
-                await transactionalUnitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            }
+            await RollbackIfActiveAsync(transactionalUnitOfWork, cancellationToken).ConfigureAwait(false);
 
             _logger.LogDebug(
                 "Void command {CommandType} handled with success={IsSuccess}",
@@ -176,13 +184,30 @@ public sealed class InMemoryCommandDispatcher : ICommandDispatcher
         }
         catch (Exception ex)
         {
+            var dispatchException = ex is TargetInvocationException { InnerException: not null }
+                ? ex.InnerException
+                : ex;
+
+            var transactionalUnitOfWork = _serviceProvider.GetService(typeof(ITransactionalUnitOfWork)) as ITransactionalUnitOfWork;
+            await RollbackIfActiveAsync(transactionalUnitOfWork, cancellationToken).ConfigureAwait(false);
+
             _logger.LogError(
-                ex,
+                dispatchException,
                 "Exception while dispatching void command {CommandType}",
                 commandType.Name);
 
             return Result.Failure(
-                new Error("DispatchError", ex.Message));
+                new Error("DispatchError", dispatchException.Message));
+        }
+    }
+
+    private static async Task RollbackIfActiveAsync(
+        ITransactionalUnitOfWork? transactionalUnitOfWork,
+        CancellationToken cancellationToken)
+    {
+        if (transactionalUnitOfWork?.HasActiveTransaction == true)
+        {
+            await transactionalUnitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 }

@@ -90,3 +90,37 @@ public sealed class GetRecentOrdersHandler : IQueryHandler<GetRecentOrdersQuery,
         return Result<IReadOnlyList<OrderView>>.Success(filtered);
     }
 }
+
+/// <summary>
+/// Query handler for active, non-terminal persisted orders.
+/// </summary>
+public sealed class GetActiveOrdersHandler : IQueryHandler<GetActiveOrdersQuery, IReadOnlyList<OrderView>>
+{
+    private readonly IOrderRepository _orderRepository;
+
+    public GetActiveOrdersHandler(IOrderRepository orderRepository)
+    {
+        _orderRepository = orderRepository ?? throw new ArgumentNullException(nameof(orderRepository));
+    }
+
+    public async Task<Result<IReadOnlyList<OrderView>>> HandleAsync(
+        GetActiveOrdersQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        var limit = query.Limit <= 0 ? 50 : query.Limit;
+        var orders = await _orderRepository.GetAllAsync(cancellationToken);
+
+        var filtered = orders
+            .Where(order => !order.IsTerminal)
+            .Where(order => query.Pair is null || order.Pair.Equals(query.Pair))
+            .Where(order => query.Side is null || order.Side == query.Side)
+            .OrderByDescending(order => order.SubmittedAt)
+            .Take(limit)
+            .Select(GetOrderHandler.Map)
+            .ToList();
+
+        return Result<IReadOnlyList<OrderView>>.Success(filtered);
+    }
+}

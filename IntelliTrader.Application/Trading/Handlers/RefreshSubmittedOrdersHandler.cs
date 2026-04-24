@@ -11,7 +11,8 @@ namespace IntelliTrader.Application.Trading.Handlers;
 /// single-order reconciliation use case.
 /// </summary>
 public sealed class RefreshSubmittedOrdersHandler
-    : ICommandHandler<RefreshSubmittedOrdersCommand, RefreshSubmittedOrdersResult>
+    : ICommandHandler<RefreshActiveOrdersCommand, RefreshActiveOrdersResult>,
+      ICommandHandler<RefreshSubmittedOrdersCommand, RefreshSubmittedOrdersResult>
 {
     private readonly IOrderRepository _orderRepository;
     private readonly ICommandDispatcher _commandDispatcher;
@@ -30,13 +31,42 @@ public sealed class RefreshSubmittedOrdersHandler
     {
         ArgumentNullException.ThrowIfNull(command);
 
+        var result = await HandleActiveOrdersAsync(command.Limit, cancellationToken);
+        if (result.IsFailure)
+        {
+            return Result<RefreshSubmittedOrdersResult>.Failure(result.Error);
+        }
+
+        return Result<RefreshSubmittedOrdersResult>.Success(new RefreshSubmittedOrdersResult
+        {
+            TotalSubmitted = result.Value.TotalActive,
+            AttemptedCount = result.Value.AttemptedCount,
+            RefreshedCount = result.Value.RefreshedCount,
+            AppliedDomainEffectsCount = result.Value.AppliedDomainEffectsCount,
+            FailedCount = result.Value.FailedCount
+        });
+    }
+
+    public async Task<Result<RefreshActiveOrdersResult>> HandleAsync(
+        RefreshActiveOrdersCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        return await HandleActiveOrdersAsync(command.Limit, cancellationToken);
+    }
+
+    private async Task<Result<RefreshActiveOrdersResult>> HandleActiveOrdersAsync(
+        int requestedLimit,
+        CancellationToken cancellationToken)
+    {
         var allOrders = await _orderRepository.GetAllAsync(cancellationToken);
         var refreshableOrders = allOrders
             .Where(order => !order.IsTerminal)
             .OrderBy(order => order.SubmittedAt)
             .ToList();
 
-        var limit = command.Limit <= 0 ? 50 : command.Limit;
+        var limit = requestedLimit <= 0 ? 50 : requestedLimit;
         var batch = refreshableOrders
             .Take(limit)
             .ToList();
@@ -67,9 +97,9 @@ public sealed class RefreshSubmittedOrdersHandler
             }
         }
 
-        return Result<RefreshSubmittedOrdersResult>.Success(new RefreshSubmittedOrdersResult
+        return Result<RefreshActiveOrdersResult>.Success(new RefreshActiveOrdersResult
         {
-            TotalSubmitted = refreshableOrders.Count,
+            TotalActive = refreshableOrders.Count,
             AttemptedCount = batch.Count,
             RefreshedCount = refreshedCount,
             AppliedDomainEffectsCount = appliedDomainEffectsCount,

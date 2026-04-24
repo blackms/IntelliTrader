@@ -23,6 +23,16 @@ public sealed record GetRecentOrdersQuery
 }
 
 /// <summary>
+/// Query to get active, non-terminal persisted orders with optional filters.
+/// </summary>
+public sealed record GetActiveOrdersQuery
+{
+    public TradingPair? Pair { get; init; }
+    public IntelliTrader.Domain.Events.OrderSide? Side { get; init; }
+    public int Limit { get; init; } = 50;
+}
+
+/// <summary>
 /// Read model for an order lifecycle.
 /// </summary>
 public sealed record OrderView

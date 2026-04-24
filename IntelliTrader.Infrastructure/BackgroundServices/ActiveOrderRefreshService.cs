@@ -5,12 +5,12 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace IntelliTrader.Infrastructure.BackgroundServices;
 
 /// <summary>
-/// Core-facing lifecycle manager for submitted-order refresh background work.
+/// Core-facing lifecycle manager for active-order refresh background work.
 /// Creates a fresh <see cref="OrderStatusRefreshService"/> instance on each start
 /// because <see cref="Microsoft.Extensions.Hosting.BackgroundService"/> instances are
 /// not intended to be restarted after stop.
 /// </summary>
-public sealed class SubmittedOrderRefreshService : ISubmittedOrderRefreshService
+public sealed class ActiveOrderRefreshService : IActiveOrderRefreshService, ISubmittedOrderRefreshService
 {
     private readonly ILoggingService _loggingService;
     private readonly ICommandDispatcher _commandDispatcher;
@@ -18,14 +18,14 @@ public sealed class SubmittedOrderRefreshService : ISubmittedOrderRefreshService
     private CancellationTokenSource? _cts;
     private OrderStatusRefreshService? _backgroundService;
 
-    public SubmittedOrderRefreshService(
+    public ActiveOrderRefreshService(
         ILoggingService loggingService,
         ICommandDispatcher commandDispatcher)
         : this(loggingService, commandDispatcher, new OrderStatusRefreshOptions())
     {
     }
 
-    public SubmittedOrderRefreshService(
+    public ActiveOrderRefreshService(
         ILoggingService loggingService,
         ICommandDispatcher commandDispatcher,
         OrderStatusRefreshOptions options)
@@ -42,7 +42,7 @@ public sealed class SubmittedOrderRefreshService : ISubmittedOrderRefreshService
             return;
         }
 
-        _loggingService.Info("Start submitted order refresh service...");
+        _loggingService.Info("Start active order refresh service...");
 
         _cts = new CancellationTokenSource();
         _backgroundService = new OrderStatusRefreshService(
@@ -52,7 +52,7 @@ public sealed class SubmittedOrderRefreshService : ISubmittedOrderRefreshService
 
         _backgroundService.StartAsync(_cts.Token).GetAwaiter().GetResult();
 
-        _loggingService.Info("Submitted order refresh service started");
+        _loggingService.Info("Active order refresh service started");
     }
 
     public void Stop()
@@ -62,7 +62,7 @@ public sealed class SubmittedOrderRefreshService : ISubmittedOrderRefreshService
             return;
         }
 
-        _loggingService.Info("Stop submitted order refresh service...");
+        _loggingService.Info("Stop active order refresh service...");
 
         _cts.Cancel();
         _backgroundService?.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
@@ -72,6 +72,6 @@ public sealed class SubmittedOrderRefreshService : ISubmittedOrderRefreshService
         _cts = null;
         _backgroundService = null;
 
-        _loggingService.Info("Submitted order refresh service stopped");
+        _loggingService.Info("Active order refresh service stopped");
     }
 }

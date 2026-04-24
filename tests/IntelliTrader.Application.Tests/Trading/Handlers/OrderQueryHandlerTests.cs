@@ -111,6 +111,83 @@ public class OrderQueryHandlerTests
         result.Value.Should().OnlyContain(order => !order.IsTerminal);
     }
 
+    [Fact]
+    public async Task HandleAsync_WithTradingHistoryQuery_ReturnsFilledOrdersMappedAsTrades()
+    {
+        // Arrange
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var positionId = PositionId.Create();
+        var initialBuy = CreateFilledOrder(
+            "order-buy-1",
+            pair,
+            DateTimeOffset.UtcNow.AddMinutes(-30),
+            OrderIntent.OpenPosition,
+            positionId);
+        var dcaBuy = CreateFilledOrder(
+            "order-dca-1",
+            pair,
+            DateTimeOffset.UtcNow.AddMinutes(-20),
+            OrderIntent.ExecuteDca,
+            positionId);
+        var sell = CreateFilledOrder(
+            "order-sell-1",
+            pair,
+            DateTimeOffset.UtcNow.AddMinutes(-10),
+            OrderIntent.ClosePosition,
+            positionId,
+            DomainOrderSide.Sell);
+        var pending = CreateSubmittedOrder(
+            "order-pending-1",
+            pair,
+            DateTimeOffset.UtcNow.AddMinutes(-5));
+
+        var handler = new GetTradingHistoryHandler(_orderRepositoryMock.Object);
+
+        _orderRepositoryMock
+            .Setup(x => x.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { pending, initialBuy, sell, dcaBuy });
+
+        // Act
+        var result = await handler.HandleAsync(new GetTradingHistoryQuery
+        {
+            Pair = pair,
+            Limit = 10
+        });
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Select(entry => entry.OrderId).Should().Equal("order-sell-1", "order-dca-1", "order-buy-1");
+        result.Value.Select(entry => entry.Type).Should().Equal(TradeType.Sell, TradeType.DCA, TradeType.Buy);
+        result.Value.Should().OnlyContain(entry => entry.PositionId == positionId);
+        result.Value.Should().OnlyContain(entry => entry.Pair == pair);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithTradingHistoryQuery_SkipsFilledOrdersWithoutPositionLink()
+    {
+        // Arrange
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var unlinkedFilledOrder = CreateFilledOrder(
+            "order-unlinked-1",
+            pair,
+            DateTimeOffset.UtcNow.AddMinutes(-10),
+            OrderIntent.OpenPosition,
+            relatedPositionId: null);
+
+        var handler = new GetTradingHistoryHandler(_orderRepositoryMock.Object);
+
+        _orderRepositoryMock
+            .Setup(x => x.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { unlinkedFilledOrder });
+
+        // Act
+        var result = await handler.HandleAsync(new GetTradingHistoryQuery { Pair = pair });
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeEmpty();
+    }
+
     private static OrderLifecycle CreateSubmittedOrder(
         string orderId,
         TradingPair? pair = null,
@@ -135,12 +212,47 @@ public class OrderQueryHandlerTests
         TradingPair? pair = null,
         DateTimeOffset? submittedAt = null)
     {
-        var order = CreateSubmittedOrder(orderId, pair, submittedAt);
+        return CreateFilledOrder(
+            orderId,
+            pair,
+            submittedAt,
+            OrderIntent.OpenPosition,
+            PositionId.Create());
+    }
+
+    private static OrderLifecycle CreateFilledOrder(
+        string orderId,
+        TradingPair? pair,
+        DateTimeOffset? submittedAt,
+        OrderIntent intent,
+        PositionId? relatedPositionId,
+        DomainOrderSide side = DomainOrderSide.Buy)
+    {
+        var tradingPair = pair ?? TradingPair.Create("BTCUSDT", "USDT");
+        var submittedRelatedPositionId = intent == OrderIntent.OpenPosition ? null : relatedPositionId;
+        var order = OrderLifecycle.Submit(
+            OrderId.From(orderId),
+            tradingPair,
+            side,
+            DomainOrderType.Market,
+            Quantity.Create(0.02m),
+            Price.Create(50000m),
+            "MomentumBreakout",
+            submittedAt ?? DateTimeOffset.UtcNow,
+            intent,
+            submittedRelatedPositionId);
+
+        order.ClearDomainEvents();
         order.MarkFilled(
             Quantity.Create(0.02m),
             Price.Create(50000m),
             Money.Create(1000m, "USDT"),
             Money.Create(1m, "USDT"));
+        if (intent == OrderIntent.OpenPosition && relatedPositionId is not null)
+        {
+            order.LinkRelatedPosition(relatedPositionId);
+        }
+
         order.ClearDomainEvents();
         return order;
     }

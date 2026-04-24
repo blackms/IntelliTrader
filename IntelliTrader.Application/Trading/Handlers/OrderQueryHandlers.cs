@@ -124,3 +124,73 @@ public sealed class GetActiveOrdersHandler : IQueryHandler<GetActiveOrdersQuery,
         return Result<IReadOnlyList<OrderView>>.Success(filtered);
     }
 }
+
+/// <summary>
+/// Query handler for trade history projected from persisted filled order lifecycles.
+/// </summary>
+public sealed class GetTradingHistoryHandler : IQueryHandler<GetTradingHistoryQuery, IReadOnlyList<TradeHistoryEntry>>
+{
+    private readonly IOrderRepository _orderRepository;
+
+    public GetTradingHistoryHandler(IOrderRepository orderRepository)
+    {
+        _orderRepository = orderRepository ?? throw new ArgumentNullException(nameof(orderRepository));
+    }
+
+    public async Task<Result<IReadOnlyList<TradeHistoryEntry>>> HandleAsync(
+        GetTradingHistoryQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        if (query.From > query.To)
+        {
+            return Result<IReadOnlyList<TradeHistoryEntry>>.Failure(
+                Error.Validation("Trading history query range is invalid."));
+        }
+
+        var limit = query.Limit <= 0 ? 100 : query.Limit;
+        var offset = Math.Max(0, query.Offset);
+        var orders = await _orderRepository.GetAllAsync(cancellationToken);
+
+        var history = orders
+            .Where(order => order.Status == OrderLifecycleStatus.Filled)
+            .Where(order => order.RelatedPositionId is not null)
+            .Where(order => order.SubmittedAt >= query.From && order.SubmittedAt <= query.To)
+            .Where(order => query.Pair is null || order.Pair.Equals(query.Pair))
+            .OrderByDescending(order => order.SubmittedAt)
+            .Skip(offset)
+            .Take(limit)
+            .Select(MapTradeHistoryEntry)
+            .ToList();
+
+        return Result<IReadOnlyList<TradeHistoryEntry>>.Success(history);
+    }
+
+    private static TradeHistoryEntry MapTradeHistoryEntry(OrderLifecycle order)
+    {
+        return new TradeHistoryEntry
+        {
+            PositionId = order.RelatedPositionId!,
+            Pair = order.Pair,
+            Type = ResolveTradeType(order),
+            Price = order.AveragePrice,
+            Quantity = order.FilledQuantity,
+            Cost = order.Cost,
+            Fees = order.Fees,
+            Timestamp = order.SubmittedAt,
+            OrderId = order.Id.Value,
+            Note = order.Intent.ToString()
+        };
+    }
+
+    private static TradeType ResolveTradeType(OrderLifecycle order)
+    {
+        if (order.Side == IntelliTrader.Domain.Events.OrderSide.Sell)
+        {
+            return TradeType.Sell;
+        }
+
+        return order.Intent == OrderIntent.ExecuteDca ? TradeType.DCA : TradeType.Buy;
+    }
+}

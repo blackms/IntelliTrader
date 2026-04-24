@@ -2,6 +2,7 @@ using Autofac;
 using IntelliTrader.Application.Common;
 using IntelliTrader.Application.Ports.Driven;
 using IntelliTrader.Application.Ports.Driving;
+using IntelliTrader.Application.Trading;
 using IntelliTrader.Application.Trading.Handlers;
 using IntelliTrader.Core;
 using IntelliTrader.Domain.Trading.Services;
@@ -165,6 +166,10 @@ public class AppModule : Module
 
         builder.RegisterType<TradingConstraintValidator>()
             .AsSelf()
+            .SingleInstance();
+
+        builder.RegisterType<TradingUseCase>()
+            .As<ITradingUseCase>()
             .SingleInstance();
 
         builder.RegisterAssemblyTypes(applicationAssembly)

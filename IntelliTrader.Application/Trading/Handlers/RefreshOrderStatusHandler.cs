@@ -192,7 +192,7 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
         DateTimeOffset occurredAt,
         CancellationToken cancellationToken)
     {
-        if (order.Status != OrderLifecycleStatus.Filled)
+        if (!order.HasUnappliedFill)
         {
             return await PersistOrderOnlyAsync(order, previousStatus, cancellationToken);
         }
@@ -217,8 +217,26 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
             return Result<RefreshOrderStatusResult>.Failure(Error.NotFound("Portfolio", "default"));
         }
 
-        position.Close(order.Id, order.AveragePrice, order.Fees, occurredAt);
-        portfolio.RecordPositionClosed(position.Id, position.Pair, order.Cost);
+        var closeDelta = position.ApplyCloseFillDelta(
+            order.Id,
+            CalculateUnappliedAveragePrice(order),
+            order.UnappliedQuantity,
+            order.UnappliedFees,
+            occurredAt);
+
+        if (closeDelta.PositionClosed)
+        {
+            portfolio.RecordPositionClosed(position.Id, position.Pair, closeDelta.Proceeds);
+        }
+        else
+        {
+            portfolio.RecordPositionCostReduced(
+                position.Id,
+                position.Pair,
+                closeDelta.ReleasedCost,
+                closeDelta.Proceeds);
+        }
+
         order.MarkCurrentFillApplied();
 
         return await PersistOrderPositionPortfolioAsync(
@@ -410,5 +428,10 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
             AppliedDomainEffects = appliedDomainEffects,
             PositionId = positionId
         };
+    }
+
+    private static Price CalculateUnappliedAveragePrice(OrderLifecycle order)
+    {
+        return Price.Create(order.UnappliedCost.Amount / order.UnappliedQuantity.Value);
     }
 }

@@ -357,6 +357,54 @@ public sealed class Position : AggregateRoot<PositionId>
             now - OpenedAt));
     }
 
+    public PositionCloseFillDelta ApplyCloseFillDelta(
+        OrderId sellOrderId,
+        Price sellPrice,
+        Quantity soldQuantity,
+        Money sellFees,
+        DateTimeOffset? timestamp = null)
+    {
+        EnsureNotClosed();
+
+        ArgumentNullException.ThrowIfNull(sellOrderId);
+        ArgumentNullException.ThrowIfNull(sellPrice);
+        ArgumentNullException.ThrowIfNull(soldQuantity);
+        ArgumentNullException.ThrowIfNull(sellFees);
+
+        if (sellPrice.IsZero)
+            throw new ArgumentException("Sell price cannot be zero", nameof(sellPrice));
+
+        if (soldQuantity.IsZero)
+            throw new ArgumentException("Sold quantity cannot be zero", nameof(soldQuantity));
+
+        if (soldQuantity > TotalQuantity)
+            throw new InvalidOperationException("Sold quantity cannot exceed position quantity.");
+
+        var proceeds = Money.Create(sellPrice.Value * soldQuantity.Value, Currency);
+        var releasedCost = CalculateReleasedCost(soldQuantity);
+
+        if (soldQuantity.Value == TotalQuantity.Value)
+        {
+            Close(sellOrderId, sellPrice, sellFees, timestamp);
+            return new PositionCloseFillDelta(soldQuantity, proceeds, releasedCost, sellFees, PositionClosed: true);
+        }
+
+        ReduceEntries(soldQuantity);
+
+        AddDomainEvent(new PositionPartiallyClosed(
+            Id,
+            Pair,
+            sellOrderId,
+            sellPrice,
+            soldQuantity,
+            TotalQuantity,
+            proceeds,
+            releasedCost,
+            sellFees));
+
+        return new PositionCloseFillDelta(soldQuantity, proceeds, releasedCost, sellFees, PositionClosed: false);
+    }
+
     /// <summary>
     /// Calculates the current margin (profit/loss percentage) at the given price.
     /// </summary>
@@ -456,4 +504,61 @@ public sealed class Position : AggregateRoot<PositionId>
         if (IsClosed)
             throw new InvalidOperationException("Cannot modify a closed position");
     }
+
+    private Money CalculateReleasedCost(Quantity soldQuantity)
+    {
+        var remainingToSell = soldQuantity.Value;
+        var releasedCost = Money.Zero(Currency);
+
+        foreach (var entry in _entries)
+        {
+            if (remainingToSell <= 0m)
+                break;
+
+            var quantityToSell = Math.Min(entry.Quantity.Value, remainingToSell);
+            releasedCost += Money.Create(entry.Price.Value * quantityToSell, Currency);
+            remainingToSell -= quantityToSell;
+        }
+
+        return releasedCost;
+    }
+
+    private void ReduceEntries(Quantity soldQuantity)
+    {
+        var remainingToSell = soldQuantity.Value;
+
+        for (var index = 0; index < _entries.Count && remainingToSell > 0m;)
+        {
+            var entry = _entries[index];
+            var quantityToSell = Math.Min(entry.Quantity.Value, remainingToSell);
+            var remainingEntryQuantity = entry.Quantity.Value - quantityToSell;
+            var ratio = quantityToSell / entry.Quantity.Value;
+            var releasedFees = entry.Fees * ratio;
+
+            if (remainingEntryQuantity == 0m)
+            {
+                _entries.RemoveAt(index);
+            }
+            else
+            {
+                _entries[index] = PositionEntry.Create(
+                    entry.OrderId,
+                    entry.Price,
+                    Quantity.Create(remainingEntryQuantity),
+                    entry.Fees - releasedFees,
+                    entry.Timestamp,
+                    entry.IsMigrated);
+                index++;
+            }
+
+            remainingToSell -= quantityToSell;
+        }
+    }
 }
+
+public sealed record PositionCloseFillDelta(
+    Quantity SoldQuantity,
+    Money Proceeds,
+    Money ReleasedCost,
+    Money SellFees,
+    bool PositionClosed);

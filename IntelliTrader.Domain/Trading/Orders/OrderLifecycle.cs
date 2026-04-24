@@ -33,7 +33,7 @@ public sealed class OrderLifecycle : AggregateRoot<OrderId>
 
     public bool CanAffectPosition =>
         Status is OrderLifecycleStatus.PartiallyFilled or OrderLifecycleStatus.Filled ||
-        Status == OrderLifecycleStatus.Canceled && Side == OrderSide.Buy && !FilledQuantity.IsZero;
+        Status == OrderLifecycleStatus.Canceled && !FilledQuantity.IsZero;
 
     public bool HasUnappliedFill =>
         CanAffectPosition && FilledQuantity > AppliedQuantity;

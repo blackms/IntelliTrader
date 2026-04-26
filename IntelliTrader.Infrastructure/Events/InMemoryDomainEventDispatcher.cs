@@ -13,14 +13,17 @@ public class InMemoryDomainEventDispatcher : IDomainEventDispatcher
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<InMemoryDomainEventDispatcher> _logger;
+    private readonly IDomainEventHandlerInbox? _handlerInbox;
     private readonly ConcurrentDictionary<Type, List<object>> _handlers = new();
 
     public InMemoryDomainEventDispatcher(
         IServiceProvider serviceProvider,
-        ILogger<InMemoryDomainEventDispatcher> logger)
+        ILogger<InMemoryDomainEventDispatcher> logger,
+        IDomainEventHandlerInbox? handlerInbox = null)
     {
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _handlerInbox = handlerInbox;
     }
 
     /// <summary>
@@ -164,10 +167,22 @@ public class InMemoryDomainEventDispatcher : IDomainEventDispatcher
         var eventType = domainEvent.GetType();
         var handlerType = typeof(IDomainEventHandler<>).MakeGenericType(eventType);
         var handleMethod = handlerType.GetMethod("HandleAsync");
+        var handlerName = ResolveHandlerName(handler);
 
         if (handleMethod == null)
         {
             _logger.LogWarning("Could not find HandleAsync method on handler {HandlerType}", handler.GetType().Name);
+            return;
+        }
+
+        if (_handlerInbox is not null &&
+            await _handlerInbox.HasProcessedAsync(domainEvent.EventId, handlerName, cancellationToken).ConfigureAwait(false))
+        {
+            _logger.LogDebug(
+                "Skipping already processed event {EventType} with ID {EventId} for handler {HandlerName}",
+                eventType.Name,
+                domainEvent.EventId,
+                handlerName);
             return;
         }
 
@@ -177,5 +192,17 @@ public class InMemoryDomainEventDispatcher : IDomainEventDispatcher
         {
             await task.ConfigureAwait(false);
         }
+
+        if (_handlerInbox is not null)
+        {
+            await _handlerInbox.MarkProcessedAsync(domainEvent.EventId, handlerName, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static string ResolveHandlerName(object handler)
+    {
+        var handlerType = handler.GetType();
+        return handlerType.AssemblyQualifiedName ?? handlerType.FullName ?? handlerType.Name;
     }
 }

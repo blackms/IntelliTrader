@@ -20,6 +20,7 @@ public class CoreServiceTests
     private readonly Mock<IBacktestingService> _backtestingServiceMock;
     private readonly Mock<IAlertingService> _alertingServiceMock;
     private readonly Mock<IActiveOrderRefreshService> _activeOrderRefreshServiceMock;
+    private readonly Mock<IDomainEventOutboxReplayService> _outboxReplayServiceMock;
     private readonly Mock<IApplicationContext> _applicationContextMock;
     private readonly Mock<IConfigProvider> _configProviderMock;
     private readonly Mock<ISecretRotationService> _secretRotationServiceMock;
@@ -35,6 +36,7 @@ public class CoreServiceTests
         _backtestingServiceMock = new Mock<IBacktestingService>();
         _alertingServiceMock = new Mock<IAlertingService>();
         _activeOrderRefreshServiceMock = new Mock<IActiveOrderRefreshService>();
+        _outboxReplayServiceMock = new Mock<IDomainEventOutboxReplayService>();
         _applicationContextMock = new Mock<IApplicationContext>();
         _applicationContextMock.Setup(x => x.Speed).Returns(1.0);
         _configProviderMock = new Mock<IConfigProvider>();
@@ -110,6 +112,7 @@ public class CoreServiceTests
             _backtestingServiceMock.Object,
             _alertingServiceMock.Object,
             _activeOrderRefreshServiceMock.Object,
+            _outboxReplayServiceMock.Object,
             _applicationContextMock.Object,
             _configProviderMock.Object,
             new Lazy<ISecretRotationService>(() => _secretRotationServiceMock.Object)
@@ -394,6 +397,23 @@ public class CoreServiceTests
     }
 
     [Fact]
+    public void Start_WhenTradingEnabled_StartsDomainEventOutboxReplayService()
+    {
+        // Arrange
+        var tradingConfigMock = new Mock<ITradingConfig>();
+        tradingConfigMock.Setup(x => x.Enabled).Returns(true);
+        _tradingServiceMock.Setup(x => x.Config).Returns(tradingConfigMock.Object);
+
+        // Act
+        _sut.Start();
+        _sut.Stop();
+
+        // Assert
+        _outboxReplayServiceMock.Verify(x => x.Start(), Times.Once);
+        _outboxReplayServiceMock.Verify(x => x.Stop(), Times.Once);
+    }
+
+    [Fact]
     public void Start_WhenTradingDisabled_DoesNotStartActiveOrderRefreshService()
     {
         // Act
@@ -403,6 +423,18 @@ public class CoreServiceTests
         // Assert
         _activeOrderRefreshServiceMock.Verify(x => x.Start(), Times.Never);
         _activeOrderRefreshServiceMock.Verify(x => x.Stop(), Times.Never);
+    }
+
+    [Fact]
+    public void Start_WhenTradingDisabled_DoesNotStartDomainEventOutboxReplayService()
+    {
+        // Act
+        _sut.Start();
+        _sut.Stop();
+
+        // Assert
+        _outboxReplayServiceMock.Verify(x => x.Start(), Times.Never);
+        _outboxReplayServiceMock.Verify(x => x.Stop(), Times.Never);
     }
 
     [Fact]

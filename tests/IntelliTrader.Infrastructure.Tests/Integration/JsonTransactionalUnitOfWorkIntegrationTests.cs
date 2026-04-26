@@ -187,4 +187,155 @@ public sealed class JsonTransactionalUnitOfWorkIntegrationTests
         persistedPortfolio.Should().NotBeNull();
         persistedPortfolio!.HasPositionFor(pair).Should().BeFalse();
     }
+
+    [Fact]
+    public async Task CommitAsync_WhenOutboxIsEnqueuedWithOrderState_PersistsEventsAtomically()
+    {
+        // Given
+        var ordersPath = Path.Combine(Path.GetTempPath(), $"json_uow_orders_{Guid.NewGuid():N}.json");
+        var outboxPath = Path.Combine(Path.GetTempPath(), $"json_uow_outbox_{Guid.NewGuid():N}.json");
+        var transactionCoordinator = new JsonTransactionCoordinator();
+
+        using var orderRepository = new JsonOrderRepository(ordersPath, transactionCoordinator);
+        using var eventOutbox = new JsonDomainEventOutbox(outboxPath, transactionCoordinator);
+        var unitOfWork = new JsonTransactionalUnitOfWork(transactionCoordinator);
+        var order = CreateFilledOrder("json-uow-outbox-order-1");
+        var events = order.DomainEvents.ToList();
+
+        try
+        {
+            // When
+            await unitOfWork.BeginTransactionAsync();
+            await orderRepository.SaveAsync(order);
+            await eventOutbox.EnqueueAsync(events);
+            var commitResult = await unitOfWork.CommitAsync();
+
+            // Then
+            commitResult.IsSuccess.Should().BeTrue();
+
+            using var reloadedOrders = new JsonOrderRepository(ordersPath);
+            using var reloadedOutbox = new JsonDomainEventOutbox(outboxPath);
+            var persistedOrder = await reloadedOrders.GetByIdAsync(order.Id);
+            var pendingEvents = await reloadedOutbox.GetUnprocessedAsync();
+
+            persistedOrder.Should().NotBeNull();
+            pendingEvents.Should().ContainSingle();
+            pendingEvents.Single().EventId.Should().Be(events.Single().EventId);
+            pendingEvents.Single().EventType.Should().Contain(nameof(OrderFilledEvent));
+            pendingEvents.Single().Payload.Should().Contain(order.Id.Value);
+        }
+        finally
+        {
+            DeleteFileIfExists(ordersPath);
+            DeleteFileIfExists(outboxPath);
+        }
+    }
+
+    [Fact]
+    public async Task CommitAsync_WhenOutboxIsEnqueuedAndAnotherResourceFails_DoesNotPersistOutboxEvents()
+    {
+        // Given
+        var outboxPath = Path.Combine(Path.GetTempPath(), $"json_uow_outbox_{Guid.NewGuid():N}.json");
+        var invalidPositionsPath = Directory.CreateDirectory(
+            Path.Combine(Path.GetTempPath(), $"json_uow_invalid_positions_{Guid.NewGuid():N}")).FullName;
+        var transactionCoordinator = new JsonTransactionCoordinator();
+
+        using var eventOutbox = new JsonDomainEventOutbox(outboxPath, transactionCoordinator);
+        using var positionRepository = new JsonPositionRepository(invalidPositionsPath, transactionCoordinator);
+        var unitOfWork = new JsonTransactionalUnitOfWork(transactionCoordinator);
+        var order = CreateFilledOrder("json-uow-outbox-rollback-1");
+        var position = Position.Open(
+            order.Pair,
+            order.Id,
+            order.AveragePrice,
+            order.FilledQuantity,
+            order.Fees,
+            "OutboxRollback");
+
+        try
+        {
+            // When
+            await unitOfWork.BeginTransactionAsync();
+            await eventOutbox.EnqueueAsync(order.DomainEvents);
+            await positionRepository.SaveAsync(position);
+            var commitResult = await unitOfWork.CommitAsync();
+
+            // Then
+            commitResult.IsFailure.Should().BeTrue();
+
+            using var reloadedOutbox = new JsonDomainEventOutbox(outboxPath);
+            var pendingEvents = await reloadedOutbox.GetUnprocessedAsync();
+            pendingEvents.Should().BeEmpty();
+        }
+        finally
+        {
+            DeleteFileIfExists(outboxPath);
+            if (Directory.Exists(invalidPositionsPath))
+            {
+                Directory.Delete(invalidPositionsPath, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task MarkProcessedAsync_WhenCalledTwice_KeepsEventProcessedOnlyOnce()
+    {
+        // Given
+        var outboxPath = Path.Combine(Path.GetTempPath(), $"json_uow_outbox_{Guid.NewGuid():N}.json");
+        using var eventOutbox = new JsonDomainEventOutbox(outboxPath);
+        var order = CreateFilledOrder("json-uow-outbox-processed-once-1");
+        var domainEvent = order.DomainEvents.Single();
+
+        try
+        {
+            // When
+            await eventOutbox.EnqueueAsync(order.DomainEvents);
+            await eventOutbox.MarkProcessedAsync(domainEvent.EventId);
+            var firstProcessedAt = (await eventOutbox.GetAllAsync()).Single().ProcessedAt;
+
+            await Task.Delay(10);
+            await eventOutbox.MarkProcessedAsync(domainEvent.EventId);
+            var secondProcessedAt = (await eventOutbox.GetAllAsync()).Single().ProcessedAt;
+
+            // Then
+            firstProcessedAt.Should().NotBeNull();
+            secondProcessedAt.Should().Be(firstProcessedAt);
+            (await eventOutbox.GetUnprocessedAsync()).Should().BeEmpty();
+        }
+        finally
+        {
+            DeleteFileIfExists(outboxPath);
+        }
+    }
+
+    private static OrderLifecycle CreateFilledOrder(string orderId)
+    {
+        var pair = TradingPair.Create("ADAUSDT", "USDT");
+        var order = OrderLifecycle.Submit(
+            OrderId.From(orderId),
+            pair,
+            OrderSide.Buy,
+            OrderType.Market,
+            Quantity.Create(10m),
+            Price.Create(1m),
+            signalRule: "Outbox");
+
+        order.ClearDomainEvents();
+        order.MarkFilled(
+            Quantity.Create(10m),
+            Price.Create(1m),
+            Money.Create(10m, "USDT"),
+            Money.Create(0.1m, "USDT"));
+
+        order.DomainEvents.Should().ContainSingle();
+        return order;
+    }
+
+    private static void DeleteFileIfExists(string path)
+    {
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+    }
 }

@@ -41,25 +41,42 @@ public sealed class DomainEventOutboxProcessor : IDomainEventOutboxProcessor
             .ConfigureAwait(false);
 
         var processedCount = 0;
+        var failedCount = 0;
         foreach (var message in pendingMessages)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var domainEvent = Deserialize(message);
-            await _eventDispatcher.DispatchAsync(domainEvent, cancellationToken).ConfigureAwait(false);
-            await _eventOutbox.MarkProcessedAsync(message.EventId, cancellationToken).ConfigureAwait(false);
-            processedCount++;
+            try
+            {
+                var domainEvent = Deserialize(message);
+                await _eventDispatcher.DispatchAsync(domainEvent, cancellationToken).ConfigureAwait(false);
+                await _eventOutbox.MarkProcessedAsync(message.EventId, cancellationToken).ConfigureAwait(false);
+                processedCount++;
 
-            _logger.LogDebug(
-                "Processed outbox event {EventType} with ID {EventId}",
-                message.EventType,
-                message.EventId);
+                _logger.LogDebug(
+                    "Processed outbox event {EventType} with ID {EventId}",
+                    message.EventType,
+                    message.EventId);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failedCount++;
+                _logger.LogError(
+                    ex,
+                    "Failed to process outbox event {EventType} with ID {EventId}; leaving it pending for retry",
+                    message.EventType,
+                    message.EventId);
+            }
         }
 
         return new DomainEventOutboxProcessingResult(
             pendingMessages.Count,
             processedCount,
-            FailedCount: 0);
+            failedCount);
     }
 
     private IDomainEvent Deserialize(DomainEventOutboxMessage message)

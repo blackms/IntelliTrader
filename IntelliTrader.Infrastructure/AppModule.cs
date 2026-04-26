@@ -172,6 +172,10 @@ public class AppModule : Module
             .As<IActiveOrderRefreshService>()
             .As<ISubmittedOrderRefreshService>()
             .SingleInstance();
+
+        builder.RegisterType<DomainEventOutboxReplayService>()
+            .As<IDomainEventOutboxReplayService>()
+            .SingleInstance();
     }
 
     private static void RegisterLegacyAdapters(ContainerBuilder builder)

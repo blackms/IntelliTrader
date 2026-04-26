@@ -31,6 +31,7 @@ public sealed class OrderLifecycleCommandDispatchIntegrationTests : IClassFixtur
         var builder = new ContainerBuilder();
         builder.RegisterModule(new IntelliTrader.Infrastructure.AppModule());
         builder.RegisterInstance(transactionCoordinator).SingleInstance();
+        fixture.RegisterIsolatedEventPersistence(builder, transactionCoordinator, "order_lifecycle");
 
         builder.Register(c => new JsonPositionRepository(positionsPath, transactionCoordinator))
             .As<IPositionRepository>()

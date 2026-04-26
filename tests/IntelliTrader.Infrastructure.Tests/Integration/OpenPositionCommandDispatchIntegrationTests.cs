@@ -24,10 +24,12 @@ public sealed class OpenPositionCommandDispatchIntegrationTests : IClassFixture<
 {
     private readonly Mock<IExchangePort> _exchangePortMock = new();
     private readonly Mock<IAuditService> _auditServiceMock = new();
+    private readonly InfrastructureTestFixture _fixture;
     private readonly IContainer _container;
 
     public OpenPositionCommandDispatchIntegrationTests(InfrastructureTestFixture fixture)
     {
+        _fixture = fixture;
         var positionsPath = fixture.CreateTempFilePath("open_position_positions");
         var portfoliosPath = fixture.CreateTempFilePath("open_position_portfolios");
         var ordersPath = fixture.CreateTempFilePath("open_position_orders");
@@ -36,6 +38,7 @@ public sealed class OpenPositionCommandDispatchIntegrationTests : IClassFixture<
         var builder = new ContainerBuilder();
         builder.RegisterModule(new IntelliTrader.Infrastructure.AppModule());
         builder.RegisterInstance(transactionCoordinator).SingleInstance();
+        fixture.RegisterIsolatedEventPersistence(builder, transactionCoordinator, "open_position");
 
         // Test-specific concrete adapters.
         builder.Register(c => new JsonPositionRepository(positionsPath, transactionCoordinator))
@@ -291,6 +294,7 @@ public sealed class OpenPositionCommandDispatchIntegrationTests : IClassFixture<
         var builder = new ContainerBuilder();
         builder.RegisterModule(new IntelliTrader.Infrastructure.AppModule());
         builder.RegisterInstance(transactionCoordinator).SingleInstance();
+        _fixture.RegisterIsolatedEventPersistence(builder, transactionCoordinator, "open_position_failure");
         builder.RegisterInstance(invalidPositionRepository)
             .As<IPositionRepository>()
             .AsSelf()

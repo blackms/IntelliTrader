@@ -2,6 +2,9 @@ using IntelliTrader.Application.Ports.Driven;
 using IntelliTrader.Application.Trading.Trailing;
 using IntelliTrader.Core;
 using IntelliTrader.Infrastructure.Adapters.Persistence.Json;
+using IntelliTrader.Infrastructure.Adapters.Persistence.ReadModels;
+using IntelliTrader.Infrastructure.Transactions;
+using Autofac;
 using Microsoft.Extensions.Logging;
 using Moq;
 
@@ -57,6 +60,32 @@ public class InfrastructureTestFixture : IDisposable
     {
         filePath ??= CreateTempFilePath("positions");
         return new JsonPositionRepository(filePath);
+    }
+
+    public void RegisterIsolatedEventPersistence(
+        ContainerBuilder builder,
+        JsonTransactionCoordinator transactionCoordinator,
+        string prefix)
+    {
+        var outboxPath = CreateTempFilePath($"{prefix}_outbox");
+        var inboxPath = CreateTempFilePath($"{prefix}_handler_inbox");
+        var readModelPath = CreateTempFilePath($"{prefix}_order_read_model");
+
+        builder.Register(_ => new JsonDomainEventOutbox(outboxPath, transactionCoordinator))
+            .As<IDomainEventOutbox>()
+            .AsSelf()
+            .SingleInstance();
+
+        builder.Register(_ => new JsonDomainEventHandlerInbox(inboxPath))
+            .As<IDomainEventHandlerInbox>()
+            .AsSelf()
+            .SingleInstance();
+
+        builder.Register(_ => new JsonOrderReadModel(readModelPath))
+            .As<IOrderReadModel>()
+            .As<IOrderReadModelProjectionWriter>()
+            .AsSelf()
+            .SingleInstance();
     }
 
     /// <summary>

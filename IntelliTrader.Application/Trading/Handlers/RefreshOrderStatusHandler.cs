@@ -19,6 +19,7 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
     private readonly IOrderRepository _orderRepository;
     private readonly IExchangePort _exchangePort;
     private readonly IDomainEventDispatcher _eventDispatcher;
+    private readonly IDomainEventOutbox _eventOutbox;
     private readonly ITransactionalUnitOfWork _unitOfWork;
 
     public RefreshOrderStatusHandler(
@@ -27,6 +28,7 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
         IOrderRepository orderRepository,
         IExchangePort exchangePort,
         IDomainEventDispatcher eventDispatcher,
+        IDomainEventOutbox eventOutbox,
         ITransactionalUnitOfWork unitOfWork)
     {
         _portfolioRepository = portfolioRepository ?? throw new ArgumentNullException(nameof(portfolioRepository));
@@ -34,6 +36,7 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
         _orderRepository = orderRepository ?? throw new ArgumentNullException(nameof(orderRepository));
         _exchangePort = exchangePort ?? throw new ArgumentNullException(nameof(exchangePort));
         _eventDispatcher = eventDispatcher ?? throw new ArgumentNullException(nameof(eventDispatcher));
+        _eventOutbox = eventOutbox ?? throw new ArgumentNullException(nameof(eventOutbox));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     }
 
@@ -313,10 +316,13 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
         OrderLifecycleStatus previousStatus,
         CancellationToken cancellationToken)
     {
+        var events = DomainEventOutboxWorkflow.Collect(order);
+
         try
         {
             await BeginTransactionIfSupportedAsync(cancellationToken);
             await _orderRepository.SaveAsync(order, cancellationToken);
+            await DomainEventOutboxWorkflow.EnqueueAsync(_eventOutbox, events, cancellationToken);
 
             var commitResult = await _unitOfWork.CommitAsync(cancellationToken);
             if (commitResult.IsFailure)
@@ -331,7 +337,12 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
                 Error.ExchangeError($"Failed to persist refreshed order: {ex.Message}"));
         }
 
-        await DispatchDomainEventsAsync(order, cancellationToken);
+        DomainEventOutboxWorkflow.Clear(order);
+        await DomainEventOutboxWorkflow.DispatchCommittedAsync(
+            _eventDispatcher,
+            _eventOutbox,
+            events,
+            cancellationToken);
 
         return Result<RefreshOrderStatusResult>.Success(CreateResult(
             order,
@@ -347,12 +358,15 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
         Portfolio portfolio,
         CancellationToken cancellationToken)
     {
+        var events = DomainEventOutboxWorkflow.Collect(order, position, portfolio);
+
         try
         {
             await BeginTransactionIfSupportedAsync(cancellationToken);
             await _orderRepository.SaveAsync(order, cancellationToken);
             await _positionRepository.SaveAsync(position, cancellationToken);
             await _portfolioRepository.SaveAsync(portfolio, cancellationToken);
+            await DomainEventOutboxWorkflow.EnqueueAsync(_eventOutbox, events, cancellationToken);
 
             var commitResult = await _unitOfWork.CommitAsync(cancellationToken);
             if (commitResult.IsFailure)
@@ -367,7 +381,12 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
                 Error.ExchangeError($"Failed to persist refreshed order effects: {ex.Message}"));
         }
 
-        await DispatchDomainEventsAsync(order, position, portfolio, cancellationToken);
+        DomainEventOutboxWorkflow.Clear(order, position, portfolio);
+        await DomainEventOutboxWorkflow.DispatchCommittedAsync(
+            _eventDispatcher,
+            _eventOutbox,
+            events,
+            cancellationToken);
 
         return Result<RefreshOrderStatusResult>.Success(CreateResult(
             order,
@@ -379,39 +398,6 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
     private async Task BeginTransactionIfSupportedAsync(CancellationToken cancellationToken)
     {
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
-    }
-
-    private async Task DispatchDomainEventsAsync(
-        OrderLifecycle order,
-        CancellationToken cancellationToken)
-    {
-        var events = order.DomainEvents.ToList();
-        order.ClearDomainEvents();
-
-        if (events.Count == 0)
-        {
-            return;
-        }
-
-        await _eventDispatcher.DispatchManyAsync(events, cancellationToken);
-    }
-
-    private async Task DispatchDomainEventsAsync(
-        OrderLifecycle order,
-        Position position,
-        Portfolio portfolio,
-        CancellationToken cancellationToken)
-    {
-        var events = new List<IDomainEvent>();
-        events.AddRange(order.DomainEvents);
-        events.AddRange(position.DomainEvents);
-        events.AddRange(portfolio.DomainEvents);
-
-        order.ClearDomainEvents();
-        position.ClearDomainEvents();
-        portfolio.ClearDomainEvents();
-
-        await _eventDispatcher.DispatchManyAsync(events, cancellationToken);
     }
 
     private static RefreshOrderStatusResult CreateResult(

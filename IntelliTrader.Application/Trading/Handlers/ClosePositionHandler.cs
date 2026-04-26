@@ -1,6 +1,7 @@
 using IntelliTrader.Application.Common;
 using IntelliTrader.Application.Ports.Driven;
 using IntelliTrader.Application.Trading.Commands;
+using IntelliTrader.Domain.SharedKernel;
 using IntelliTrader.Domain.Trading.Aggregates;
 using IntelliTrader.Domain.Trading.Orders;
 using IntelliTrader.Domain.Trading.Services;
@@ -18,6 +19,7 @@ public sealed class ClosePositionHandler : ICommandHandler<ClosePositionCommand,
     private readonly IOrderRepository _orderRepository;
     private readonly IExchangePort _exchangePort;
     private readonly IDomainEventDispatcher _eventDispatcher;
+    private readonly IDomainEventOutbox _eventOutbox;
     private readonly INotificationPort? _notificationPort;
     private readonly TradingConstraintValidator _constraintValidator;
     private readonly ITransactionalUnitOfWork _unitOfWork;
@@ -28,6 +30,7 @@ public sealed class ClosePositionHandler : ICommandHandler<ClosePositionCommand,
         IOrderRepository orderRepository,
         IExchangePort exchangePort,
         IDomainEventDispatcher eventDispatcher,
+        IDomainEventOutbox eventOutbox,
         TradingConstraintValidator constraintValidator,
         ITransactionalUnitOfWork unitOfWork,
         INotificationPort? notificationPort = null)
@@ -37,6 +40,7 @@ public sealed class ClosePositionHandler : ICommandHandler<ClosePositionCommand,
         _orderRepository = orderRepository ?? throw new ArgumentNullException(nameof(orderRepository));
         _exchangePort = exchangePort ?? throw new ArgumentNullException(nameof(exchangePort));
         _eventDispatcher = eventDispatcher ?? throw new ArgumentNullException(nameof(eventDispatcher));
+        _eventOutbox = eventOutbox ?? throw new ArgumentNullException(nameof(eventOutbox));
         _constraintValidator = constraintValidator ?? throw new ArgumentNullException(nameof(constraintValidator));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
         _notificationPort = notificationPort;
@@ -164,6 +168,7 @@ public sealed class ClosePositionHandler : ICommandHandler<ClosePositionCommand,
             position.Pair,
             proceeds);
         orderLifecycle.MarkCurrentFillApplied();
+        var domainEvents = DomainEventOutboxWorkflow.Collect(orderLifecycle, position, portfolio);
 
         // 11. Save changes
         try
@@ -172,6 +177,7 @@ public sealed class ClosePositionHandler : ICommandHandler<ClosePositionCommand,
             await _orderRepository.SaveAsync(orderLifecycle, cancellationToken);
             await _positionRepository.SaveAsync(position, cancellationToken);
             await _portfolioRepository.SaveAsync(portfolio, cancellationToken);
+            await DomainEventOutboxWorkflow.EnqueueAsync(_eventOutbox, domainEvents, cancellationToken);
 
             var commitResult = await _unitOfWork.CommitAsync(cancellationToken);
             if (commitResult.IsFailure)
@@ -187,7 +193,12 @@ public sealed class ClosePositionHandler : ICommandHandler<ClosePositionCommand,
         }
 
         // 12. Dispatch domain events
-        await DispatchDomainEventsAsync(orderLifecycle, position, portfolio, cancellationToken);
+        DomainEventOutboxWorkflow.Clear(orderLifecycle, position, portfolio);
+        await DomainEventOutboxWorkflow.DispatchCommittedAsync(
+            _eventDispatcher,
+            _eventOutbox,
+            domainEvents,
+            cancellationToken);
 
         // 13. Calculate realized PnL
         var totalCost = position.TotalCost + position.TotalFees + sellFees;
@@ -235,10 +246,13 @@ public sealed class ClosePositionHandler : ICommandHandler<ClosePositionCommand,
         OrderStatus exchangeStatus,
         CancellationToken cancellationToken)
     {
+        var domainEvents = DomainEventOutboxWorkflow.Collect(orderLifecycle);
+
         try
         {
             await BeginTransactionIfSupportedAsync(cancellationToken);
             await _orderRepository.SaveAsync(orderLifecycle, cancellationToken);
+            await DomainEventOutboxWorkflow.EnqueueAsync(_eventOutbox, domainEvents, cancellationToken);
 
             var commitResult = await _unitOfWork.CommitAsync(cancellationToken);
             if (commitResult.IsFailure)
@@ -253,7 +267,12 @@ public sealed class ClosePositionHandler : ICommandHandler<ClosePositionCommand,
                 Error.ExchangeError($"Failed to save order lifecycle: {ex.Message}"));
         }
 
-        await DispatchOrderEventsAsync(orderLifecycle, cancellationToken);
+        DomainEventOutboxWorkflow.Clear(orderLifecycle);
+        await DomainEventOutboxWorkflow.DispatchCommittedAsync(
+            _eventDispatcher,
+            _eventOutbox,
+            domainEvents,
+            cancellationToken);
 
         return Result<ClosePositionResult>.Failure(
             Error.ExchangeError($"Sell order was not filled. Status: {exchangeStatus}"));
@@ -286,6 +305,7 @@ public sealed class ClosePositionHandler : ICommandHandler<ClosePositionCommand,
         }
 
         orderLifecycle.MarkCurrentFillApplied();
+        var domainEvents = DomainEventOutboxWorkflow.Collect(orderLifecycle, position, portfolio);
 
         try
         {
@@ -293,6 +313,7 @@ public sealed class ClosePositionHandler : ICommandHandler<ClosePositionCommand,
             await _orderRepository.SaveAsync(orderLifecycle, cancellationToken);
             await _positionRepository.SaveAsync(position, cancellationToken);
             await _portfolioRepository.SaveAsync(portfolio, cancellationToken);
+            await DomainEventOutboxWorkflow.EnqueueAsync(_eventOutbox, domainEvents, cancellationToken);
 
             var commitResult = await _unitOfWork.CommitAsync(cancellationToken);
             if (commitResult.IsFailure)
@@ -307,7 +328,12 @@ public sealed class ClosePositionHandler : ICommandHandler<ClosePositionCommand,
                 Error.ExchangeError($"Failed to save partial close effects: {ex.Message}"));
         }
 
-        await DispatchDomainEventsAsync(orderLifecycle, position, portfolio, cancellationToken);
+        DomainEventOutboxWorkflow.Clear(orderLifecycle, position, portfolio);
+        await DomainEventOutboxWorkflow.DispatchCommittedAsync(
+            _eventDispatcher,
+            _eventOutbox,
+            domainEvents,
+            cancellationToken);
 
         return Result<ClosePositionResult>.Failure(
             Error.ExchangeError($"Sell order was not filled. Status: {exchangeStatus}"));
@@ -316,34 +342,6 @@ public sealed class ClosePositionHandler : ICommandHandler<ClosePositionCommand,
     private async Task BeginTransactionIfSupportedAsync(CancellationToken cancellationToken)
     {
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
-    }
-
-    private async Task DispatchOrderEventsAsync(
-        OrderLifecycle orderLifecycle,
-        CancellationToken cancellationToken)
-    {
-        var orderEvents = orderLifecycle.DomainEvents.ToList();
-        orderLifecycle.ClearDomainEvents();
-
-        await _eventDispatcher.DispatchManyAsync(orderEvents, cancellationToken);
-    }
-
-    private async Task DispatchDomainEventsAsync(
-        OrderLifecycle orderLifecycle,
-        Position position,
-        Portfolio portfolio,
-        CancellationToken cancellationToken)
-    {
-        var orderEvents = orderLifecycle.DomainEvents.ToList();
-        var positionEvents = position.DomainEvents.ToList();
-        var portfolioEvents = portfolio.DomainEvents.ToList();
-
-        orderLifecycle.ClearDomainEvents();
-        position.ClearDomainEvents();
-        portfolio.ClearDomainEvents();
-
-        var allEvents = orderEvents.Concat(positionEvents).Concat(portfolioEvents);
-        await _eventDispatcher.DispatchManyAsync(allEvents, cancellationToken);
     }
 
     private async Task SendNotificationAsync(

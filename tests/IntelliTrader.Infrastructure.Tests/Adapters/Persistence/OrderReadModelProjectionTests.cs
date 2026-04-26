@@ -8,6 +8,9 @@ using IntelliTrader.Infrastructure.Events;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
+using DomainOrderSide = IntelliTrader.Domain.Events.OrderSide;
+using TradeHistoryEntry = IntelliTrader.Application.Trading.Queries.TradeHistoryEntry;
+using TradeType = IntelliTrader.Application.Trading.Queries.TradeType;
 
 namespace IntelliTrader.Infrastructure.Tests.Adapters.Persistence;
 
@@ -23,7 +26,7 @@ public sealed class OrderReadModelProjectionTests
         var order = OrderLifecycle.Submit(
             OrderId.From("projected-order-1"),
             TradingPair.Create("BTCUSDT", "USDT"),
-            OrderSide.Buy,
+            DomainOrderSide.Buy,
             OrderType.Limit,
             Quantity.Create(0.05m),
             Price.Create(50000m),
@@ -57,7 +60,7 @@ public sealed class OrderReadModelProjectionTests
             projected.Fees.Amount.Should().Be(1.25m);
             projected.IsTerminal.Should().BeTrue();
             projected.CanAffectPosition.Should().BeTrue();
-            (await readModel.GetActiveAsync(order.Pair, OrderSide.Buy, 10)).Should().BeEmpty();
+            (await readModel.GetActiveAsync(order.Pair, DomainOrderSide.Buy, 10)).Should().BeEmpty();
 
             using var reloadedReadModel = new JsonOrderReadModel(filePath);
             var reloaded = await reloadedReadModel.GetByIdAsync(order.Id);
@@ -82,7 +85,7 @@ public sealed class OrderReadModelProjectionTests
         var order = OrderLifecycle.Submit(
             OrderId.From("projected-order-2"),
             TradingPair.Create("ETHUSDT", "USDT"),
-            OrderSide.Buy,
+            DomainOrderSide.Buy,
             OrderType.Market,
             Quantity.Create(1.5m),
             Price.Create(3000m),

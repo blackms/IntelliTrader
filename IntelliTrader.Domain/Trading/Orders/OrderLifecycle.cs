@@ -104,7 +104,10 @@ public sealed class OrderLifecycle : AggregateRoot<OrderId>
             submittedPrice.Value,
             type,
             isManual: false,
-            signalRule: signalRule));
+            signalRule: signalRule,
+            quoteCurrency: pair.QuoteCurrency,
+            intent: intent.ToString(),
+            relatedPositionId: relatedPositionId?.Value.ToString()));
 
         return order;
     }
@@ -130,6 +133,7 @@ public sealed class OrderLifecycle : AggregateRoot<OrderId>
     public void Cancel()
     {
         TransitionTo(OrderLifecycleStatus.Canceled);
+        AddDomainEvent(new OrderCanceledEvent(Id.Value, Pair.Symbol, Side));
     }
 
     public void RecordCanceledFill(
@@ -173,6 +177,7 @@ public sealed class OrderLifecycle : AggregateRoot<OrderId>
     public void Reject()
     {
         TransitionTo(OrderLifecycleStatus.Rejected);
+        AddDomainEvent(new OrderRejectedEvent(Id.Value, Pair.Symbol, Side));
     }
 
     public void MarkCurrentFillApplied()
@@ -201,13 +206,19 @@ public sealed class OrderLifecycle : AggregateRoot<OrderId>
                 $"Only open position orders can be linked after submission. Order {Id.Value} has intent {Intent}.");
         }
 
-        if (RelatedPositionId is not null && RelatedPositionId != positionId)
+        if (RelatedPositionId is not null && !RelatedPositionId.Equals(positionId))
         {
             throw new InvalidOperationException(
                 $"Order {Id.Value} is already linked to position {RelatedPositionId.Value}.");
         }
 
+        if (RelatedPositionId is not null)
+        {
+            return;
+        }
+
         RelatedPositionId = positionId;
+        AddDomainEvent(new OrderLinkedToPositionEvent(Id.Value, positionId.Value.ToString()));
     }
 
     private void ApplyFill(

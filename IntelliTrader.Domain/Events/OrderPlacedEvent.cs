@@ -27,6 +27,11 @@ public sealed record OrderPlacedEvent : IDomainEvent
     public string Pair { get; }
 
     /// <summary>
+    /// The quote currency used by the trading pair.
+    /// </summary>
+    public string? QuoteCurrency { get; }
+
+    /// <summary>
     /// The order side (Buy or Sell).
     /// </summary>
     public OrderSide Side { get; }
@@ -56,6 +61,16 @@ public sealed record OrderPlacedEvent : IDomainEvent
     /// </summary>
     public string? SignalRule { get; }
 
+    /// <summary>
+    /// The application intent that produced the order lifecycle.
+    /// </summary>
+    public string Intent { get; }
+
+    /// <summary>
+    /// The related position identifier, when the order targets an existing position.
+    /// </summary>
+    public string? RelatedPositionId { get; }
+
     public OrderPlacedEvent(
         string orderId,
         string pair,
@@ -65,6 +80,9 @@ public sealed record OrderPlacedEvent : IDomainEvent
         OrderType orderType = OrderType.Limit,
         bool isManual = false,
         string? signalRule = null,
+        string? quoteCurrency = null,
+        string? intent = null,
+        string? relatedPositionId = null,
         string? correlationId = null,
         Guid eventId = default,
         DateTimeOffset occurredAt = default)
@@ -74,12 +92,15 @@ public sealed record OrderPlacedEvent : IDomainEvent
         CorrelationId = correlationId;
         OrderId = orderId;
         Pair = pair;
+        QuoteCurrency = quoteCurrency;
         Side = side;
         Amount = amount;
         Price = price;
         OrderType = orderType;
         IsManual = isManual;
         SignalRule = signalRule;
+        Intent = string.IsNullOrWhiteSpace(intent) ? "Unknown" : intent;
+        RelatedPositionId = relatedPositionId;
     }
 }
 

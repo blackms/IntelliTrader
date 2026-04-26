@@ -17,16 +17,7 @@ public sealed class DomainEventOutboxProcessorTests
     {
         var outboxPath = CreateOutboxPath();
         using var outbox = new JsonDomainEventOutbox(outboxPath);
-        var domainEvent = new OrderFilledEvent(
-            "outbox-fill-1",
-            "BTCUSDT",
-            DomainOrderSide.Buy,
-            filledAmount: 0.25m,
-            averagePrice: 100m,
-            cost: 25m,
-            fees: 0.01m,
-            isPartialFill: true,
-            correlationId: "corr-1");
+        var domainEvent = CreateOrderFilledEvent("outbox-fill-1");
         var dispatchedEvents = new List<IDomainEvent>();
         var dispatcherMock = new Mock<IDomainEventDispatcher>();
         dispatcherMock
@@ -60,6 +51,51 @@ public sealed class DomainEventOutboxProcessorTests
         {
             DeleteFileIfExists(outboxPath);
         }
+    }
+
+    [Fact]
+    public async Task ProcessPendingAsync_WhenDispatchFails_LeavesEventPendingAndReportsFailure()
+    {
+        var outboxPath = CreateOutboxPath();
+        using var outbox = new JsonDomainEventOutbox(outboxPath);
+        var domainEvent = CreateOrderFilledEvent("outbox-fill-fails-1");
+        var dispatcherMock = new Mock<IDomainEventDispatcher>();
+        dispatcherMock
+            .Setup(x => x.DispatchAsync(It.IsAny<IDomainEvent>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("handler unavailable"));
+        var processor = new DomainEventOutboxProcessor(outbox, dispatcherMock.Object);
+
+        try
+        {
+            await outbox.EnqueueAsync([domainEvent]);
+
+            var result = await processor.ProcessPendingAsync(batchSize: 10);
+
+            result.AttemptedCount.Should().Be(1);
+            result.ProcessedCount.Should().Be(0);
+            result.FailedCount.Should().Be(1);
+            var pendingMessages = await outbox.GetUnprocessedAsync();
+            pendingMessages.Should().ContainSingle()
+                .Which.EventId.Should().Be(domainEvent.EventId);
+        }
+        finally
+        {
+            DeleteFileIfExists(outboxPath);
+        }
+    }
+
+    private static OrderFilledEvent CreateOrderFilledEvent(string orderId)
+    {
+        return new OrderFilledEvent(
+            orderId,
+            "BTCUSDT",
+            DomainOrderSide.Buy,
+            filledAmount: 0.25m,
+            averagePrice: 100m,
+            cost: 25m,
+            fees: 0.01m,
+            isPartialFill: true,
+            correlationId: "corr-1");
     }
 
     private static string CreateOutboxPath()

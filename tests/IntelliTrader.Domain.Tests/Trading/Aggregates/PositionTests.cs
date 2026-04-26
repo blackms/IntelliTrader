@@ -430,6 +430,36 @@ public class PositionTests
     }
 
     [Fact]
+    public void ApplyCloseFillDelta_WithMultipleEntries_RaisesPartialCloseEventWithExactRemainingState()
+    {
+        var position = Position.Open(
+            CreatePair(),
+            CreateOrderId("buy1"),
+            CreatePrice(50000m),
+            CreateQuantity(0.1m),
+            CreateFees(10m));
+        position.AddDCAEntry(
+            CreateOrderId("buy2"),
+            CreatePrice(25000m),
+            CreateQuantity(0.1m),
+            CreateFees(1m));
+        position.ClearDomainEvents();
+
+        position.ApplyCloseFillDelta(
+            CreateOrderId("sell1"),
+            CreatePrice(55000m),
+            CreateQuantity(0.1m),
+            CreateFees(2m));
+
+        var evt = position.DomainEvents.Should().ContainSingle()
+            .Which.Should().BeOfType<PositionPartiallyClosed>().Subject;
+        evt.RemainingCost.Should().Be(position.TotalCost);
+        evt.RemainingFees.Should().Be(position.TotalFees);
+        evt.NewAveragePrice.Should().Be(position.AveragePrice);
+        evt.RemainingEntryCount.Should().Be(position.Entries.Count);
+    }
+
+    [Fact]
     public void Close_OnAlreadyClosedPosition_ThrowsInvalidOperationException()
     {
         // Arrange

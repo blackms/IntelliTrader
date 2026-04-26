@@ -126,6 +126,12 @@ public class AppModule : Module
             .AsSelf()
             .SingleInstance();
 
+        builder.Register(_ =>
+            new JsonDomainEventOutbox(CreateDataFilePath("outbox.json"), _.Resolve<JsonTransactionCoordinator>()))
+            .As<IDomainEventOutbox>()
+            .AsSelf()
+            .SingleInstance();
+
         builder.Register(c => new JsonTransactionalUnitOfWork(c.Resolve<JsonTransactionCoordinator>()))
             .As<IUnitOfWork>()
             .As<ITransactionalUnitOfWork>()

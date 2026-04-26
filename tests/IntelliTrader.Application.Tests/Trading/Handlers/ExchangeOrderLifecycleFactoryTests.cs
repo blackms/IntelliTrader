@@ -218,8 +218,8 @@ public sealed class ExchangeOrderLifecycleFactoryTests
         lifecycle.Cost.Amount.Should().Be(501m);
         lifecycle.Fees.Amount.Should().Be(0.5m);
         lifecycle.HasUnappliedFill.Should().BeTrue();
-        lifecycle.DomainEvents.Should().ContainSingle()
-            .Which.Should().BeOfType<OrderFilledEvent>();
+        lifecycle.DomainEvents.Should().Contain(e => e is OrderFilledEvent);
+        lifecycle.DomainEvents.Should().Contain(e => e is OrderCanceledEvent);
     }
 
     [Fact]

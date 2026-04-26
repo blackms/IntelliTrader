@@ -316,13 +316,13 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
         OrderLifecycleStatus previousStatus,
         CancellationToken cancellationToken)
     {
-        var events = CollectDomainEvents(order);
+        var events = DomainEventOutboxWorkflow.Collect(order);
 
         try
         {
             await BeginTransactionIfSupportedAsync(cancellationToken);
             await _orderRepository.SaveAsync(order, cancellationToken);
-            await EnqueueDomainEventsAsync(events, cancellationToken);
+            await DomainEventOutboxWorkflow.EnqueueAsync(_eventOutbox, events, cancellationToken);
 
             var commitResult = await _unitOfWork.CommitAsync(cancellationToken);
             if (commitResult.IsFailure)
@@ -337,8 +337,12 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
                 Error.ExchangeError($"Failed to persist refreshed order: {ex.Message}"));
         }
 
-        ClearDomainEvents(order);
-        await DispatchCommittedDomainEventsAsync(events, cancellationToken);
+        DomainEventOutboxWorkflow.Clear(order);
+        await DomainEventOutboxWorkflow.DispatchCommittedAsync(
+            _eventDispatcher,
+            _eventOutbox,
+            events,
+            cancellationToken);
 
         return Result<RefreshOrderStatusResult>.Success(CreateResult(
             order,
@@ -354,7 +358,7 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
         Portfolio portfolio,
         CancellationToken cancellationToken)
     {
-        var events = CollectDomainEvents(order, position, portfolio);
+        var events = DomainEventOutboxWorkflow.Collect(order, position, portfolio);
 
         try
         {
@@ -362,7 +366,7 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
             await _orderRepository.SaveAsync(order, cancellationToken);
             await _positionRepository.SaveAsync(position, cancellationToken);
             await _portfolioRepository.SaveAsync(portfolio, cancellationToken);
-            await EnqueueDomainEventsAsync(events, cancellationToken);
+            await DomainEventOutboxWorkflow.EnqueueAsync(_eventOutbox, events, cancellationToken);
 
             var commitResult = await _unitOfWork.CommitAsync(cancellationToken);
             if (commitResult.IsFailure)
@@ -377,8 +381,12 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
                 Error.ExchangeError($"Failed to persist refreshed order effects: {ex.Message}"));
         }
 
-        ClearDomainEvents(order, position, portfolio);
-        await DispatchCommittedDomainEventsAsync(events, cancellationToken);
+        DomainEventOutboxWorkflow.Clear(order, position, portfolio);
+        await DomainEventOutboxWorkflow.DispatchCommittedAsync(
+            _eventDispatcher,
+            _eventOutbox,
+            events,
+            cancellationToken);
 
         return Result<RefreshOrderStatusResult>.Success(CreateResult(
             order,
@@ -390,68 +398,6 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
     private async Task BeginTransactionIfSupportedAsync(CancellationToken cancellationToken)
     {
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
-    }
-
-    private async Task EnqueueDomainEventsAsync(
-        IReadOnlyCollection<IDomainEvent> events,
-        CancellationToken cancellationToken)
-    {
-        if (events.Count == 0)
-        {
-            return;
-        }
-
-        await _eventOutbox.EnqueueAsync(events, cancellationToken);
-    }
-
-    private async Task DispatchCommittedDomainEventsAsync(
-        IReadOnlyCollection<IDomainEvent> events,
-        CancellationToken cancellationToken)
-    {
-        if (events.Count == 0)
-        {
-            return;
-        }
-
-        await _eventDispatcher.DispatchManyAsync(events, cancellationToken);
-
-        foreach (var domainEvent in events)
-        {
-            await _eventOutbox.MarkProcessedAsync(domainEvent.EventId, cancellationToken);
-        }
-    }
-
-    private static List<IDomainEvent> CollectDomainEvents(OrderLifecycle order)
-    {
-        return order.DomainEvents.ToList();
-    }
-
-    private static List<IDomainEvent> CollectDomainEvents(
-        OrderLifecycle order,
-        Position position,
-        Portfolio portfolio)
-    {
-        var events = new List<IDomainEvent>();
-        events.AddRange(order.DomainEvents);
-        events.AddRange(position.DomainEvents);
-        events.AddRange(portfolio.DomainEvents);
-
-        return events;
-    }
-
-    private static void ClearDomainEvents(OrderLifecycle order)
-    {
-        order.ClearDomainEvents();
-    }
-
-    private static void ClearDomainEvents(
-        OrderLifecycle order,
-        Position position,
-        Portfolio portfolio)
-    {
-        order.ClearDomainEvents();
-        position.ClearDomainEvents();
-        portfolio.ClearDomainEvents();
     }
 
     private static RefreshOrderStatusResult CreateResult(

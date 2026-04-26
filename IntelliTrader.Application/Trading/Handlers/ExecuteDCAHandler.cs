@@ -178,7 +178,7 @@ public sealed class ExecuteDCAHandler : ICommandHandler<ExecuteDCACommand, Execu
             position.Pair,
             orderLifecycle.Cost);
         orderLifecycle.MarkCurrentFillApplied();
-        var domainEvents = CollectDomainEvents(orderLifecycle, position, portfolio);
+        var domainEvents = DomainEventOutboxWorkflow.Collect(orderLifecycle, position, portfolio);
 
         // 12. Save changes
         try
@@ -187,7 +187,7 @@ public sealed class ExecuteDCAHandler : ICommandHandler<ExecuteDCACommand, Execu
             await _orderRepository.SaveAsync(orderLifecycle, cancellationToken);
             await _positionRepository.SaveAsync(position, cancellationToken);
             await _portfolioRepository.SaveAsync(portfolio, cancellationToken);
-            await EnqueueDomainEventsAsync(domainEvents, cancellationToken);
+            await DomainEventOutboxWorkflow.EnqueueAsync(_eventOutbox, domainEvents, cancellationToken);
 
             var commitResult = await _unitOfWork.CommitAsync(cancellationToken);
             if (commitResult.IsFailure)
@@ -203,8 +203,12 @@ public sealed class ExecuteDCAHandler : ICommandHandler<ExecuteDCACommand, Execu
         }
 
         // 13. Dispatch domain events
-        ClearDomainEvents(orderLifecycle, position, portfolio);
-        await DispatchCommittedDomainEventsAsync(domainEvents, cancellationToken);
+        DomainEventOutboxWorkflow.Clear(orderLifecycle, position, portfolio);
+        await DomainEventOutboxWorkflow.DispatchCommittedAsync(
+            _eventDispatcher,
+            _eventOutbox,
+            domainEvents,
+            cancellationToken);
 
         // 14. Send notification
         await SendNotificationAsync(position, orderResult, cancellationToken);
@@ -254,13 +258,13 @@ public sealed class ExecuteDCAHandler : ICommandHandler<ExecuteDCACommand, Execu
         OrderStatus exchangeStatus,
         CancellationToken cancellationToken)
     {
-        var domainEvents = CollectDomainEvents(orderLifecycle);
+        var domainEvents = DomainEventOutboxWorkflow.Collect(orderLifecycle);
 
         try
         {
             await BeginTransactionIfSupportedAsync(cancellationToken);
             await _orderRepository.SaveAsync(orderLifecycle, cancellationToken);
-            await EnqueueDomainEventsAsync(domainEvents, cancellationToken);
+            await DomainEventOutboxWorkflow.EnqueueAsync(_eventOutbox, domainEvents, cancellationToken);
 
             var commitResult = await _unitOfWork.CommitAsync(cancellationToken);
             if (commitResult.IsFailure)
@@ -275,8 +279,12 @@ public sealed class ExecuteDCAHandler : ICommandHandler<ExecuteDCACommand, Execu
                 Error.ExchangeError($"Failed to save order lifecycle: {ex.Message}"));
         }
 
-        ClearDomainEvents(orderLifecycle);
-        await DispatchCommittedDomainEventsAsync(domainEvents, cancellationToken);
+        DomainEventOutboxWorkflow.Clear(orderLifecycle);
+        await DomainEventOutboxWorkflow.DispatchCommittedAsync(
+            _eventDispatcher,
+            _eventOutbox,
+            domainEvents,
+            cancellationToken);
 
         return Result<ExecuteDCAResult>.Failure(
             Error.ExchangeError($"DCA order was not filled. Status: {exchangeStatus}"));
@@ -285,67 +293,6 @@ public sealed class ExecuteDCAHandler : ICommandHandler<ExecuteDCACommand, Execu
     private async Task BeginTransactionIfSupportedAsync(CancellationToken cancellationToken)
     {
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
-    }
-
-    private async Task EnqueueDomainEventsAsync(
-        IReadOnlyCollection<IDomainEvent> events,
-        CancellationToken cancellationToken)
-    {
-        if (events.Count == 0)
-        {
-            return;
-        }
-
-        await _eventOutbox.EnqueueAsync(events, cancellationToken);
-    }
-
-    private async Task DispatchCommittedDomainEventsAsync(
-        IReadOnlyCollection<IDomainEvent> events,
-        CancellationToken cancellationToken)
-    {
-        if (events.Count == 0)
-        {
-            return;
-        }
-
-        await _eventDispatcher.DispatchManyAsync(events, cancellationToken);
-
-        foreach (var domainEvent in events)
-        {
-            await _eventOutbox.MarkProcessedAsync(domainEvent.EventId, cancellationToken);
-        }
-    }
-
-    private static List<IDomainEvent> CollectDomainEvents(OrderLifecycle orderLifecycle)
-    {
-        return orderLifecycle.DomainEvents.ToList();
-    }
-
-    private static List<IDomainEvent> CollectDomainEvents(
-        OrderLifecycle orderLifecycle,
-        Position position,
-        Portfolio portfolio)
-    {
-        var events = new List<IDomainEvent>();
-        events.AddRange(orderLifecycle.DomainEvents);
-        events.AddRange(position.DomainEvents);
-        events.AddRange(portfolio.DomainEvents);
-        return events;
-    }
-
-    private static void ClearDomainEvents(OrderLifecycle orderLifecycle)
-    {
-        orderLifecycle.ClearDomainEvents();
-    }
-
-    private static void ClearDomainEvents(
-        OrderLifecycle orderLifecycle,
-        Position position,
-        Portfolio portfolio)
-    {
-        orderLifecycle.ClearDomainEvents();
-        position.ClearDomainEvents();
-        portfolio.ClearDomainEvents();
     }
 
     private async Task SendNotificationAsync(

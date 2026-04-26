@@ -141,6 +141,13 @@ public class AppModule : Module
             .AsSelf()
             .SingleInstance();
 
+        builder.Register(c =>
+            new DomainEventOutboxProcessorService(
+                NullLogger<DomainEventOutboxProcessorService>.Instance,
+                c.Resolve<IDomainEventOutboxProcessor>()))
+            .AsSelf()
+            .SingleInstance();
+
         builder.Register(c => new JsonTransactionalUnitOfWork(c.Resolve<JsonTransactionCoordinator>()))
             .As<IUnitOfWork>()
             .As<ITransactionalUnitOfWork>()

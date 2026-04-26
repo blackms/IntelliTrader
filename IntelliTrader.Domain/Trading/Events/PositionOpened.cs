@@ -29,9 +29,11 @@ public sealed record PositionOpened : IDomainEvent
         Money cost,
         Money fees,
         string? signalRule,
-        string? correlationId = null)
+        string? correlationId = null,
+        Guid eventId = default,
+        DateTimeOffset occurredAt = default)
     {
-        EventId = Guid.NewGuid();
+        EventId = eventId == Guid.Empty ? Guid.NewGuid() : eventId;
         PositionId = positionId;
         Pair = pair;
         OrderId = orderId;
@@ -40,7 +42,7 @@ public sealed record PositionOpened : IDomainEvent
         Cost = cost;
         Fees = fees;
         SignalRule = signalRule;
-        OccurredAt = DateTimeOffset.UtcNow;
+        OccurredAt = occurredAt == default ? DateTimeOffset.UtcNow : occurredAt;
         CorrelationId = correlationId;
     }
 }

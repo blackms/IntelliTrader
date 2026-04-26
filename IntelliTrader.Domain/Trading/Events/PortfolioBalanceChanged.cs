@@ -25,16 +25,18 @@ public sealed record PortfolioBalanceChanged : IDomainEvent
         Money previousAvailable,
         Money newAvailable,
         string reason,
-        string? correlationId = null)
+        string? correlationId = null,
+        Guid eventId = default,
+        DateTimeOffset occurredAt = default)
     {
-        EventId = Guid.NewGuid();
+        EventId = eventId == Guid.Empty ? Guid.NewGuid() : eventId;
         PortfolioId = portfolioId;
         PreviousTotal = previousTotal;
         NewTotal = newTotal;
         PreviousAvailable = previousAvailable;
         NewAvailable = newAvailable;
         Reason = reason;
-        OccurredAt = DateTimeOffset.UtcNow;
+        OccurredAt = occurredAt == default ? DateTimeOffset.UtcNow : occurredAt;
         CorrelationId = correlationId;
     }
 }

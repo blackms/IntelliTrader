@@ -41,10 +41,12 @@ public sealed record TradingResumedEvent : IDomainEvent
         bool wasForced = false,
         TimeSpan? suspensionDuration = null,
         SuspensionReason? previousSuspensionReason = null,
-        string? correlationId = null)
+        string? correlationId = null,
+        Guid eventId = default,
+        DateTimeOffset occurredAt = default)
     {
-        EventId = Guid.NewGuid();
-        OccurredAt = DateTimeOffset.UtcNow;
+        EventId = eventId == Guid.Empty ? Guid.NewGuid() : eventId;
+        OccurredAt = occurredAt == default ? DateTimeOffset.UtcNow : occurredAt;
         CorrelationId = correlationId;
         ResumedBy = resumedBy;
         WasForced = wasForced;

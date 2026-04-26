@@ -35,9 +35,11 @@ public sealed record DCAExecuted : IDomainEvent
         Price newAveragePrice,
         Quantity newTotalQuantity,
         Money newTotalCost,
-        string? correlationId = null)
+        string? correlationId = null,
+        Guid eventId = default,
+        DateTimeOffset occurredAt = default)
     {
-        EventId = Guid.NewGuid();
+        EventId = eventId == Guid.Empty ? Guid.NewGuid() : eventId;
         PositionId = positionId;
         Pair = pair;
         OrderId = orderId;
@@ -49,7 +51,7 @@ public sealed record DCAExecuted : IDomainEvent
         NewAveragePrice = newAveragePrice;
         NewTotalQuantity = newTotalQuantity;
         NewTotalCost = newTotalCost;
-        OccurredAt = DateTimeOffset.UtcNow;
+        OccurredAt = occurredAt == default ? DateTimeOffset.UtcNow : occurredAt;
         CorrelationId = correlationId;
     }
 }

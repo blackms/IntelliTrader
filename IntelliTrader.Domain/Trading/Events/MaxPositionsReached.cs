@@ -19,13 +19,15 @@ public sealed record MaxPositionsReached : IDomainEvent
         PortfolioId portfolioId,
         int maxPositions,
         int currentPositions,
-        string? correlationId = null)
+        string? correlationId = null,
+        Guid eventId = default,
+        DateTimeOffset occurredAt = default)
     {
-        EventId = Guid.NewGuid();
+        EventId = eventId == Guid.Empty ? Guid.NewGuid() : eventId;
         PortfolioId = portfolioId;
         MaxPositions = maxPositions;
         CurrentPositions = currentPositions;
-        OccurredAt = DateTimeOffset.UtcNow;
+        OccurredAt = occurredAt == default ? DateTimeOffset.UtcNow : occurredAt;
         CorrelationId = correlationId;
     }
 }

@@ -9,6 +9,7 @@ using IntelliTrader.Domain.Trading.Services;
 using IntelliTrader.Infrastructure.Adapters.Exchange;
 using IntelliTrader.Infrastructure.Adapters.Legacy;
 using IntelliTrader.Infrastructure.Adapters.Persistence.Json;
+using IntelliTrader.Infrastructure.Adapters.Persistence.ReadModels;
 using IntelliTrader.Infrastructure.BackgroundServices;
 using IntelliTrader.Infrastructure.Dispatching;
 using IntelliTrader.Infrastructure.Events;
@@ -125,6 +126,10 @@ public class AppModule : Module
             new JsonOrderRepository(CreateDataFilePath("orders.json"), _.Resolve<JsonTransactionCoordinator>()))
             .As<IOrderRepository>()
             .AsSelf()
+            .SingleInstance();
+
+        builder.RegisterType<RepositoryOrderReadModel>()
+            .As<IOrderReadModel>()
             .SingleInstance();
 
         builder.Register(_ =>

@@ -187,6 +187,121 @@ public sealed class RefreshOrderStatusHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_WhenCommittedOutboxDispatchFails_ReturnsSuccessWithoutMarkingEventsProcessed()
+    {
+        // Arrange
+        var portfolio = CreateTestPortfolio();
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var submittedOrder = CreateSubmittedOrder(
+            orderId: "refresh-open-outbox-dispatch-failure-1",
+            pair: pair,
+            side: DomainOrderSide.Buy,
+            intent: OrderIntent.OpenPosition,
+            signalRule: "MomentumBreakout");
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(submittedOrder.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(submittedOrder);
+
+        _portfolioRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(portfolio);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, submittedOrder.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: submittedOrder.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Buy,
+                status: ExchangeOrderStatus.Filled,
+                price: 50000m,
+                quantity: 0.02m,
+                fees: 1m)));
+
+        _eventDispatcherMock
+            .Setup(x => x.DispatchManyAsync(It.IsAny<IEnumerable<IDomainEvent>>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("audit sink unavailable"));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = submittedOrder.Id
+        });
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.AppliedDomainEffects.Should().BeTrue();
+
+        _unitOfWorkMock.Verify(x => x.CommitAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _eventOutboxMock.Verify(
+            x => x.EnqueueAsync(
+                It.Is<IEnumerable<IDomainEvent>>(events =>
+                    events.OfType<OrderFilledEvent>().Any() &&
+                    events.OfType<PositionOpened>().Any()),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        _eventOutboxMock.Verify(
+            x => x.MarkProcessedAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenCommittedOutboxMarkProcessedFails_ReturnsSuccess()
+    {
+        // Arrange
+        var portfolio = CreateTestPortfolio();
+        var pair = TradingPair.Create("BTCUSDT", "USDT");
+        var submittedOrder = CreateSubmittedOrder(
+            orderId: "refresh-open-outbox-mark-failure-1",
+            pair: pair,
+            side: DomainOrderSide.Buy,
+            intent: OrderIntent.OpenPosition,
+            signalRule: "MomentumBreakout");
+
+        _orderRepositoryMock
+            .Setup(x => x.GetByIdAsync(submittedOrder.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(submittedOrder);
+
+        _portfolioRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(portfolio);
+
+        _exchangePortMock
+            .Setup(x => x.GetOrderAsync(pair, submittedOrder.Id.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExchangeOrderInfo>.Success(CreateExchangeOrderInfo(
+                orderId: submittedOrder.Id.Value,
+                pair: pair,
+                side: ExchangeOrderSide.Buy,
+                status: ExchangeOrderStatus.Filled,
+                price: 50000m,
+                quantity: 0.02m,
+                fees: 1m)));
+
+        _eventOutboxMock
+            .Setup(x => x.MarkProcessedAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("outbox file locked"));
+
+        // Act
+        var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
+        {
+            OrderId = submittedOrder.Id
+        });
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.AppliedDomainEffects.Should().BeTrue();
+
+        _unitOfWorkMock.Verify(x => x.CommitAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _eventDispatcherMock.Verify(
+            x => x.DispatchManyAsync(
+                It.Is<IEnumerable<IDomainEvent>>(events =>
+                    events.OfType<OrderFilledEvent>().Any() &&
+                    events.OfType<PositionOpened>().Any()),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task HandleAsync_WhenSubmittedOpenOrderBecomesFilled_OpensPositionAndUpdatesPortfolio()
     {
         // Arrange

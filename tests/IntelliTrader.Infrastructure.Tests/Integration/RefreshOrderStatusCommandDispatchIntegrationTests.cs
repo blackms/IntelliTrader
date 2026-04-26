@@ -31,6 +31,7 @@ public sealed class RefreshOrderStatusCommandDispatchIntegrationTests : IClassFi
         var builder = new ContainerBuilder();
         builder.RegisterModule(new IntelliTrader.Infrastructure.AppModule());
         builder.RegisterInstance(transactionCoordinator).SingleInstance();
+        fixture.RegisterIsolatedEventPersistence(builder, transactionCoordinator, "refresh_order_status");
 
         builder.Register(c => new JsonPositionRepository(positionsPath, transactionCoordinator))
             .As<IPositionRepository>()

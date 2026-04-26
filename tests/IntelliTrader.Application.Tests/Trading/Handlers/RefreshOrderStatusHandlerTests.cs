@@ -1487,9 +1487,10 @@ public sealed class RefreshOrderStatusHandlerTests
     }
 
     [Fact]
-    public async Task HandleAsync_WhenSubmittedOrderIsCanceled_PersistsOrderOnlyWithoutDispatchingEvents()
+    public async Task HandleAsync_WhenSubmittedOrderIsCanceled_PersistsOrderAndDispatchesCanceledEvent()
     {
         // Arrange
+        var enqueuedEvents = new List<IDomainEvent>();
         var pair = TradingPair.Create("BTCUSDT", "USDT");
         var order = CreateSubmittedOrder(
             orderId: "refresh-canceled-order-only-1",
@@ -1513,6 +1514,11 @@ public sealed class RefreshOrderStatusHandlerTests
                 quantity: 0m,
                 fees: 0m)));
 
+        _eventOutboxMock
+            .Setup(x => x.EnqueueAsync(It.IsAny<IEnumerable<IDomainEvent>>(), It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<IDomainEvent>, CancellationToken>((events, _) => enqueuedEvents = events.ToList())
+            .Returns(Task.CompletedTask);
+
         // Act
         var result = await _handler.HandleAsync(new RefreshOrderStatusCommand
         {
@@ -1532,9 +1538,28 @@ public sealed class RefreshOrderStatusHandlerTests
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
+        enqueuedEvents.Should().ContainSingle()
+            .Which.Should().BeOfType<OrderCanceledEvent>()
+            .Which.Should().Match<OrderCanceledEvent>(domainEvent =>
+                domainEvent.OrderId == order.Id.Value &&
+                domainEvent.Pair == pair.Symbol &&
+                domainEvent.Side == DomainOrderSide.Buy);
+
         _eventDispatcherMock.Verify(
-            x => x.DispatchManyAsync(It.IsAny<IEnumerable<IDomainEvent>>(), It.IsAny<CancellationToken>()),
-            Times.Never);
+            x => x.DispatchManyAsync(
+                It.Is<IEnumerable<IDomainEvent>>(events =>
+                    events.OfType<OrderCanceledEvent>().Any(domainEvent =>
+                        domainEvent.OrderId == order.Id.Value &&
+                        domainEvent.Pair == pair.Symbol &&
+                        domainEvent.Side == DomainOrderSide.Buy)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _eventOutboxMock.Verify(
+            x => x.MarkProcessedAsync(
+                It.Is<Guid>(eventId => enqueuedEvents.Select(e => e.EventId).Contains(eventId)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]

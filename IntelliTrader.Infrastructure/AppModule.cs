@@ -128,8 +128,11 @@ public class AppModule : Module
             .AsSelf()
             .SingleInstance();
 
-        builder.RegisterType<RepositoryOrderReadModel>()
+        builder.Register(_ =>
+            new JsonOrderReadModel(CreateDataFilePath("order-read-model.json")))
             .As<IOrderReadModel>()
+            .As<IOrderReadModelProjectionWriter>()
+            .AsSelf()
             .SingleInstance();
 
         builder.Register(_ =>

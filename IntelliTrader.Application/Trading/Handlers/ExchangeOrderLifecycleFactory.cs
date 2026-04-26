@@ -94,6 +94,19 @@ internal static class ExchangeOrderLifecycleFactory
                 return true;
             }
 
+            if (targetStatus == OrderLifecycleStatus.Canceled &&
+                HasFillChanged(lifecycle, orderInfo) &&
+                !orderInfo.FilledQuantity.IsZero)
+            {
+                ApplyCanceledFillIfPresent(
+                    lifecycle,
+                    orderInfo.FilledQuantity,
+                    orderInfo.AveragePrice,
+                    CalculateCost(orderInfo),
+                    orderInfo.Fees);
+                return true;
+            }
+
             return false;
         }
 
@@ -195,7 +208,15 @@ internal static class ExchangeOrderLifecycleFactory
             return;
         }
 
-        lifecycle.MarkPartiallyFilled(filledQuantity, averagePrice, cost, fees);
+        if (lifecycle.Status == OrderLifecycleStatus.Canceled)
+        {
+            lifecycle.RecordCanceledFill(filledQuantity, averagePrice, cost, fees);
+        }
+        else
+        {
+            lifecycle.MarkPartiallyFilled(filledQuantity, averagePrice, cost, fees);
+        }
+
     }
 
     private static bool HasFillChanged(OrderLifecycle lifecycle, ExchangeOrderInfo orderInfo)

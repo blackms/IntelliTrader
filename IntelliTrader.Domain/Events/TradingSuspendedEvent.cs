@@ -53,10 +53,12 @@ public sealed record TradingSuspendedEvent : IDomainEvent
         int openPositions = 0,
         int pendingOrders = 0,
         string? details = null,
-        string? correlationId = null)
+        string? correlationId = null,
+        Guid eventId = default,
+        DateTimeOffset occurredAt = default)
     {
-        EventId = Guid.NewGuid();
-        OccurredAt = DateTimeOffset.UtcNow;
+        EventId = eventId == Guid.Empty ? Guid.NewGuid() : eventId;
+        OccurredAt = occurredAt == default ? DateTimeOffset.UtcNow : occurredAt;
         CorrelationId = correlationId;
         Reason = reason;
         SuspendedBy = suspendedBy;

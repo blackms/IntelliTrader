@@ -8,8 +8,8 @@ namespace IntelliTrader.Domain.Trading.Events;
 /// </summary>
 public sealed record PositionPartiallyClosed : IDomainEvent
 {
-    public Guid EventId { get; } = Guid.NewGuid();
-    public DateTimeOffset OccurredAt { get; } = DateTimeOffset.UtcNow;
+    public Guid EventId { get; }
+    public DateTimeOffset OccurredAt { get; }
     public string? CorrelationId { get; }
     public PositionId PositionId { get; }
     public TradingPair Pair { get; }
@@ -31,8 +31,12 @@ public sealed record PositionPartiallyClosed : IDomainEvent
         Money proceeds,
         Money releasedCost,
         Money sellFees,
-        string? correlationId = null)
+        string? correlationId = null,
+        Guid eventId = default,
+        DateTimeOffset occurredAt = default)
     {
+        EventId = eventId == Guid.Empty ? Guid.NewGuid() : eventId;
+        OccurredAt = occurredAt == default ? DateTimeOffset.UtcNow : occurredAt;
         PositionId = positionId;
         Pair = pair;
         SellOrderId = sellOrderId;

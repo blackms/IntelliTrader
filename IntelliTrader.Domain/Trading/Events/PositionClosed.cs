@@ -35,9 +35,11 @@ public sealed record PositionClosed : IDomainEvent
         Margin finalMargin,
         int dcaLevel,
         TimeSpan duration,
-        string? correlationId = null)
+        string? correlationId = null,
+        Guid eventId = default,
+        DateTimeOffset occurredAt = default)
     {
-        EventId = Guid.NewGuid();
+        EventId = eventId == Guid.Empty ? Guid.NewGuid() : eventId;
         PositionId = positionId;
         Pair = pair;
         SellOrderId = sellOrderId;
@@ -49,7 +51,7 @@ public sealed record PositionClosed : IDomainEvent
         FinalMargin = finalMargin;
         DCALevel = dcaLevel;
         Duration = duration;
-        OccurredAt = DateTimeOffset.UtcNow;
+        OccurredAt = occurredAt == default ? DateTimeOffset.UtcNow : occurredAt;
         CorrelationId = correlationId;
     }
 }

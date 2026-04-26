@@ -63,7 +63,8 @@ public class AppModule : Module
             {
                 return new InMemoryDomainEventDispatcher(
                     c.Resolve<IServiceProvider>(),
-                    NullLogger<InMemoryDomainEventDispatcher>.Instance);
+                    NullLogger<InMemoryDomainEventDispatcher>.Instance,
+                    c.Resolve<IDomainEventHandlerInbox>());
             })
             .As<IDomainEventDispatcher>()
             .SingleInstance();
@@ -129,6 +130,12 @@ public class AppModule : Module
         builder.Register(_ =>
             new JsonDomainEventOutbox(CreateDataFilePath("outbox.json"), _.Resolve<JsonTransactionCoordinator>()))
             .As<IDomainEventOutbox>()
+            .AsSelf()
+            .SingleInstance();
+
+        builder.Register(_ =>
+            new JsonDomainEventHandlerInbox(CreateDataFilePath("handler-inbox.json")))
+            .As<IDomainEventHandlerInbox>()
             .AsSelf()
             .SingleInstance();
 

@@ -25,16 +25,18 @@ public sealed record PositionRemovedFromPortfolio : IDomainEvent
         Money proceeds,
         Money pnl,
         int activePositionCount,
-        string? correlationId = null)
+        string? correlationId = null,
+        Guid eventId = default,
+        DateTimeOffset occurredAt = default)
     {
-        EventId = Guid.NewGuid();
+        EventId = eventId == Guid.Empty ? Guid.NewGuid() : eventId;
         PortfolioId = portfolioId;
         PositionId = positionId;
         Pair = pair;
         Proceeds = proceeds;
         PnL = pnl;
         ActivePositionCount = activePositionCount;
-        OccurredAt = DateTimeOffset.UtcNow;
+        OccurredAt = occurredAt == default ? DateTimeOffset.UtcNow : occurredAt;
         CorrelationId = correlationId;
     }
 }

@@ -65,10 +65,12 @@ public sealed record OrderPlacedEvent : IDomainEvent
         OrderType orderType = OrderType.Limit,
         bool isManual = false,
         string? signalRule = null,
-        string? correlationId = null)
+        string? correlationId = null,
+        Guid eventId = default,
+        DateTimeOffset occurredAt = default)
     {
-        EventId = Guid.NewGuid();
-        OccurredAt = DateTimeOffset.UtcNow;
+        EventId = eventId == Guid.Empty ? Guid.NewGuid() : eventId;
+        OccurredAt = occurredAt == default ? DateTimeOffset.UtcNow : occurredAt;
         CorrelationId = correlationId;
         OrderId = orderId;
         Pair = pair;

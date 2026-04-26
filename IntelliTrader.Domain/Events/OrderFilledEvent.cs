@@ -65,10 +65,12 @@ public sealed record OrderFilledEvent : IDomainEvent
         decimal cost,
         decimal fees = 0,
         bool isPartialFill = false,
-        string? correlationId = null)
+        string? correlationId = null,
+        Guid eventId = default,
+        DateTimeOffset occurredAt = default)
     {
-        EventId = Guid.NewGuid();
-        OccurredAt = DateTimeOffset.UtcNow;
+        EventId = eventId == Guid.Empty ? Guid.NewGuid() : eventId;
+        OccurredAt = occurredAt == default ? DateTimeOffset.UtcNow : occurredAt;
         CorrelationId = correlationId;
         OrderId = orderId;
         Pair = pair;

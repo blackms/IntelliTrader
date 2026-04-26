@@ -23,15 +23,17 @@ public sealed record PositionAddedToPortfolio : IDomainEvent
         TradingPair pair,
         Money cost,
         int activePositionCount,
-        string? correlationId = null)
+        string? correlationId = null,
+        Guid eventId = default,
+        DateTimeOffset occurredAt = default)
     {
-        EventId = Guid.NewGuid();
+        EventId = eventId == Guid.Empty ? Guid.NewGuid() : eventId;
         PortfolioId = portfolioId;
         PositionId = positionId;
         Pair = pair;
         Cost = cost;
         ActivePositionCount = activePositionCount;
-        OccurredAt = DateTimeOffset.UtcNow;
+        OccurredAt = occurredAt == default ? DateTimeOffset.UtcNow : occurredAt;
         CorrelationId = correlationId;
     }
 }

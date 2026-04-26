@@ -132,6 +132,22 @@ public class AppModule : Module
             .AsSelf()
             .SingleInstance();
 
+        builder.Register(c =>
+            new DomainEventOutboxProcessor(
+                c.Resolve<IDomainEventOutbox>(),
+                c.Resolve<IDomainEventDispatcher>(),
+                NullLogger<DomainEventOutboxProcessor>.Instance))
+            .As<IDomainEventOutboxProcessor>()
+            .AsSelf()
+            .SingleInstance();
+
+        builder.Register(c =>
+            new DomainEventOutboxProcessorService(
+                NullLogger<DomainEventOutboxProcessorService>.Instance,
+                c.Resolve<IDomainEventOutboxProcessor>()))
+            .AsSelf()
+            .SingleInstance();
+
         builder.Register(c => new JsonTransactionalUnitOfWork(c.Resolve<JsonTransactionCoordinator>()))
             .As<IUnitOfWork>()
             .As<ITransactionalUnitOfWork>()
@@ -155,6 +171,10 @@ public class AppModule : Module
         builder.RegisterType<ActiveOrderRefreshService>()
             .As<IActiveOrderRefreshService>()
             .As<ISubmittedOrderRefreshService>()
+            .SingleInstance();
+
+        builder.RegisterType<DomainEventOutboxReplayService>()
+            .As<IDomainEventOutboxReplayService>()
             .SingleInstance();
     }
 

@@ -63,11 +63,31 @@ internal static class DomainEventOutboxWorkflow
             return;
         }
 
-        await eventDispatcher.DispatchManyAsync(events, cancellationToken);
+        try
+        {
+            await eventDispatcher.DispatchManyAsync(events, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // The trading state is already committed. Keep the command successful
+            // and leave events pending so an outbox replay can retry them.
+            System.Diagnostics.Trace.TraceWarning(
+                $"Committed domain event dispatch failed: {ex.Message}");
+            return;
+        }
 
         foreach (var domainEvent in events)
         {
-            await eventOutbox.MarkProcessedAsync(domainEvent.EventId, cancellationToken);
+            try
+            {
+                await eventOutbox.MarkProcessedAsync(domainEvent.EventId, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.TraceWarning(
+                    $"Committed domain event mark-processed failed for {domainEvent.EventId}: {ex.Message}");
+                return;
+            }
         }
     }
 }

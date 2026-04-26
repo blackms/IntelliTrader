@@ -1,7 +1,6 @@
 using IntelliTrader.Application.Common;
 using IntelliTrader.Application.Ports.Driven;
 using IntelliTrader.Application.Trading.Queries;
-using IntelliTrader.Domain.Trading.Orders;
 
 namespace IntelliTrader.Application.Trading.Handlers;
 
@@ -10,11 +9,11 @@ namespace IntelliTrader.Application.Trading.Handlers;
 /// </summary>
 public sealed class GetOrderHandler : IQueryHandler<GetOrderQuery, OrderView>
 {
-    private readonly IOrderRepository _orderRepository;
+    private readonly IOrderReadModel _orderReadModel;
 
-    public GetOrderHandler(IOrderRepository orderRepository)
+    public GetOrderHandler(IOrderReadModel orderReadModel)
     {
-        _orderRepository = orderRepository ?? throw new ArgumentNullException(nameof(orderRepository));
+        _orderReadModel = orderReadModel ?? throw new ArgumentNullException(nameof(orderReadModel));
     }
 
     public async Task<Result<OrderView>> HandleAsync(
@@ -23,37 +22,13 @@ public sealed class GetOrderHandler : IQueryHandler<GetOrderQuery, OrderView>
     {
         ArgumentNullException.ThrowIfNull(query);
 
-        var order = await _orderRepository.GetByIdAsync(query.OrderId, cancellationToken);
-        if (order is null)
+        var orderView = await _orderReadModel.GetByIdAsync(query.OrderId, cancellationToken);
+        if (orderView is null)
         {
             return Result<OrderView>.Failure(Error.NotFound("Order", query.OrderId.Value));
         }
 
-        return Result<OrderView>.Success(Map(order));
-    }
-
-    internal static OrderView Map(OrderLifecycle order)
-    {
-        ArgumentNullException.ThrowIfNull(order);
-
-        return new OrderView
-        {
-            Id = order.Id,
-            Pair = order.Pair,
-            Side = order.Side,
-            Type = order.Type,
-            Status = order.Status,
-            RequestedQuantity = order.RequestedQuantity,
-            FilledQuantity = order.FilledQuantity,
-            SubmittedPrice = order.SubmittedPrice,
-            AveragePrice = order.AveragePrice,
-            Cost = order.Cost,
-            Fees = order.Fees,
-            SignalRule = order.SignalRule,
-            SubmittedAt = order.SubmittedAt,
-            CanAffectPosition = order.CanAffectPosition,
-            IsTerminal = order.IsTerminal
-        };
+        return Result<OrderView>.Success(orderView);
     }
 }
 
@@ -62,11 +37,11 @@ public sealed class GetOrderHandler : IQueryHandler<GetOrderQuery, OrderView>
 /// </summary>
 public sealed class GetRecentOrdersHandler : IQueryHandler<GetRecentOrdersQuery, IReadOnlyList<OrderView>>
 {
-    private readonly IOrderRepository _orderRepository;
+    private readonly IOrderReadModel _orderReadModel;
 
-    public GetRecentOrdersHandler(IOrderRepository orderRepository)
+    public GetRecentOrdersHandler(IOrderReadModel orderReadModel)
     {
-        _orderRepository = orderRepository ?? throw new ArgumentNullException(nameof(orderRepository));
+        _orderReadModel = orderReadModel ?? throw new ArgumentNullException(nameof(orderReadModel));
     }
 
     public async Task<Result<IReadOnlyList<OrderView>>> HandleAsync(
@@ -76,16 +51,12 @@ public sealed class GetRecentOrdersHandler : IQueryHandler<GetRecentOrdersQuery,
         ArgumentNullException.ThrowIfNull(query);
 
         var limit = query.Limit <= 0 ? 50 : query.Limit;
-        var orders = await _orderRepository.GetAllAsync(cancellationToken);
-
-        var filtered = orders
-            .Where(order => query.Pair is null || order.Pair.Equals(query.Pair))
-            .Where(order => query.Status is null || order.Status == query.Status)
-            .Where(order => query.Side is null || order.Side == query.Side)
-            .OrderByDescending(order => order.SubmittedAt)
-            .Take(limit)
-            .Select(GetOrderHandler.Map)
-            .ToList();
+        var filtered = await _orderReadModel.GetRecentAsync(
+            query.Pair,
+            query.Status,
+            query.Side,
+            limit,
+            cancellationToken);
 
         return Result<IReadOnlyList<OrderView>>.Success(filtered);
     }
@@ -96,11 +67,11 @@ public sealed class GetRecentOrdersHandler : IQueryHandler<GetRecentOrdersQuery,
 /// </summary>
 public sealed class GetActiveOrdersHandler : IQueryHandler<GetActiveOrdersQuery, IReadOnlyList<OrderView>>
 {
-    private readonly IOrderRepository _orderRepository;
+    private readonly IOrderReadModel _orderReadModel;
 
-    public GetActiveOrdersHandler(IOrderRepository orderRepository)
+    public GetActiveOrdersHandler(IOrderReadModel orderReadModel)
     {
-        _orderRepository = orderRepository ?? throw new ArgumentNullException(nameof(orderRepository));
+        _orderReadModel = orderReadModel ?? throw new ArgumentNullException(nameof(orderReadModel));
     }
 
     public async Task<Result<IReadOnlyList<OrderView>>> HandleAsync(
@@ -110,16 +81,11 @@ public sealed class GetActiveOrdersHandler : IQueryHandler<GetActiveOrdersQuery,
         ArgumentNullException.ThrowIfNull(query);
 
         var limit = query.Limit <= 0 ? 50 : query.Limit;
-        var orders = await _orderRepository.GetAllAsync(cancellationToken);
-
-        var filtered = orders
-            .Where(order => !order.IsTerminal)
-            .Where(order => query.Pair is null || order.Pair.Equals(query.Pair))
-            .Where(order => query.Side is null || order.Side == query.Side)
-            .OrderByDescending(order => order.SubmittedAt)
-            .Take(limit)
-            .Select(GetOrderHandler.Map)
-            .ToList();
+        var filtered = await _orderReadModel.GetActiveAsync(
+            query.Pair,
+            query.Side,
+            limit,
+            cancellationToken);
 
         return Result<IReadOnlyList<OrderView>>.Success(filtered);
     }
@@ -130,11 +96,11 @@ public sealed class GetActiveOrdersHandler : IQueryHandler<GetActiveOrdersQuery,
 /// </summary>
 public sealed class GetTradingHistoryHandler : IQueryHandler<GetTradingHistoryQuery, IReadOnlyList<TradeHistoryEntry>>
 {
-    private readonly IOrderRepository _orderRepository;
+    private readonly IOrderReadModel _orderReadModel;
 
-    public GetTradingHistoryHandler(IOrderRepository orderRepository)
+    public GetTradingHistoryHandler(IOrderReadModel orderReadModel)
     {
-        _orderRepository = orderRepository ?? throw new ArgumentNullException(nameof(orderRepository));
+        _orderReadModel = orderReadModel ?? throw new ArgumentNullException(nameof(orderReadModel));
     }
 
     public async Task<Result<IReadOnlyList<TradeHistoryEntry>>> HandleAsync(
@@ -151,46 +117,14 @@ public sealed class GetTradingHistoryHandler : IQueryHandler<GetTradingHistoryQu
 
         var limit = query.Limit <= 0 ? 100 : query.Limit;
         var offset = Math.Max(0, query.Offset);
-        var orders = await _orderRepository.GetAllAsync(cancellationToken);
-
-        var history = orders
-            .Where(order => order.Status == OrderLifecycleStatus.Filled)
-            .Where(order => order.RelatedPositionId is not null)
-            .Where(order => order.SubmittedAt >= query.From && order.SubmittedAt <= query.To)
-            .Where(order => query.Pair is null || order.Pair.Equals(query.Pair))
-            .OrderByDescending(order => order.SubmittedAt)
-            .Skip(offset)
-            .Take(limit)
-            .Select(MapTradeHistoryEntry)
-            .ToList();
+        var history = await _orderReadModel.GetTradingHistoryAsync(
+            query.Pair,
+            query.From,
+            query.To,
+            offset,
+            limit,
+            cancellationToken);
 
         return Result<IReadOnlyList<TradeHistoryEntry>>.Success(history);
-    }
-
-    private static TradeHistoryEntry MapTradeHistoryEntry(OrderLifecycle order)
-    {
-        return new TradeHistoryEntry
-        {
-            PositionId = order.RelatedPositionId!,
-            Pair = order.Pair,
-            Type = ResolveTradeType(order),
-            Price = order.AveragePrice,
-            Quantity = order.FilledQuantity,
-            Cost = order.Cost,
-            Fees = order.Fees,
-            Timestamp = order.SubmittedAt,
-            OrderId = order.Id.Value,
-            Note = order.Intent.ToString()
-        };
-    }
-
-    private static TradeType ResolveTradeType(OrderLifecycle order)
-    {
-        if (order.Side == IntelliTrader.Domain.Events.OrderSide.Sell)
-        {
-            return TradeType.Sell;
-        }
-
-        return order.Intent == OrderIntent.ExecuteDca ? TradeType.DCA : TradeType.Buy;
     }
 }

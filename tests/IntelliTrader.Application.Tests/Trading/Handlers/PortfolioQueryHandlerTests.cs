@@ -1,9 +1,8 @@
-using IntelliTrader.Application.Common;
 using FluentAssertions;
+using IntelliTrader.Application.Common;
+using IntelliTrader.Application.Ports.Driven;
 using IntelliTrader.Application.Trading.Handlers;
 using IntelliTrader.Application.Trading.Queries;
-using IntelliTrader.Application.Ports.Driven;
-using IntelliTrader.Domain.Trading.Aggregates;
 using IntelliTrader.Domain.Trading.ValueObjects;
 using Moq;
 
@@ -11,24 +10,25 @@ namespace IntelliTrader.Application.Tests.Trading.Handlers;
 
 public sealed class PortfolioQueryHandlerTests
 {
-    private readonly Mock<IPortfolioRepository> _portfolioRepositoryMock = new();
-    private readonly Mock<IPositionRepository> _positionRepositoryMock = new();
+    private readonly Mock<IPortfolioReadModel> _portfolioReadModelMock = new();
+    private readonly Mock<IPositionReadModel> _positionReadModelMock = new();
     private readonly Mock<IExchangePort> _exchangePortMock = new();
 
     [Fact]
-    public async Task GetPortfolio_WithDefaultPortfolio_ReturnsMappedBalances()
+    public async Task GetPortfolio_WithDefaultPortfolio_ReturnsMappedReadModelBalances()
     {
-        var pair = TradingPair.Create("BTCUSDT", "USDT");
-        var positionId = PositionId.Create();
-        var portfolio = Portfolio.Create("Default", "USDT", 10000m, 5, 100m);
-        portfolio.RecordPositionOpened(positionId, pair, Money.Create(1000m, "USDT"));
-        portfolio.ClearDomainEvents();
+        var portfolio = CreatePortfolioEntry(
+            total: 10000m,
+            available: 9000m,
+            reserved: 1000m,
+            activePositions: 1,
+            invested: 1000m);
 
-        _portfolioRepositoryMock
+        _portfolioReadModelMock
             .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(portfolio);
 
-        var handler = new GetPortfolioHandler(_portfolioRepositoryMock.Object);
+        var handler = new GetPortfolioHandler(_portfolioReadModelMock.Object);
 
         var result = await handler.HandleAsync(new GetPortfolioQuery());
 
@@ -42,17 +42,17 @@ public sealed class PortfolioQueryHandlerTests
         result.Value.CanOpenNewPosition.Should().BeTrue();
         result.Value.AvailablePercentage.Should().Be(90m);
         result.Value.ReservedPercentage.Should().Be(10m);
-        result.Value.LastUpdatedAt.Should().BeNull();
+        result.Value.LastUpdatedAt.Should().Be(portfolio.LastUpdatedAt);
     }
 
     [Fact]
     public async Task GetPortfolio_WithMissingNamedPortfolio_ReturnsNotFound()
     {
-        _portfolioRepositoryMock
+        _portfolioReadModelMock
             .Setup(x => x.GetByNameAsync("Missing", It.IsAny<CancellationToken>()))
-            .ReturnsAsync((Portfolio?)null);
+            .ReturnsAsync((PortfolioReadModelEntry?)null);
 
-        var handler = new GetPortfolioHandler(_portfolioRepositoryMock.Object);
+        var handler = new GetPortfolioHandler(_portfolioReadModelMock.Object);
 
         var result = await handler.HandleAsync(new GetPortfolioQuery { Name = "Missing" });
 
@@ -62,39 +62,38 @@ public sealed class PortfolioQueryHandlerTests
     }
 
     [Fact]
-    public async Task GetPortfolioStatistics_WithActivePositions_ReturnsCurrentPortfolioMetrics()
+    public async Task GetPortfolioStatistics_WithActivePositions_ReturnsCurrentPortfolioMetricsFromReadModels()
     {
         var pair = TradingPair.Create("BTCUSDT", "USDT");
-        var portfolio = Portfolio.Create("Default", "USDT", 5000m, 5, 100m);
-        var position = Position.Open(
-            pair,
-            OrderId.From("order-btc-1"),
-            Price.Create(50000m),
-            Quantity.Create(0.02m),
-            Money.Create(1m, "USDT"));
-        portfolio.RecordPositionOpened(position.Id, pair, Money.Create(1000m, "USDT"));
-        portfolio.ClearDomainEvents();
-        position.ClearDomainEvents();
+        var portfolio = CreatePortfolioEntry(
+            total: 5000m,
+            available: 4000m,
+            reserved: 1000m,
+            activePositions: 1,
+            invested: 1000m);
+        var position = CreatePositionEntry(pair, price: 50000m, quantity: 0.02m, fees: 1m);
 
-        _portfolioRepositoryMock
+        _portfolioReadModelMock
             .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(portfolio);
-        _positionRepositoryMock
-            .Setup(x => x.GetAllActiveAsync(It.IsAny<CancellationToken>()))
+        _positionReadModelMock
+            .Setup(x => x.GetActiveAsync("USDT", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { position });
-        _positionRepositoryMock
-            .Setup(x => x.GetClosedPositionsAsync(
+        _positionReadModelMock
+            .Setup(x => x.GetClosedAsync(
                 It.IsAny<DateTimeOffset>(),
                 It.IsAny<DateTimeOffset>(),
+                null,
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Array.Empty<Position>());
+            .ReturnsAsync(Array.Empty<PositionReadModelEntry>());
         _exchangePortMock
             .Setup(x => x.GetCurrentPriceAsync(pair, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Price>.Success(Price.Create(55000m)));
 
         var handler = new GetPortfolioStatisticsHandler(
-            _portfolioRepositoryMock.Object,
-            _positionRepositoryMock.Object,
+            _portfolioReadModelMock.Object,
+            _positionReadModelMock.Object,
             _exchangePortMock.Object);
 
         var result = await handler.HandleAsync(new GetPortfolioStatisticsQuery());
@@ -117,13 +116,13 @@ public sealed class PortfolioQueryHandlerTests
     [Fact]
     public async Task GetPortfolioStatistics_WhenPortfolioMissing_ReturnsNotFound()
     {
-        _portfolioRepositoryMock
+        _portfolioReadModelMock
             .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync((Portfolio?)null);
+            .ReturnsAsync((PortfolioReadModelEntry?)null);
 
         var handler = new GetPortfolioStatisticsHandler(
-            _portfolioRepositoryMock.Object,
-            _positionRepositoryMock.Object,
+            _portfolioReadModelMock.Object,
+            _positionReadModelMock.Object,
             _exchangePortMock.Object);
 
         var result = await handler.HandleAsync(new GetPortfolioStatisticsQuery());
@@ -136,33 +135,77 @@ public sealed class PortfolioQueryHandlerTests
     public async Task GetPortfolioStatistics_WhenPriceLookupFails_ReturnsFailure()
     {
         var pair = TradingPair.Create("BTCUSDT", "USDT");
-        var portfolio = Portfolio.Create("Default", "USDT", 5000m, 5, 100m);
-        var position = Position.Open(
-            pair,
-            OrderId.From("order-btc-1"),
-            Price.Create(50000m),
-            Quantity.Create(0.02m),
-            Money.Create(1m, "USDT"));
-        position.ClearDomainEvents();
+        var portfolio = CreatePortfolioEntry(
+            total: 5000m,
+            available: 4000m,
+            reserved: 1000m,
+            activePositions: 1,
+            invested: 1000m);
+        var position = CreatePositionEntry(pair, price: 50000m, quantity: 0.02m, fees: 1m);
 
-        _portfolioRepositoryMock
+        _portfolioReadModelMock
             .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(portfolio);
-        _positionRepositoryMock
-            .Setup(x => x.GetAllActiveAsync(It.IsAny<CancellationToken>()))
+        _positionReadModelMock
+            .Setup(x => x.GetActiveAsync("USDT", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { position });
         _exchangePortMock
             .Setup(x => x.GetCurrentPriceAsync(pair, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Price>.Failure(Error.ExchangeError("price unavailable")));
 
         var handler = new GetPortfolioStatisticsHandler(
-            _portfolioRepositoryMock.Object,
-            _positionRepositoryMock.Object,
+            _portfolioReadModelMock.Object,
+            _positionReadModelMock.Object,
             _exchangePortMock.Object);
 
         var result = await handler.HandleAsync(new GetPortfolioStatisticsQuery());
 
         result.IsFailure.Should().BeTrue();
         result.Error.Message.Should().Contain("price unavailable");
+    }
+
+    private static PortfolioReadModelEntry CreatePortfolioEntry(
+        decimal total,
+        decimal available,
+        decimal reserved,
+        int activePositions,
+        decimal invested)
+    {
+        return new PortfolioReadModelEntry
+        {
+            Id = PortfolioId.Create(),
+            Name = "Default",
+            Market = "USDT",
+            TotalBalance = Money.Create(total, "USDT"),
+            AvailableBalance = Money.Create(available, "USDT"),
+            ReservedBalance = Money.Create(reserved, "USDT"),
+            ActivePositionCount = activePositions,
+            MaxPositions = 5,
+            MinPositionCost = Money.Create(100m, "USDT"),
+            InvestedBalance = Money.Create(invested, "USDT"),
+            CreatedAt = DateTimeOffset.Parse("2026-04-26T10:00:00Z"),
+            LastUpdatedAt = DateTimeOffset.Parse("2026-04-26T10:30:00Z"),
+            IsDefault = true
+        };
+    }
+
+    private static PositionReadModelEntry CreatePositionEntry(
+        TradingPair pair,
+        decimal price,
+        decimal quantity,
+        decimal fees)
+    {
+        return new PositionReadModelEntry
+        {
+            Id = PositionId.Create(),
+            Pair = pair,
+            AveragePrice = Price.Create(price),
+            TotalQuantity = Quantity.Create(quantity),
+            TotalCost = Money.Create(price * quantity, pair.QuoteCurrency),
+            TotalFees = Money.Create(fees, pair.QuoteCurrency),
+            DCALevel = 0,
+            EntryCount = 1,
+            OpenedAt = DateTimeOffset.Parse("2026-04-26T10:00:00Z")
+        };
     }
 }

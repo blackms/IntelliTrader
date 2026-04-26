@@ -31,7 +31,11 @@ public sealed class RefreshSubmittedOrdersCommandDispatchIntegrationTests : ICla
         var builder = new ContainerBuilder();
         builder.RegisterModule(new IntelliTrader.Infrastructure.AppModule());
         builder.RegisterInstance(transactionCoordinator).SingleInstance();
-        fixture.RegisterIsolatedEventPersistence(builder, transactionCoordinator, "refresh_submitted");
+        fixture.RegisterIsolatedEventPersistence(
+            builder,
+            transactionCoordinator,
+            "refresh_submitted",
+            portfoliosPath);
 
         builder.Register(c => new JsonPositionRepository(positionsPath, transactionCoordinator))
             .As<IPositionRepository>()

@@ -38,7 +38,11 @@ public sealed class OpenPositionCommandDispatchIntegrationTests : IClassFixture<
         var builder = new ContainerBuilder();
         builder.RegisterModule(new IntelliTrader.Infrastructure.AppModule());
         builder.RegisterInstance(transactionCoordinator).SingleInstance();
-        fixture.RegisterIsolatedEventPersistence(builder, transactionCoordinator, "open_position");
+        fixture.RegisterIsolatedEventPersistence(
+            builder,
+            transactionCoordinator,
+            "open_position",
+            portfoliosPath);
 
         // Test-specific concrete adapters.
         builder.Register(c => new JsonPositionRepository(positionsPath, transactionCoordinator))
@@ -294,7 +298,11 @@ public sealed class OpenPositionCommandDispatchIntegrationTests : IClassFixture<
         var builder = new ContainerBuilder();
         builder.RegisterModule(new IntelliTrader.Infrastructure.AppModule());
         builder.RegisterInstance(transactionCoordinator).SingleInstance();
-        _fixture.RegisterIsolatedEventPersistence(builder, transactionCoordinator, "open_position_failure");
+        _fixture.RegisterIsolatedEventPersistence(
+            builder,
+            transactionCoordinator,
+            "open_position_failure",
+            portfoliosPath);
         builder.RegisterInstance(invalidPositionRepository)
             .As<IPositionRepository>()
             .AsSelf()

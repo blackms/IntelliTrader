@@ -1,7 +1,6 @@
 using IntelliTrader.Application.Common;
 using IntelliTrader.Application.Ports.Driven;
 using IntelliTrader.Application.Trading.Queries;
-using IntelliTrader.Domain.Trading.Aggregates;
 using IntelliTrader.Domain.Trading.ValueObjects;
 
 namespace IntelliTrader.Application.Trading.Handlers;
@@ -11,11 +10,11 @@ namespace IntelliTrader.Application.Trading.Handlers;
 /// </summary>
 public sealed class GetPortfolioHandler : IQueryHandler<GetPortfolioQuery, PortfolioView>
 {
-    private readonly IPortfolioRepository _portfolioRepository;
+    private readonly IPortfolioReadModel _portfolioReadModel;
 
-    public GetPortfolioHandler(IPortfolioRepository portfolioRepository)
+    public GetPortfolioHandler(IPortfolioReadModel portfolioReadModel)
     {
-        _portfolioRepository = portfolioRepository ?? throw new ArgumentNullException(nameof(portfolioRepository));
+        _portfolioReadModel = portfolioReadModel ?? throw new ArgumentNullException(nameof(portfolioReadModel));
     }
 
     public async Task<Result<PortfolioView>> HandleAsync(
@@ -34,24 +33,24 @@ public sealed class GetPortfolioHandler : IQueryHandler<GetPortfolioQuery, Portf
         return Result<PortfolioView>.Success(Map(portfolio));
     }
 
-    private Task<Portfolio?> ResolvePortfolioAsync(
+    private Task<PortfolioReadModelEntry?> ResolvePortfolioAsync(
         GetPortfolioQuery query,
         CancellationToken cancellationToken)
     {
         if (query.PortfolioId is not null)
         {
-            return _portfolioRepository.GetByIdAsync(query.PortfolioId, cancellationToken);
+            return _portfolioReadModel.GetByIdAsync(query.PortfolioId, cancellationToken);
         }
 
         if (!string.IsNullOrWhiteSpace(query.Name))
         {
-            return _portfolioRepository.GetByNameAsync(query.Name, cancellationToken);
+            return _portfolioReadModel.GetByNameAsync(query.Name, cancellationToken);
         }
 
-        return _portfolioRepository.GetDefaultAsync(cancellationToken);
+        return _portfolioReadModel.GetDefaultAsync(cancellationToken);
     }
 
-    internal static PortfolioView Map(Portfolio portfolio)
+    internal static PortfolioView Map(PortfolioReadModelEntry portfolio)
     {
         ArgumentNullException.ThrowIfNull(portfolio);
 
@@ -60,17 +59,17 @@ public sealed class GetPortfolioHandler : IQueryHandler<GetPortfolioQuery, Portf
             Id = portfolio.Id,
             Name = portfolio.Name,
             Market = portfolio.Market,
-            TotalBalance = portfolio.Balance.Total,
-            AvailableBalance = portfolio.Balance.Available,
-            ReservedBalance = portfolio.Balance.Reserved,
+            TotalBalance = portfolio.TotalBalance,
+            AvailableBalance = portfolio.AvailableBalance,
+            ReservedBalance = portfolio.ReservedBalance,
             ActivePositionCount = portfolio.ActivePositionCount,
             MaxPositions = portfolio.MaxPositions,
             MinPositionCost = portfolio.MinPositionCost,
             CanOpenNewPosition = portfolio.CanOpenNewPosition,
-            AvailablePercentage = portfolio.Balance.AvailablePercentage,
-            ReservedPercentage = portfolio.Balance.ReservedPercentage,
+            AvailablePercentage = portfolio.AvailablePercentage,
+            ReservedPercentage = portfolio.ReservedPercentage,
             CreatedAt = portfolio.CreatedAt,
-            LastUpdatedAt = null
+            LastUpdatedAt = portfolio.LastUpdatedAt
         };
     }
 }
@@ -80,17 +79,17 @@ public sealed class GetPortfolioHandler : IQueryHandler<GetPortfolioQuery, Portf
 /// </summary>
 public sealed class GetPortfolioStatisticsHandler : IQueryHandler<GetPortfolioStatisticsQuery, PortfolioStatistics>
 {
-    private readonly IPortfolioRepository _portfolioRepository;
-    private readonly IPositionRepository _positionRepository;
+    private readonly IPortfolioReadModel _portfolioReadModel;
+    private readonly IPositionReadModel _positionReadModel;
     private readonly IExchangePort _exchangePort;
 
     public GetPortfolioStatisticsHandler(
-        IPortfolioRepository portfolioRepository,
-        IPositionRepository positionRepository,
+        IPortfolioReadModel portfolioReadModel,
+        IPositionReadModel positionReadModel,
         IExchangePort exchangePort)
     {
-        _portfolioRepository = portfolioRepository ?? throw new ArgumentNullException(nameof(portfolioRepository));
-        _positionRepository = positionRepository ?? throw new ArgumentNullException(nameof(positionRepository));
+        _portfolioReadModel = portfolioReadModel ?? throw new ArgumentNullException(nameof(portfolioReadModel));
+        _positionReadModel = positionReadModel ?? throw new ArgumentNullException(nameof(positionReadModel));
         _exchangePort = exchangePort ?? throw new ArgumentNullException(nameof(exchangePort));
     }
 
@@ -109,8 +108,8 @@ public sealed class GetPortfolioStatisticsHandler : IQueryHandler<GetPortfolioSt
         }
 
         var portfolio = query.PortfolioId is not null
-            ? await _portfolioRepository.GetByIdAsync(query.PortfolioId, cancellationToken)
-            : await _portfolioRepository.GetDefaultAsync(cancellationToken);
+            ? await _portfolioReadModel.GetByIdAsync(query.PortfolioId, cancellationToken)
+            : await _portfolioReadModel.GetDefaultAsync(cancellationToken);
 
         if (portfolio is null)
         {
@@ -118,8 +117,13 @@ public sealed class GetPortfolioStatisticsHandler : IQueryHandler<GetPortfolioSt
             return Result<PortfolioStatistics>.Failure(Error.NotFound("Portfolio", id));
         }
 
-        var activePositions = await _positionRepository.GetAllActiveAsync(cancellationToken);
-        var closedPositions = await _positionRepository.GetClosedPositionsAsync(from, to, cancellationToken);
+        var activePositions = await _positionReadModel.GetActiveAsync(portfolio.Market, cancellationToken);
+        var closedPositions = await _positionReadModel.GetClosedAsync(
+            from,
+            to,
+            pair: null,
+            limit: int.MaxValue,
+            cancellationToken);
         var activeSnapshots = new List<PositionSnapshot>(activePositions.Count);
 
         foreach (var position in activePositions)
@@ -142,15 +146,15 @@ public sealed class GetPortfolioStatisticsHandler : IQueryHandler<GetPortfolioSt
             : Margin.Calculate(totalCostBasis, totalCurrentValue.Amount);
         var winningSnapshots = activeSnapshots.Where(snapshot => snapshot.Margin.IsProfit).ToList();
         var losingSnapshots = activeSnapshots.Where(snapshot => snapshot.Margin.IsLoss).ToList();
-        var totalTrades = activePositions.Sum(position => position.Entries.Count) + closedPositions.Count;
+        var totalTrades = activePositions.Sum(position => position.EntryCount) + closedPositions.Count;
         var averageHoldingPeriod = CalculateAverageHoldingPeriod(activePositions, closedPositions);
 
         return Result<PortfolioStatistics>.Success(new PortfolioStatistics
         {
             PortfolioId = portfolio.Id,
-            TotalBalance = portfolio.Balance.Total,
-            AvailableBalance = portfolio.Balance.Available,
-            InvestedBalance = portfolio.GetTotalInvestedCost(),
+            TotalBalance = portfolio.TotalBalance,
+            AvailableBalance = portfolio.AvailableBalance,
+            InvestedBalance = portfolio.InvestedBalance,
             ActivePositions = portfolio.ActivePositionCount,
             MaxPositions = portfolio.MaxPositions,
             PositionSlotsAvailable = Math.Max(0, portfolio.MaxPositions - portfolio.ActivePositionCount),
@@ -188,8 +192,8 @@ public sealed class GetPortfolioStatisticsHandler : IQueryHandler<GetPortfolioSt
     }
 
     private static TimeSpan CalculateAverageHoldingPeriod(
-        IReadOnlyCollection<Position> activePositions,
-        IReadOnlyCollection<Position> closedPositions)
+        IReadOnlyCollection<PositionReadModelEntry> activePositions,
+        IReadOnlyCollection<PositionReadModelEntry> closedPositions)
     {
         var periods = activePositions
             .Select(position => DateTimeOffset.UtcNow - position.OpenedAt)
@@ -226,13 +230,22 @@ public sealed class GetPortfolioStatisticsHandler : IQueryHandler<GetPortfolioSt
         Money CostBasis,
         Margin Margin)
     {
-        public static PositionSnapshot Create(Position position, Price currentPrice)
+        public static PositionSnapshot Create(PositionReadModelEntry position, Price currentPrice)
         {
+            var currentValue = Money.Create(
+                currentPrice.Value * position.TotalQuantity.Value,
+                position.TotalCost.Currency);
+            var costBasis = position.TotalCost + position.TotalFees;
+            var unrealizedPnL = currentValue - costBasis;
+            var margin = costBasis.Amount == 0m
+                ? Margin.Zero
+                : Margin.Calculate(costBasis.Amount, currentValue.Amount);
+
             return new PositionSnapshot(
-                position.CalculateCurrentValue(currentPrice),
-                position.CalculateUnrealizedPnL(currentPrice),
-                position.TotalCost + position.TotalFees,
-                position.CalculateMargin(currentPrice));
+                currentValue,
+                unrealizedPnL,
+                costBasis,
+                margin);
         }
     }
 }

@@ -123,6 +123,15 @@ public class AppModule : Module
             .SingleInstance();
 
         builder.Register(_ =>
+            new JsonPortfolioReadModel(
+                CreateDataFilePath("portfolio-read-model.json"),
+                CreateDataFilePath("portfolios.json")))
+            .As<IPortfolioReadModel>()
+            .As<IPortfolioReadModelProjectionWriter>()
+            .AsSelf()
+            .SingleInstance();
+
+        builder.Register(_ =>
             new JsonOrderRepository(CreateDataFilePath("orders.json"), _.Resolve<JsonTransactionCoordinator>()))
             .As<IOrderRepository>()
             .AsSelf()

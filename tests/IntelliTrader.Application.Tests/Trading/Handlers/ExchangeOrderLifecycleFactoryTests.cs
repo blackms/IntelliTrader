@@ -223,6 +223,35 @@ public sealed class ExchangeOrderLifecycleFactoryTests
     }
 
     [Fact]
+    public void Refresh_WhenCanceledLifecycleLaterReportsExecutedQuantity_CapturesFillWithoutReopeningOrder()
+    {
+        // Arrange
+        var lifecycle = CreateSubmittedLifecycle();
+        lifecycle.Cancel();
+        lifecycle.ClearDomainEvents();
+
+        var orderInfo = CreateExchangeOrderInfo(
+            status: ExchangeOrderStatus.Canceled,
+            filledQuantity: 0.01m,
+            averagePrice: 50100m,
+            fees: 0.5m);
+
+        // Act
+        var changed = InvokeRefresh(lifecycle, orderInfo);
+
+        // Assert
+        changed.Should().BeTrue();
+        lifecycle.Status.Should().Be(OrderLifecycleStatus.Canceled);
+        lifecycle.FilledQuantity.Value.Should().Be(0.01m);
+        lifecycle.AveragePrice.Value.Should().Be(50100m);
+        lifecycle.Cost.Amount.Should().Be(501m);
+        lifecycle.Fees.Amount.Should().Be(0.5m);
+        lifecycle.HasUnappliedFill.Should().BeTrue();
+        lifecycle.DomainEvents.Should().ContainSingle()
+            .Which.Should().BeOfType<OrderFilledEvent>();
+    }
+
+    [Fact]
     public void Refresh_WhenStatusIsUnsupported_ThrowsArgumentOutOfRangeException()
     {
         // Arrange

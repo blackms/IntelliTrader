@@ -19,6 +19,7 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
     private readonly IOrderRepository _orderRepository;
     private readonly IExchangePort _exchangePort;
     private readonly IDomainEventDispatcher _eventDispatcher;
+    private readonly IDomainEventOutbox _eventOutbox;
     private readonly ITransactionalUnitOfWork _unitOfWork;
 
     public RefreshOrderStatusHandler(
@@ -27,6 +28,7 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
         IOrderRepository orderRepository,
         IExchangePort exchangePort,
         IDomainEventDispatcher eventDispatcher,
+        IDomainEventOutbox eventOutbox,
         ITransactionalUnitOfWork unitOfWork)
     {
         _portfolioRepository = portfolioRepository ?? throw new ArgumentNullException(nameof(portfolioRepository));
@@ -34,6 +36,7 @@ public sealed class RefreshOrderStatusHandler : ICommandHandler<RefreshOrderStat
         _orderRepository = orderRepository ?? throw new ArgumentNullException(nameof(orderRepository));
         _exchangePort = exchangePort ?? throw new ArgumentNullException(nameof(exchangePort));
         _eventDispatcher = eventDispatcher ?? throw new ArgumentNullException(nameof(eventDispatcher));
+        _eventOutbox = eventOutbox ?? throw new ArgumentNullException(nameof(eventOutbox));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     }
 

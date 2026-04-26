@@ -1,8 +1,7 @@
 namespace IntelliTrader.Application.Trading.Queries;
 
 /// <summary>
-/// Query to get the current portfolio status from the legacy trading service.
-/// This bridges the Application layer to the legacy service for read operations.
+/// Query to get the current portfolio status from projected read models.
 /// </summary>
 public sealed record GetPortfolioStatusQuery
 {

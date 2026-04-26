@@ -132,6 +132,13 @@ public class AppModule : Module
             .SingleInstance();
 
         builder.Register(_ =>
+            new JsonTradingStateReadModel(CreateDataFilePath("trading-state-read-model.json")))
+            .As<ITradingStateReadModel>()
+            .As<ITradingStateReadModelProjectionWriter>()
+            .AsSelf()
+            .SingleInstance();
+
+        builder.Register(_ =>
             new JsonOrderRepository(CreateDataFilePath("orders.json"), _.Resolve<JsonTransactionCoordinator>()))
             .As<IOrderRepository>()
             .AsSelf()

@@ -370,6 +370,36 @@ public class OrderLifecycleTests
     }
 
     [Fact]
+    public void RecordCanceledFill_WhenCanceledOrderReceivesLateExecutedQuantity_PreservesCanceledStatus()
+    {
+        // Arrange
+        var order = OrderLifecycle.Submit(
+            CreateOrderId(),
+            CreatePair(),
+            OrderSide.Buy,
+            OrderType.Market,
+            Quantity.Create(0.05m),
+            CreatePrice());
+        order.Cancel();
+        order.ClearDomainEvents();
+
+        // Act
+        order.RecordCanceledFill(
+            Quantity.Create(0.02m),
+            Price.Create(50000m),
+            CreateMoney(1000m),
+            CreateMoney(1m));
+
+        // Assert
+        order.Status.Should().Be(OrderLifecycleStatus.Canceled);
+        order.IsTerminal.Should().BeTrue();
+        order.FilledQuantity.Value.Should().Be(0.02m);
+        order.HasUnappliedFill.Should().BeTrue();
+        order.DomainEvents.Should().ContainSingle()
+            .Which.Should().BeOfType<OrderFilledEvent>();
+    }
+
+    [Fact]
     public void Reject_AfterPartialFill_ThrowsInvalidOperationException()
     {
         // Arrange

@@ -18,6 +18,7 @@ public sealed class ClosePositionHandler : ICommandHandler<ClosePositionCommand,
     private readonly IOrderRepository _orderRepository;
     private readonly IExchangePort _exchangePort;
     private readonly IDomainEventDispatcher _eventDispatcher;
+    private readonly IDomainEventOutbox _eventOutbox;
     private readonly INotificationPort? _notificationPort;
     private readonly TradingConstraintValidator _constraintValidator;
     private readonly ITransactionalUnitOfWork _unitOfWork;
@@ -28,6 +29,7 @@ public sealed class ClosePositionHandler : ICommandHandler<ClosePositionCommand,
         IOrderRepository orderRepository,
         IExchangePort exchangePort,
         IDomainEventDispatcher eventDispatcher,
+        IDomainEventOutbox eventOutbox,
         TradingConstraintValidator constraintValidator,
         ITransactionalUnitOfWork unitOfWork,
         INotificationPort? notificationPort = null)
@@ -37,6 +39,7 @@ public sealed class ClosePositionHandler : ICommandHandler<ClosePositionCommand,
         _orderRepository = orderRepository ?? throw new ArgumentNullException(nameof(orderRepository));
         _exchangePort = exchangePort ?? throw new ArgumentNullException(nameof(exchangePort));
         _eventDispatcher = eventDispatcher ?? throw new ArgumentNullException(nameof(eventDispatcher));
+        _eventOutbox = eventOutbox ?? throw new ArgumentNullException(nameof(eventOutbox));
         _constraintValidator = constraintValidator ?? throw new ArgumentNullException(nameof(constraintValidator));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
         _notificationPort = notificationPort;

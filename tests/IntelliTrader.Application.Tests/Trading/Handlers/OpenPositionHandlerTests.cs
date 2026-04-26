@@ -24,6 +24,7 @@ public class OpenPositionHandlerTests
     private readonly Mock<IOrderRepository> _orderRepositoryMock;
     private readonly Mock<IExchangePort> _exchangePortMock;
     private readonly Mock<IDomainEventDispatcher> _eventDispatcherMock;
+    private readonly Mock<IDomainEventOutbox> _eventOutboxMock;
     private readonly Mock<INotificationPort> _notificationPortMock;
     private readonly Mock<ITransactionalUnitOfWork> _unitOfWorkMock;
     private readonly TradingConstraintValidator _constraintValidator;
@@ -36,6 +37,7 @@ public class OpenPositionHandlerTests
         _orderRepositoryMock = new Mock<IOrderRepository>();
         _exchangePortMock = new Mock<IExchangePort>();
         _eventDispatcherMock = new Mock<IDomainEventDispatcher>();
+        _eventOutboxMock = new Mock<IDomainEventOutbox>();
         _notificationPortMock = new Mock<INotificationPort>();
         _unitOfWorkMock = new Mock<ITransactionalUnitOfWork>();
         _constraintValidator = new TradingConstraintValidator();
@@ -46,6 +48,7 @@ public class OpenPositionHandlerTests
             _orderRepositoryMock.Object,
             _exchangePortMock.Object,
             _eventDispatcherMock.Object,
+            _eventOutboxMock.Object,
             _constraintValidator,
             _unitOfWorkMock.Object,
             _notificationPortMock.Object);
@@ -68,6 +71,14 @@ public class OpenPositionHandlerTests
 
         _unitOfWorkMock
             .Setup(x => x.RollbackAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _eventOutboxMock
+            .Setup(x => x.EnqueueAsync(It.IsAny<IEnumerable<IDomainEvent>>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _eventOutboxMock
+            .Setup(x => x.MarkProcessedAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
     }
 
@@ -380,6 +391,16 @@ public class OpenPositionHandlerTests
         _eventDispatcherMock.Verify(
             x => x.DispatchManyAsync(It.IsAny<IEnumerable<IDomainEvent>>(), It.IsAny<CancellationToken>()),
             Times.Once);
+
+        _eventOutboxMock.Verify(
+            x => x.EnqueueAsync(
+                It.Is<IEnumerable<IDomainEvent>>(events => events.OfType<OrderFilledEvent>().Any()),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _eventOutboxMock.Verify(
+            x => x.MarkProcessedAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.AtLeastOnce);
     }
 
     [Fact]

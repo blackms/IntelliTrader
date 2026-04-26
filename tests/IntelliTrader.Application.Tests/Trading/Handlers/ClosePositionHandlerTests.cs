@@ -21,6 +21,7 @@ public class ClosePositionHandlerTests
     private readonly Mock<IOrderRepository> _orderRepositoryMock;
     private readonly Mock<IExchangePort> _exchangePortMock;
     private readonly Mock<IDomainEventDispatcher> _eventDispatcherMock;
+    private readonly Mock<IDomainEventOutbox> _eventOutboxMock;
     private readonly Mock<INotificationPort> _notificationPortMock;
     private readonly Mock<ITransactionalUnitOfWork> _unitOfWorkMock;
     private readonly TradingConstraintValidator _constraintValidator;
@@ -33,6 +34,7 @@ public class ClosePositionHandlerTests
         _orderRepositoryMock = new Mock<IOrderRepository>();
         _exchangePortMock = new Mock<IExchangePort>();
         _eventDispatcherMock = new Mock<IDomainEventDispatcher>();
+        _eventOutboxMock = new Mock<IDomainEventOutbox>();
         _notificationPortMock = new Mock<INotificationPort>();
         _unitOfWorkMock = new Mock<ITransactionalUnitOfWork>();
         _constraintValidator = new TradingConstraintValidator();
@@ -43,6 +45,7 @@ public class ClosePositionHandlerTests
             _orderRepositoryMock.Object,
             _exchangePortMock.Object,
             _eventDispatcherMock.Object,
+            _eventOutboxMock.Object,
             _constraintValidator,
             _unitOfWorkMock.Object,
             _notificationPortMock.Object);
@@ -65,6 +68,14 @@ public class ClosePositionHandlerTests
 
         _unitOfWorkMock
             .Setup(x => x.RollbackAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _eventOutboxMock
+            .Setup(x => x.EnqueueAsync(It.IsAny<IEnumerable<IDomainEvent>>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _eventOutboxMock
+            .Setup(x => x.MarkProcessedAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
     }
 
@@ -309,6 +320,16 @@ public class ClosePositionHandlerTests
         _eventDispatcherMock.Verify(
             x => x.DispatchManyAsync(It.IsAny<IEnumerable<IDomainEvent>>(), It.IsAny<CancellationToken>()),
             Times.Once);
+
+        _eventOutboxMock.Verify(
+            x => x.EnqueueAsync(
+                It.Is<IEnumerable<IDomainEvent>>(events => events.OfType<OrderFilledDomainEvent>().Any()),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _eventOutboxMock.Verify(
+            x => x.MarkProcessedAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.AtLeastOnce);
     }
 
     [Fact]
@@ -836,6 +857,7 @@ public class ClosePositionByPairHandlerTests
     private readonly Mock<IOrderRepository> _orderRepositoryMock;
     private readonly Mock<IExchangePort> _exchangePortMock;
     private readonly Mock<IDomainEventDispatcher> _eventDispatcherMock;
+    private readonly Mock<IDomainEventOutbox> _eventOutboxMock;
     private readonly Mock<ITransactionalUnitOfWork> _unitOfWorkMock;
     private readonly TradingConstraintValidator _constraintValidator;
     private readonly ClosePositionHandler _closePositionHandler;
@@ -847,6 +869,7 @@ public class ClosePositionByPairHandlerTests
         _orderRepositoryMock = new Mock<IOrderRepository>();
         _exchangePortMock = new Mock<IExchangePort>();
         _eventDispatcherMock = new Mock<IDomainEventDispatcher>();
+        _eventOutboxMock = new Mock<IDomainEventOutbox>();
         _unitOfWorkMock = new Mock<ITransactionalUnitOfWork>();
         _constraintValidator = new TradingConstraintValidator();
 
@@ -856,6 +879,7 @@ public class ClosePositionByPairHandlerTests
             _orderRepositoryMock.Object,
             _exchangePortMock.Object,
             _eventDispatcherMock.Object,
+            _eventOutboxMock.Object,
             _constraintValidator,
             _unitOfWorkMock.Object);
     }

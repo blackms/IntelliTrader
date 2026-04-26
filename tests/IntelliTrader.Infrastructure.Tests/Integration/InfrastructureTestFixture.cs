@@ -65,11 +65,13 @@ public class InfrastructureTestFixture : IDisposable
     public void RegisterIsolatedEventPersistence(
         ContainerBuilder builder,
         JsonTransactionCoordinator transactionCoordinator,
-        string prefix)
+        string prefix,
+        string? portfolioBootstrapPath = null)
     {
         var outboxPath = CreateTempFilePath($"{prefix}_outbox");
         var inboxPath = CreateTempFilePath($"{prefix}_handler_inbox");
         var readModelPath = CreateTempFilePath($"{prefix}_order_read_model");
+        var portfolioReadModelPath = CreateTempFilePath($"{prefix}_portfolio_read_model");
         var positionReadModelPath = CreateTempFilePath($"{prefix}_position_read_model");
 
         builder.Register(_ => new JsonDomainEventOutbox(outboxPath, transactionCoordinator))
@@ -85,6 +87,12 @@ public class InfrastructureTestFixture : IDisposable
         builder.Register(_ => new JsonOrderReadModel(readModelPath))
             .As<IOrderReadModel>()
             .As<IOrderReadModelProjectionWriter>()
+            .AsSelf()
+            .SingleInstance();
+
+        builder.Register(_ => new JsonPortfolioReadModel(portfolioReadModelPath, portfolioBootstrapPath))
+            .As<IPortfolioReadModel>()
+            .As<IPortfolioReadModelProjectionWriter>()
             .AsSelf()
             .SingleInstance();
 

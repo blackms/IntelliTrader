@@ -132,6 +132,44 @@ public sealed class OrderLifecycle : AggregateRoot<OrderId>
         TransitionTo(OrderLifecycleStatus.Canceled);
     }
 
+    public void RecordCanceledFill(
+        Quantity filledQuantity,
+        Price averagePrice,
+        Money cost,
+        Money fees)
+    {
+        if (Status != OrderLifecycleStatus.Canceled)
+        {
+            throw new InvalidOperationException(
+                $"Cannot record canceled fill for order {Id.Value} because status is {Status}.");
+        }
+
+        ValidateFillSnapshot(filledQuantity, averagePrice, cost, fees);
+
+        if (filledQuantity < FilledQuantity)
+        {
+            throw new InvalidOperationException("Cumulative filled quantity cannot be lower than the current filled quantity.");
+        }
+
+        if (filledQuantity == FilledQuantity && averagePrice == AveragePrice && cost == Cost && fees == Fees)
+            return;
+
+        FilledQuantity = filledQuantity;
+        AveragePrice = averagePrice;
+        Cost = cost;
+        Fees = fees;
+
+        AddDomainEvent(new OrderFilledEvent(
+            Id.Value,
+            Pair.Symbol,
+            Side,
+            filledQuantity.Value,
+            averagePrice.Value,
+            cost.Amount,
+            fees.Amount,
+            isPartialFill: filledQuantity < RequestedQuantity));
+    }
+
     public void Reject()
     {
         TransitionTo(OrderLifecycleStatus.Rejected);
@@ -180,19 +218,7 @@ public sealed class OrderLifecycle : AggregateRoot<OrderId>
         Money fees,
         bool isPartialFill)
     {
-        ArgumentNullException.ThrowIfNull(filledQuantity);
-        ArgumentNullException.ThrowIfNull(averagePrice);
-        ArgumentNullException.ThrowIfNull(cost);
-        ArgumentNullException.ThrowIfNull(fees);
-
-        if (filledQuantity.IsZero)
-            throw new ArgumentException("Filled quantity cannot be zero", nameof(filledQuantity));
-
-        if (filledQuantity > RequestedQuantity)
-            throw new ArgumentException("Filled quantity cannot exceed requested quantity.", nameof(filledQuantity));
-
-        if (averagePrice.IsZero)
-            throw new ArgumentException("Average price cannot be zero", nameof(averagePrice));
+        ValidateFillSnapshot(filledQuantity, averagePrice, cost, fees);
 
         if (Status == OrderLifecycleStatus.PartiallyFilled &&
             targetStatus is OrderLifecycleStatus.PartiallyFilled or OrderLifecycleStatus.Filled &&
@@ -225,6 +251,27 @@ public sealed class OrderLifecycle : AggregateRoot<OrderId>
             cost.Amount,
             fees.Amount,
             isPartialFill));
+    }
+
+    private void ValidateFillSnapshot(
+        Quantity filledQuantity,
+        Price averagePrice,
+        Money cost,
+        Money fees)
+    {
+        ArgumentNullException.ThrowIfNull(filledQuantity);
+        ArgumentNullException.ThrowIfNull(averagePrice);
+        ArgumentNullException.ThrowIfNull(cost);
+        ArgumentNullException.ThrowIfNull(fees);
+
+        if (filledQuantity.IsZero)
+            throw new ArgumentException("Filled quantity cannot be zero", nameof(filledQuantity));
+
+        if (filledQuantity > RequestedQuantity)
+            throw new ArgumentException("Filled quantity cannot exceed requested quantity.", nameof(filledQuantity));
+
+        if (averagePrice.IsZero)
+            throw new ArgumentException("Average price cannot be zero", nameof(averagePrice));
     }
 
     private void TransitionTo(OrderLifecycleStatus nextStatus)

@@ -70,6 +70,7 @@ public class InfrastructureTestFixture : IDisposable
         var outboxPath = CreateTempFilePath($"{prefix}_outbox");
         var inboxPath = CreateTempFilePath($"{prefix}_handler_inbox");
         var readModelPath = CreateTempFilePath($"{prefix}_order_read_model");
+        var positionReadModelPath = CreateTempFilePath($"{prefix}_position_read_model");
 
         builder.Register(_ => new JsonDomainEventOutbox(outboxPath, transactionCoordinator))
             .As<IDomainEventOutbox>()
@@ -84,6 +85,12 @@ public class InfrastructureTestFixture : IDisposable
         builder.Register(_ => new JsonOrderReadModel(readModelPath))
             .As<IOrderReadModel>()
             .As<IOrderReadModelProjectionWriter>()
+            .AsSelf()
+            .SingleInstance();
+
+        builder.Register(_ => new JsonPositionReadModel(positionReadModelPath))
+            .As<IPositionReadModel>()
+            .As<IPositionReadModelProjectionWriter>()
             .AsSelf()
             .SingleInstance();
     }

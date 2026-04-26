@@ -400,7 +400,11 @@ public sealed class Position : AggregateRoot<PositionId>
             TotalQuantity,
             proceeds,
             releasedCost,
-            sellFees));
+            sellFees,
+            remainingCost: TotalCost,
+            remainingFees: TotalFees,
+            newAveragePrice: AveragePrice,
+            remainingEntryCount: _entries.Count));
 
         return new PositionCloseFillDelta(soldQuantity, proceeds, releasedCost, sellFees, PositionClosed: false);
     }

@@ -136,6 +136,13 @@ public class AppModule : Module
             .SingleInstance();
 
         builder.Register(_ =>
+            new JsonPositionReadModel(CreateDataFilePath("position-read-model.json")))
+            .As<IPositionReadModel>()
+            .As<IPositionReadModelProjectionWriter>()
+            .AsSelf()
+            .SingleInstance();
+
+        builder.Register(_ =>
             new JsonDomainEventOutbox(CreateDataFilePath("outbox.json"), _.Resolve<JsonTransactionCoordinator>()))
             .As<IDomainEventOutbox>()
             .AsSelf()

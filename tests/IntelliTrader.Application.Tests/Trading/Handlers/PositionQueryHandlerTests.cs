@@ -3,7 +3,6 @@ using IntelliTrader.Application.Common;
 using IntelliTrader.Application.Ports.Driven;
 using IntelliTrader.Application.Trading.Handlers;
 using IntelliTrader.Application.Trading.Queries;
-using IntelliTrader.Domain.Trading.Aggregates;
 using IntelliTrader.Domain.Trading.ValueObjects;
 using Moq;
 
@@ -11,7 +10,7 @@ namespace IntelliTrader.Application.Tests.Trading.Handlers;
 
 public sealed class PositionQueryHandlerTests
 {
-    private readonly Mock<IPositionRepository> _positionRepositoryMock = new();
+    private readonly Mock<IPositionReadModel> _positionReadModelMock = new();
     private readonly Mock<IExchangePort> _exchangePortMock = new();
 
     [Fact]
@@ -19,17 +18,16 @@ public sealed class PositionQueryHandlerTests
     {
         var pair = TradingPair.Create("BTCUSDT", "USDT");
         var openedAt = new DateTimeOffset(2024, 1, 1, 12, 0, 0, TimeSpan.Zero);
-        var position = CreatePosition(pair, "order-btc-1", 50000m, 0.02m, 1m, openedAt);
+        var position = CreatePosition(pair, 50000m, 0.02m, 1m, openedAt: openedAt);
 
-        _positionRepositoryMock
+        _positionReadModelMock
             .Setup(x => x.GetByPairAsync(pair, It.IsAny<CancellationToken>()))
             .ReturnsAsync(position);
-
         _exchangePortMock
             .Setup(x => x.GetCurrentPriceAsync(pair, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Price>.Success(Price.Create(55000m)));
 
-        var handler = new GetPositionHandler(_positionRepositoryMock.Object, _exchangePortMock.Object);
+        var handler = new GetPositionHandler(_positionReadModelMock.Object, _exchangePortMock.Object);
 
         var result = await handler.HandleAsync(new GetPositionQuery { Pair = pair });
 
@@ -47,7 +45,7 @@ public sealed class PositionQueryHandlerTests
     [Fact]
     public async Task GetPosition_WithoutIdentifier_ReturnsValidationFailure()
     {
-        var handler = new GetPositionHandler(_positionRepositoryMock.Object, _exchangePortMock.Object);
+        var handler = new GetPositionHandler(_positionReadModelMock.Object, _exchangePortMock.Object);
 
         var result = await handler.HandleAsync(new GetPositionQuery());
 
@@ -60,11 +58,11 @@ public sealed class PositionQueryHandlerTests
     public async Task GetPosition_WithMissingPositionId_ReturnsNotFound()
     {
         var positionId = PositionId.Create();
-        _positionRepositoryMock
+        _positionReadModelMock
             .Setup(x => x.GetByIdAsync(positionId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((Position?)null);
+            .ReturnsAsync((PositionReadModelEntry?)null);
 
-        var handler = new GetPositionHandler(_positionRepositoryMock.Object, _exchangePortMock.Object);
+        var handler = new GetPositionHandler(_positionReadModelMock.Object, _exchangePortMock.Object);
 
         var result = await handler.HandleAsync(new GetPositionQuery { PositionId = positionId });
 
@@ -77,22 +75,13 @@ public sealed class PositionQueryHandlerTests
     public async Task GetPosition_WithClosedPosition_UsesAveragePriceWithoutExchangeLookup()
     {
         var pair = TradingPair.Create("BTCUSDT", "USDT");
-        var position = CreateClosedPosition(
-            pair,
-            "order-btc-1",
-            "sell-btc-1",
-            50000m,
-            0.02m,
-            1m,
-            55000m,
-            1m,
-            DateTimeOffset.UtcNow);
+        var position = CreateClosedPosition(pair, 50000m, 0.02m, 1m, DateTimeOffset.UtcNow);
 
-        _positionRepositoryMock
+        _positionReadModelMock
             .Setup(x => x.GetByIdAsync(position.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(position);
 
-        var handler = new GetPositionHandler(_positionRepositoryMock.Object, _exchangePortMock.Object);
+        var handler = new GetPositionHandler(_positionReadModelMock.Object, _exchangePortMock.Object);
 
         var result = await handler.HandleAsync(new GetPositionQuery { PositionId = position.Id });
 
@@ -108,16 +97,16 @@ public sealed class PositionQueryHandlerTests
     public async Task GetPosition_WhenActivePositionPriceLookupFails_ReturnsFailure()
     {
         var pair = TradingPair.Create("BTCUSDT", "USDT");
-        var position = CreatePosition(pair, "order-btc-1", 50000m, 0.02m, 1m);
+        var position = CreatePosition(pair, 50000m, 0.02m, 1m);
 
-        _positionRepositoryMock
+        _positionReadModelMock
             .Setup(x => x.GetByIdAsync(position.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(position);
         _exchangePortMock
             .Setup(x => x.GetCurrentPriceAsync(pair, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Price>.Failure(Error.ExchangeError("price unavailable")));
 
-        var handler = new GetPositionHandler(_positionRepositoryMock.Object, _exchangePortMock.Object);
+        var handler = new GetPositionHandler(_positionReadModelMock.Object, _exchangePortMock.Object);
 
         var result = await handler.HandleAsync(new GetPositionQuery { PositionId = position.Id });
 
@@ -130,25 +119,20 @@ public sealed class PositionQueryHandlerTests
     {
         var btc = TradingPair.Create("BTCUSDT", "USDT");
         var eth = TradingPair.Create("ETHUSDT", "USDT");
-        var adaBtc = TradingPair.Create("ADABTC", "BTC");
+        var btcPosition = CreatePosition(btc, 50000m, 0.02m, 1m);
+        var ethPosition = CreatePosition(eth, 2500m, 0.4m, 1m);
 
-        var btcPosition = CreatePosition(btc, "order-btc-1", 50000m, 0.02m, 1m);
-        var ethPosition = CreatePosition(eth, "order-eth-1", 2500m, 0.4m, 1m);
-        var adaPosition = CreatePosition(adaBtc, "order-ada-1", 0.00001m, 1000m, 0.000001m);
-
-        _positionRepositoryMock
-            .Setup(x => x.GetAllActiveAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { ethPosition, adaPosition, btcPosition });
-
+        _positionReadModelMock
+            .Setup(x => x.GetActiveAsync("USDT", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { ethPosition, btcPosition });
         _exchangePortMock
             .Setup(x => x.GetCurrentPriceAsync(btc, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Price>.Success(Price.Create(55000m)));
-
         _exchangePortMock
             .Setup(x => x.GetCurrentPriceAsync(eth, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Price>.Success(Price.Create(2400m)));
 
-        var handler = new GetActivePositionsHandler(_positionRepositoryMock.Object, _exchangePortMock.Object);
+        var handler = new GetActivePositionsHandler(_positionReadModelMock.Object, _exchangePortMock.Object);
 
         var result = await handler.HandleAsync(new GetActivePositionsQuery
         {
@@ -161,23 +145,23 @@ public sealed class PositionQueryHandlerTests
         result.Value.Select(position => position.Pair).Should().Equal(btc, eth);
         result.Value.Should().OnlyContain(position => position.Pair.QuoteCurrency == "USDT");
         result.Value[0].CurrentMargin.Percentage.Should().BeGreaterThan(result.Value[1].CurrentMargin.Percentage);
+        _positionReadModelMock.Verify(x => x.GetActiveAsync("USDT", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task GetActivePositions_WhenPriceLookupFails_ReturnsFailure()
     {
         var pair = TradingPair.Create("BTCUSDT", "USDT");
-        var position = CreatePosition(pair, "order-btc-1", 50000m, 0.02m, 1m);
+        var position = CreatePosition(pair, 50000m, 0.02m, 1m);
 
-        _positionRepositoryMock
-            .Setup(x => x.GetAllActiveAsync(It.IsAny<CancellationToken>()))
+        _positionReadModelMock
+            .Setup(x => x.GetActiveAsync((string?)null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { position });
-
         _exchangePortMock
             .Setup(x => x.GetCurrentPriceAsync(pair, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Price>.Failure(Error.ExchangeError("price unavailable")));
 
-        var handler = new GetActivePositionsHandler(_positionRepositoryMock.Object, _exchangePortMock.Object);
+        var handler = new GetActivePositionsHandler(_positionReadModelMock.Object, _exchangePortMock.Object);
 
         var result = await handler.HandleAsync(new GetActivePositionsQuery());
 
@@ -203,17 +187,19 @@ public sealed class PositionQueryHandlerTests
     {
         var btc = TradingPair.Create("BTCUSDT", "USDT");
         var ada = TradingPair.Create("ADAUSDT", "USDT");
-        var newerBtc = CreatePosition(btc, "order-btc-1", 50000m, 0.02m, 1m, DateTimeOffset.UtcNow);
-        newerBtc.AddDCAEntry(
-            OrderId.From("order-btc-dca-1"),
-            Price.Create(49000m),
-            Quantity.Create(0.01m),
-            Money.Create(0.5m, "USDT"));
-        newerBtc.ClearDomainEvents();
-        var olderAda = CreatePosition(ada, "order-ada-1", 1m, 100m, 1m, DateTimeOffset.UtcNow.AddHours(-1));
+        var newerBtc = CreatePosition(
+            btc,
+            price: 49666.666666666666666666666667m,
+            quantity: 0.03m,
+            fees: 1.5m,
+            totalCost: 1490m,
+            dcaLevel: 1,
+            entryCount: 2,
+            openedAt: DateTimeOffset.UtcNow);
+        var olderAda = CreatePosition(ada, 1m, 100m, 1m, openedAt: DateTimeOffset.UtcNow.AddHours(-1));
 
-        _positionRepositoryMock
-            .Setup(x => x.GetAllActiveAsync(It.IsAny<CancellationToken>()))
+        _positionReadModelMock
+            .Setup(x => x.GetActiveAsync((string?)null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { newerBtc, olderAda });
         _exchangePortMock
             .Setup(x => x.GetCurrentPriceAsync(btc, It.IsAny<CancellationToken>()))
@@ -222,7 +208,7 @@ public sealed class PositionQueryHandlerTests
             .Setup(x => x.GetCurrentPriceAsync(ada, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Price>.Success(Price.Create(1.01m)));
 
-        var handler = new GetActivePositionsHandler(_positionRepositoryMock.Object, _exchangePortMock.Object);
+        var handler = new GetActivePositionsHandler(_positionReadModelMock.Object, _exchangePortMock.Object);
 
         var result = await handler.HandleAsync(new GetActivePositionsQuery
         {
@@ -239,11 +225,11 @@ public sealed class PositionQueryHandlerTests
     {
         var btc = TradingPair.Create("BTCUSDT", "USDT");
         var eth = TradingPair.Create("ETHUSDT", "USDT");
-        var btcPosition = CreatePosition(btc, "order-btc-1", 50000m, 0.02m, 1m);
-        var ethPosition = CreatePosition(eth, "order-eth-1", 2500m, 0.4m, 1m);
+        var btcPosition = CreatePosition(btc, 50000m, 0.02m, 1m);
+        var ethPosition = CreatePosition(eth, 2500m, 0.4m, 1m);
 
-        _positionRepositoryMock
-            .Setup(x => x.GetAllActiveAsync(It.IsAny<CancellationToken>()))
+        _positionReadModelMock
+            .Setup(x => x.GetActiveAsync((string?)null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { btcPosition, ethPosition });
         _exchangePortMock
             .Setup(x => x.GetCurrentPriceAsync(btc, It.IsAny<CancellationToken>()))
@@ -252,7 +238,7 @@ public sealed class PositionQueryHandlerTests
             .Setup(x => x.GetCurrentPriceAsync(eth, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Price>.Success(Price.Create(2400m)));
 
-        var handler = new GetActivePositionsHandler(_positionRepositoryMock.Object, _exchangePortMock.Object);
+        var handler = new GetActivePositionsHandler(_positionReadModelMock.Object, _exchangePortMock.Object);
 
         var result = await handler.HandleAsync(new GetActivePositionsQuery
         {
@@ -269,19 +255,19 @@ public sealed class PositionQueryHandlerTests
     public async Task GetClosedPositions_FiltersByPairAndLimitsResults()
     {
         var btc = TradingPair.Create("BTCUSDT", "USDT");
-        var eth = TradingPair.Create("ETHUSDT", "USDT");
-        var newerBtc = CreateClosedPosition(btc, "order-btc-1", "sell-btc-1", 50000m, 0.02m, 1m, 55000m, 1m, DateTimeOffset.UtcNow);
-        var olderBtc = CreateClosedPosition(btc, "order-btc-2", "sell-btc-2", 51000m, 0.02m, 1m, 52000m, 1m, DateTimeOffset.UtcNow.AddMinutes(-10));
-        var otherPair = CreateClosedPosition(eth, "order-eth-1", "sell-eth-1", 2500m, 0.4m, 1m, 2600m, 1m, DateTimeOffset.UtcNow);
+        var newerBtc = CreateClosedPosition(btc, 50000m, 0.02m, 1m, DateTimeOffset.UtcNow);
+        var olderBtc = CreateClosedPosition(btc, 51000m, 0.02m, 1m, DateTimeOffset.UtcNow.AddMinutes(-10));
 
-        _positionRepositoryMock
-            .Setup(x => x.GetClosedPositionsAsync(
+        _positionReadModelMock
+            .Setup(x => x.GetClosedAsync(
                 It.IsAny<DateTimeOffset>(),
                 It.IsAny<DateTimeOffset>(),
+                btc,
+                1,
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { olderBtc, otherPair, newerBtc });
+            .ReturnsAsync(new[] { olderBtc, newerBtc });
 
-        var handler = new GetClosedPositionsHandler(_positionRepositoryMock.Object);
+        var handler = new GetClosedPositionsHandler(_positionReadModelMock.Object);
 
         var result = await handler.HandleAsync(new GetClosedPositionsQuery
         {
@@ -303,7 +289,7 @@ public sealed class PositionQueryHandlerTests
     [Fact]
     public async Task GetClosedPositions_WithProfitableOnlyFilter_ReturnsValidationFailure()
     {
-        var handler = new GetClosedPositionsHandler(_positionRepositoryMock.Object);
+        var handler = new GetClosedPositionsHandler(_positionReadModelMock.Object);
 
         var result = await handler.HandleAsync(new GetClosedPositionsQuery { ProfitableOnly = true });
 
@@ -315,7 +301,7 @@ public sealed class PositionQueryHandlerTests
     [Fact]
     public async Task GetClosedPositions_WithInvalidRange_ReturnsValidationFailure()
     {
-        var handler = new GetClosedPositionsHandler(_positionRepositoryMock.Object);
+        var handler = new GetClosedPositionsHandler(_positionReadModelMock.Object);
 
         var result = await handler.HandleAsync(new GetClosedPositionsQuery
         {
@@ -327,41 +313,50 @@ public sealed class PositionQueryHandlerTests
         result.Error.Code.Should().Be("Validation");
     }
 
-    private static Position CreatePosition(
+    private static PositionReadModelEntry CreatePosition(
         TradingPair pair,
-        string orderId,
         decimal price,
         decimal quantity,
         decimal fees,
+        decimal? totalCost = null,
+        int dcaLevel = 0,
+        int entryCount = 1,
         DateTimeOffset? openedAt = null)
     {
-        var position = Position.Open(
-            pair,
-            OrderId.From(orderId),
-            Price.Create(price),
-            Quantity.Create(quantity),
-            Money.Create(fees, pair.QuoteCurrency),
-            "MomentumBreakout",
-            openedAt);
+        var effectiveCost = totalCost ?? price * quantity;
+        var averagePrice = quantity == 0m ? price : effectiveCost / quantity;
 
-        position.ClearDomainEvents();
-        return position;
+        return new PositionReadModelEntry
+        {
+            Id = PositionId.Create(),
+            Pair = pair,
+            AveragePrice = Price.Create(averagePrice),
+            TotalQuantity = Quantity.Create(quantity),
+            TotalCost = Money.Create(effectiveCost, pair.QuoteCurrency),
+            TotalFees = Money.Create(fees, pair.QuoteCurrency),
+            DCALevel = dcaLevel,
+            EntryCount = entryCount,
+            OpenedAt = openedAt ?? DateTimeOffset.UtcNow,
+            SignalRule = "MomentumBreakout"
+        };
     }
 
-    private static Position CreateClosedPosition(
+    private static PositionReadModelEntry CreateClosedPosition(
         TradingPair pair,
-        string orderId,
-        string sellOrderId,
         decimal entryPrice,
         decimal quantity,
         decimal entryFees,
-        decimal sellPrice,
-        decimal sellFees,
         DateTimeOffset closedAt)
     {
-        var position = CreatePosition(pair, orderId, entryPrice, quantity, entryFees, closedAt.AddHours(-4));
-        position.Close(OrderId.From(sellOrderId), Price.Create(sellPrice), Money.Create(sellFees, pair.QuoteCurrency), closedAt);
-        position.ClearDomainEvents();
-        return position;
+        return CreatePosition(
+            pair,
+            entryPrice,
+            quantity,
+            entryFees,
+            openedAt: closedAt.AddHours(-4)) with
+        {
+            IsClosed = true,
+            ClosedAt = closedAt
+        };
     }
 }

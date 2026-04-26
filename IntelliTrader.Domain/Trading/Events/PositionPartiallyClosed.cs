@@ -20,6 +20,10 @@ public sealed record PositionPartiallyClosed : IDomainEvent
     public Money Proceeds { get; }
     public Money ReleasedCost { get; }
     public Money SellFees { get; }
+    public Money? RemainingCost { get; }
+    public Money? RemainingFees { get; }
+    public Price? NewAveragePrice { get; }
+    public int? RemainingEntryCount { get; }
 
     public PositionPartiallyClosed(
         PositionId positionId,
@@ -33,7 +37,11 @@ public sealed record PositionPartiallyClosed : IDomainEvent
         Money sellFees,
         string? correlationId = null,
         Guid eventId = default,
-        DateTimeOffset occurredAt = default)
+        DateTimeOffset occurredAt = default,
+        Money? remainingCost = null,
+        Money? remainingFees = null,
+        Price? newAveragePrice = null,
+        int? remainingEntryCount = null)
     {
         EventId = eventId == Guid.Empty ? Guid.NewGuid() : eventId;
         OccurredAt = occurredAt == default ? DateTimeOffset.UtcNow : occurredAt;
@@ -47,5 +55,9 @@ public sealed record PositionPartiallyClosed : IDomainEvent
         ReleasedCost = releasedCost;
         SellFees = sellFees;
         CorrelationId = correlationId;
+        RemainingCost = remainingCost;
+        RemainingFees = remainingFees;
+        NewAveragePrice = newAveragePrice;
+        RemainingEntryCount = remainingEntryCount;
     }
 }

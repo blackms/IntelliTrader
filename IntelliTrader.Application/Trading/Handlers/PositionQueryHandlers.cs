@@ -1,7 +1,6 @@
 using IntelliTrader.Application.Common;
 using IntelliTrader.Application.Ports.Driven;
 using IntelliTrader.Application.Trading.Queries;
-using IntelliTrader.Domain.Trading.Aggregates;
 using IntelliTrader.Domain.Trading.ValueObjects;
 
 namespace IntelliTrader.Application.Trading.Handlers;
@@ -11,12 +10,12 @@ namespace IntelliTrader.Application.Trading.Handlers;
 /// </summary>
 public sealed class GetPositionHandler : IQueryHandler<GetPositionQuery, PositionView>
 {
-    private readonly IPositionRepository _positionRepository;
+    private readonly IPositionReadModel _positionReadModel;
     private readonly IExchangePort _exchangePort;
 
-    public GetPositionHandler(IPositionRepository positionRepository, IExchangePort exchangePort)
+    public GetPositionHandler(IPositionReadModel positionReadModel, IExchangePort exchangePort)
     {
-        _positionRepository = positionRepository ?? throw new ArgumentNullException(nameof(positionRepository));
+        _positionReadModel = positionReadModel ?? throw new ArgumentNullException(nameof(positionReadModel));
         _exchangePort = exchangePort ?? throw new ArgumentNullException(nameof(exchangePort));
     }
 
@@ -33,8 +32,8 @@ public sealed class GetPositionHandler : IQueryHandler<GetPositionQuery, Positio
         }
 
         var position = query.PositionId is not null
-            ? await _positionRepository.GetByIdAsync(query.PositionId, cancellationToken)
-            : await _positionRepository.GetByPairAsync(query.Pair!, cancellationToken);
+            ? await _positionReadModel.GetByIdAsync(query.PositionId, cancellationToken)
+            : await _positionReadModel.GetByPairAsync(query.Pair!, cancellationToken);
 
         if (position is null)
         {
@@ -52,7 +51,7 @@ public sealed class GetPositionHandler : IQueryHandler<GetPositionQuery, Positio
     }
 
     private async Task<Result<Price>> ResolveCurrentPriceAsync(
-        Position position,
+        PositionReadModelEntry position,
         CancellationToken cancellationToken)
     {
         if (position.IsClosed)
@@ -69,12 +68,12 @@ public sealed class GetPositionHandler : IQueryHandler<GetPositionQuery, Positio
 /// </summary>
 public sealed class GetActivePositionsHandler : IQueryHandler<GetActivePositionsQuery, IReadOnlyList<PositionView>>
 {
-    private readonly IPositionRepository _positionRepository;
+    private readonly IPositionReadModel _positionReadModel;
     private readonly IExchangePort _exchangePort;
 
-    public GetActivePositionsHandler(IPositionRepository positionRepository, IExchangePort exchangePort)
+    public GetActivePositionsHandler(IPositionReadModel positionReadModel, IExchangePort exchangePort)
     {
-        _positionRepository = positionRepository ?? throw new ArgumentNullException(nameof(positionRepository));
+        _positionReadModel = positionReadModel ?? throw new ArgumentNullException(nameof(positionReadModel));
         _exchangePort = exchangePort ?? throw new ArgumentNullException(nameof(exchangePort));
     }
 
@@ -84,10 +83,7 @@ public sealed class GetActivePositionsHandler : IQueryHandler<GetActivePositions
     {
         ArgumentNullException.ThrowIfNull(query);
 
-        var positions = await _positionRepository.GetAllActiveAsync(cancellationToken);
-        var filteredPositions = positions
-            .Where(position => query.Market is null || position.Pair.IsInMarket(query.Market))
-            .ToList();
+        var filteredPositions = await _positionReadModel.GetActiveAsync(query.Market, cancellationToken);
 
         var views = new List<PositionView>(filteredPositions.Count);
         foreach (var position in filteredPositions)
@@ -146,11 +142,11 @@ public sealed class GetActivePositionsHandler : IQueryHandler<GetActivePositions
 /// </summary>
 public sealed class GetClosedPositionsHandler : IQueryHandler<GetClosedPositionsQuery, IReadOnlyList<PositionView>>
 {
-    private readonly IPositionRepository _positionRepository;
+    private readonly IPositionReadModel _positionReadModel;
 
-    public GetClosedPositionsHandler(IPositionRepository positionRepository)
+    public GetClosedPositionsHandler(IPositionReadModel positionReadModel)
     {
-        _positionRepository = positionRepository ?? throw new ArgumentNullException(nameof(positionRepository));
+        _positionReadModel = positionReadModel ?? throw new ArgumentNullException(nameof(positionReadModel));
     }
 
     public async Task<Result<IReadOnlyList<PositionView>>> HandleAsync(
@@ -172,11 +168,9 @@ public sealed class GetClosedPositionsHandler : IQueryHandler<GetClosedPositions
         }
 
         var limit = query.Limit <= 0 ? 100 : query.Limit;
-        var positions = await _positionRepository.GetClosedPositionsAsync(query.From, query.To, cancellationToken);
+        var positions = await _positionReadModel.GetClosedAsync(query.From, query.To, query.Pair, limit, cancellationToken);
 
         var views = positions
-            .Where(position => position.IsClosed)
-            .Where(position => query.Pair is null || position.Pair.Equals(query.Pair))
             .OrderByDescending(position => position.ClosedAt ?? position.OpenedAt)
             .Take(limit)
             .Select(position => PositionQueryMapper.Map(position, position.AveragePrice))
@@ -188,10 +182,17 @@ public sealed class GetClosedPositionsHandler : IQueryHandler<GetClosedPositions
 
 internal static class PositionQueryMapper
 {
-    public static PositionView Map(Position position, Price currentPrice)
+    public static PositionView Map(PositionReadModelEntry position, Price currentPrice)
     {
         ArgumentNullException.ThrowIfNull(position);
         ArgumentNullException.ThrowIfNull(currentPrice);
+
+        var currentValue = Money.Create(currentPrice.Value * position.TotalQuantity.Value, position.TotalCost.Currency);
+        var costBasis = position.TotalCost + position.TotalFees;
+        var unrealizedPnL = currentValue - costBasis;
+        var currentMargin = costBasis.Amount == 0m
+            ? Margin.Zero
+            : Margin.Calculate(costBasis.Amount, currentValue.Amount);
 
         return new PositionView
         {
@@ -202,17 +203,17 @@ internal static class PositionQueryMapper
             TotalQuantity = position.TotalQuantity,
             TotalCost = position.TotalCost,
             TotalFees = position.TotalFees,
-            CurrentValue = position.CalculateCurrentValue(currentPrice),
-            UnrealizedPnL = position.CalculateUnrealizedPnL(currentPrice),
-            CurrentMargin = position.CalculateMargin(currentPrice),
+            CurrentValue = currentValue,
+            UnrealizedPnL = unrealizedPnL,
+            CurrentMargin = currentMargin,
             DCALevel = position.DCALevel,
-            EntryCount = position.Entries.Count,
+            EntryCount = position.EntryCount,
             OpenedAt = position.OpenedAt,
             HoldingPeriod = (position.ClosedAt ?? DateTimeOffset.UtcNow) - position.OpenedAt,
             SignalRule = position.SignalRule,
             IsClosed = position.IsClosed,
             ClosedAt = position.ClosedAt,
-            RealizedPnL = null
+            RealizedPnL = position.RealizedPnL
         };
     }
 }

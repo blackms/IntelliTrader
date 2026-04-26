@@ -35,6 +35,7 @@ public sealed class DomainEventOutboxProcessorTests
             result.ProcessedCount.Should().Be(1);
             result.FailedCount.Should().Be(0);
             dispatchedEvents.Should().ContainSingle();
+            dispatchedEvents.Single().EventId.Should().Be(domainEvent.EventId);
             dispatchedEvents.Single().Should().BeOfType<OrderFilledEvent>()
                 .Which.Should().Match<OrderFilledEvent>(evt =>
                     evt.OrderId == "outbox-fill-1" &&
